@@ -1,0 +1,41 @@
+wrapper:
+    - run_dir: ./
+    - system: ./sys.yaml
+    - ligands:
+        - lig_csv: ./lig.csv
+        - smiles_col: smiles
+        - id_col: id
+
+# CLI options from boltz/src/boltz/main.py. These differ slighly from options in boltz/docs/predictions.md.
+options:
+    - out_dir: ./                                           # Override by wrapper (run_dir + ligand ID)
+    - cache: ~/.boltz
+    - checkpoint: None
+    - devices: 1
+    - accelerator: gpu
+    - recycling_steps: 3
+    - sampling_steps: 200
+    - diffusion_samples: 1
+    - max_parallel_samples: 5
+    - step_scale: 1.638
+    - write_full_pae: False
+    - write_full_pde: False
+    - output_format: mmcif
+    - num_workers: 2
+    - override: False
+    - seed: None                                            # Not in predictions.md
+    - use_msa_server: False                                 # Override by wrapper (first True, then False)
+    - msa_server_url: https://api.colabfold.com     
+    - msa_pairing_strategy: greedy
+    - use_potentials: False
+    - model: boltz2                                         # Options: [boltz1, boltz2]. Not in predictions.md          
+    - method: None
+    - preprocessing-threads: multiprocessing.cpu_count()
+    - affinity_mw_correction: False
+    - sampling_steps_affinity: 200
+    - diffusion_samples_affinity: 5
+    - affinity_checkpoint: None
+    - max_msa_seqs: 8192
+    - subsample_msa: False
+    - num_subsamples_msa: 1024
+    - no_kernels: False                                     # Not in predictions.md
