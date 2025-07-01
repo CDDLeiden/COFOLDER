@@ -1,3 +1,29 @@
+# Script for performing virtual screening using Boltz.
+
+# Input: 
+#   - [OPTIONAL] SMILES or FASTA sequence to inject into YAML system
+#   - [OPTIONAL] CSV file containing SMILES or FASTA sequences to inject into YAML system
+#   - [OPTIONAL] SMILES column when iterating through CSV file
+#   - [OPTIONAL] ID column when iterating through CSV file (if not specified, index will be used)
+#   - YAML system file containing: 
+#       - FASTA sequence of protein(s)
+#       - [OPTIONAL] Co-factors
+#       - [OPTIONAL] Boltz Constraints and/or Templates
+# Output:
+#   - output confidence metric (confidence_score, ptm, ...)    
+#   - output affinity (affinity_pred_value, affinity_probability_binary, ...)
+#   - RMSD of diffusion samples
+
+# This script should (co-)fold a protein, protein-ligand complex or a virtual screening (when provided)
+# with an CSV file. Results should be gathered into a singlular output file, and structures should be 
+# copied to a single folder.
+
+# EXTRA IDEAS:
+#   - Toggle saving for saving either all data, only structures and output file, OR only output file
+#   - Allow for Grid search of Boltz parameters, co-factors and Boltz Constraints/Templates
+#   - Add IFP profiling for ligands
+
+
 import logging
 import os
 import pandas as pd
@@ -50,6 +76,8 @@ def run_boltz(run_dir, sys_data, smiles_col, id_col, lig_df):
         logging.info(f'running command: {" ".join(command)}')
 
         subprocess.run(command)
+        
+
 
 def set_yaml(out_dir, sys_data, i, row, msa_path):
     out = os.path.join(out_dir, f'{i}_{row[id_col]}.yaml')
