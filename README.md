@@ -1,5 +1,34 @@
 # boltz_wrapper
 
+## Installation
+Make sure to have an operational version of boltz working in your conda environment. 
+pip install boltz=2.0.3
+
+You can check if the istall is functional using the following command:
+boltz predict --help
+
+Note, if you have not downloaded the cache yet, the first run will download this, which may take a few hours.
+
+## How to run
+from boltz_wrapper/templates copy options.yaml into your cwd (TODO: make this adjustable when calling the wrapper).
+In options.yaml, specify wrapper options.
+  - run_dir: directory where results will be stored
+  - system: path to YAML system file
+  - ligands:
+    - lig_csv: path to CSV file containing SMILES
+    - smiles_col: SMILES column name
+    - id_col: Compound identifier column name
+Additionally boltz options can be adjusted in this file.
+
+for the YAML system file, as for now, keep the following format (i.e. first define protein and ligand sequences, only then all other sytem features):
+sequences:
+  - protein:
+      id: [A]
+      sequence: {your FASTA sequence}
+  - ligand:
+      id: [B]
+      smiles: {your SMILES}
+
 ## screening.py - WORK IN PROGRESS
 Script for performing virtual screening using Boltz.
 
