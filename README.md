@@ -21,6 +21,7 @@ In options.yaml, specify wrapper options.
 Additionally boltz options can be adjusted in this file.
 
 for the YAML system file, as for now, keep the following format (i.e. first define protein and ligand sequences, only then all other sytem features):
+
 sequences:
   - protein:
       id: [A]
@@ -28,6 +29,8 @@ sequences:
   - ligand:
       id: [B]
       smiles: {your SMILES}
+
+Run the screening.py with the following command: python {your_path}/boltz_wrapper/screening.py
 
 ## screening.py - WORK IN PROGRESS
 Script for performing virtual screening using Boltz.

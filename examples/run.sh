@@ -7,5 +7,5 @@
 source /prd/pkgs/miniconda/conda3-py38/bashrc
 conda activate boltz2.0.3
 
-python wrapper.py
+python screening.py
 echo 'fin'
