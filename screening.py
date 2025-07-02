@@ -30,6 +30,7 @@ import subprocess
 import time
 import pandas as pd
 import json
+import shutil
 
 import command
 import helpers
@@ -68,7 +69,7 @@ def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
         subprocess.run(cmd)
 
         gather_metrics(run_dir, out_dir, i, row, id_col)
-        gather_structures()
+        gather_structures(run_dir, out_dir, i, row, id_col)
 
         logging.info(" pred time--- %s seconds ---" % (time.time() - start_time))
         
@@ -99,11 +100,17 @@ def gather_metrics(run_dir, out_dir, i, row, id_col):
     else:
         df_new.to_csv(csv_file, mode='a', header=False, index=False)
 
-def gather_structures():
+def gather_structures(run_dir, out_dir, i , row, id_col):
     # function to gather cif or pdb files into single folder
-    pass
-
-
+    target_dir = os.path.join(run_dir, "structures")
+    os.makedirs(target_dir, exist_ok=True)
+    
+    stucture_dir = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/')
+    for file_name in os.listdir(stucture_dir):
+        if file_name.endswith(('.cif', '.pdb')):
+            stucture_path = os.path.join(stucture_dir, file_name)
+            target_path = os.path.join(target_dir, file_name)
+            shutil.copy2(stucture_path, target_path)
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
