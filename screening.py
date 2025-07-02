@@ -27,8 +27,6 @@ import logging
 import os
 import pandas as pd
 import subprocess
-import multiprocessing
-import yaml
 
 import command
 import helpers
@@ -50,21 +48,19 @@ def read_csv(file_path, smiles_col, id_col):
 
     return lig_df
 
-def run_boltz(run_dir, sys_data, smiles_col, id_col, lig_df):
+def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
    msa_path = ''
    for i, (row_idx, row) in enumerate(lig_df.iterrows(), start=1):  
         logging.info(f"({i}/{len(lig_df)}) {row[id_col]}: {row[smiles_col]}")
         
-        out_dir = set_dir(path=os.path.join(run_dir, f'{i}_{row[id_col]}'))
-        yaml_path, msa_path = set_yaml(out_dir, sys_data, i, row, msa_path)    
+        out_dir = helpers.set_dir(path=os.path.join(run_dir, f'{i}_{row[id_col]}'))
+        yaml_path, msa_path = system.set_yaml(out_dir, sys_data, i, row, id_col, msa_path, smiles_col)    
 
-        command = set_command(yaml_path, i, row)       
-        logging.info(f'running command: {" ".join(command)}')
+        cmd = command.set_command(yaml_path, opt_data, i, row, run_dir, id_col)       
+        logging.info(f'running command: {" ".join(cmd)}')
 
-        subprocess.run(command)
+        subprocess.run(cmd)
         
-
-
 
 
 if __name__ == "__main__":
@@ -72,9 +68,9 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
     # Load input files
-    opt_data = read_yaml(file_path="options.yaml")
+    opt_data = system.read_yaml(file_path="options.yaml")
     sys_path = opt_data.get("wrapper")[1].get("system")
-    sys_data = read_yaml(file_path=sys_path)
+    sys_data = system.read_yaml(file_path=sys_path)
 
     lig_data = opt_data.get("wrapper")[2]["ligands"]
     smiles_col = lig_data[1].get("smiles_col")
@@ -83,10 +79,11 @@ if __name__ == "__main__":
     lig_df = read_csv(file_path=lig_data[0].get("lig_csv"),smiles_col=smiles_col,id_col=smiles_col)
     
     # run boltz
-    run_dir = set_dir(path=opt_data.get("wrapper")[0].get("run_dir"))
+    run_dir = helpers.set_dir(path=opt_data.get("wrapper")[0].get("run_dir"))
     run_boltz(
         run_dir,
         sys_data,
+        opt_data,
         smiles_col,
         id_col,
         lig_df,

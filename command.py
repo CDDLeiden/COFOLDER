@@ -2,16 +2,17 @@
 # command.
 
 import multiprocessing
+import os
 
-def set_command(yaml_path, i, row):
-    command = [
+def set_command(yaml_path, opt_data, i, row, run_dir, id_col):
+    cmd = [
         "boltz",
         "predict",
         yaml_path
     ]
 
     if i == 1:
-        command.extend([f"--use_msa_server"])
+        cmd.extend([f"--use_msa_server"])
 
     options = opt_data.get("options")
     for n, item in enumerate(options):
@@ -19,8 +20,8 @@ def set_command(yaml_path, i, row):
             value = str(value)
 
             if key == "out_dir":
-                command.extend([f"--out_dir"])
-                command.extend([os.path.join(run_dir, f'{i}_{row[id_col]}')])   
+                cmd.extend([f"--out_dir"])
+                cmd.extend([os.path.join(run_dir, f'{i}_{row[id_col]}')])   
                 continue     
             
             if key == "use_msa_server":
@@ -30,15 +31,15 @@ def set_command(yaml_path, i, row):
                 continue
 
             if value == "True":
-                command.extend([f"--{key}"])
+                cmd.extend([f"--{key}"])
                 continue
 
             if value == "multiprocessing.cpu_count()":
-                command.extend([f"--{key}"])
-                command.extend([str(multiprocessing.cpu_count())])
+                cmd.extend([f"--{key}"])
+                cmd.extend([str(multiprocessing.cpu_count())])
                 continue
             
-            command.extend([f"--{key}"])
-            command.extend([str(value)]) 
+            cmd.extend([f"--{key}"])
+            cmd.extend([str(value)]) 
 
-    return command
+    return cmd

@@ -1,6 +1,7 @@
 # Script containing general functions
 
 import logging
+import os
 
 def set_dir(path):
     if path:

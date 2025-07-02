@@ -23,7 +23,7 @@ def read_yaml(file_path):
 
     return None
 
-def set_yaml(out_dir, sys_data, i, row, msa_path):
+def set_yaml(out_dir, sys_data, i, row, id_col, msa_path, smiles_col):
     out = os.path.join(out_dir, f'{i}_{row[id_col]}.yaml')
     sys_data['sequences'][1]['ligand']['smiles'] = row[smiles_col]
     
