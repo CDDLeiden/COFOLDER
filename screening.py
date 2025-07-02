@@ -27,6 +27,7 @@ import logging
 import os
 import pandas as pd
 import subprocess
+import time
 
 import command
 import helpers
@@ -52,7 +53,8 @@ def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
    msa_path = ''
    for i, (row_idx, row) in enumerate(lig_df.iterrows(), start=1):  
         logging.info(f"({i}/{len(lig_df)}) {row[id_col]}: {row[smiles_col]}")
-        
+        start_time = time.time()
+
         out_dir = helpers.set_dir(path=os.path.join(run_dir, f'{i}_{row[id_col]}'))
         yaml_path, msa_path = system.set_yaml(out_dir, sys_data, i, row, id_col, msa_path, smiles_col)    
 
@@ -60,8 +62,8 @@ def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
         logging.info(f'running command: {" ".join(cmd)}')
 
         subprocess.run(cmd)
+        logging.info(" pred time--- %s seconds ---" % (time.time() - start_time))
         
-
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
