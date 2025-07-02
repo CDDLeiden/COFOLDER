@@ -1,4 +1,4 @@
-# boltz_wrapper
+# boltz_tools
 
 ## Installation
 Make sure to have an operational version of boltz working in your conda environment. 
