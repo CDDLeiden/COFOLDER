@@ -28,6 +28,8 @@ import os
 import pandas as pd
 import subprocess
 import time
+import pandas as pd
+import json
 
 import command
 import helpers
@@ -51,6 +53,8 @@ def read_csv(file_path, smiles_col, id_col):
 
 def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
    msa_path = ''
+   
+
    for i, (row_idx, row) in enumerate(lig_df.iterrows(), start=1):  
         logging.info(f"({i}/{len(lig_df)}) {row[id_col]}: {row[smiles_col]}")
         start_time = time.time()
@@ -62,8 +66,44 @@ def run_boltz(run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
         logging.info(f'running command: {" ".join(cmd)}')
 
         subprocess.run(cmd)
+
+        gather_metrics(run_dir, out_dir, i, row, id_col)
+        gather_structures()
+
         logging.info(" pred time--- %s seconds ---" % (time.time() - start_time))
         
+def gather_metrics(run_dir, out_dir, i, row, id_col):
+    # funtion for gathering confidence  and affinity metrics into csv
+    csv_file = os.path.join(run_dir, "output.csv")
+    
+    conf_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/confidence_{i}_{row[id_col]}_model_0.json')
+    aff_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/affinity_{i}_{row[id_col]}.json')
+    
+    with open(conf_path) as json_conf:
+        data_conf = json.load(json_conf)
+        df_conf = pd.json_normalize(data_conf)
+
+    if os.path.exists(aff_path):
+        with open(aff_path) as json_aff:
+            data_aff = json.load(json_aff)
+            df_aff = pd.json_normalize(data_aff)
+
+        df_new = pd.concat([df_aff, df_conf], axis=1)
+    else:
+        df_new = df_conf
+    
+    df_new.insert(0, 'id', f'{i}_{row[id_col]}')
+    
+    if not os.path.exists(csv_file):
+        df_new.to_csv(csv_file, index=False)
+    else:
+        df_new.to_csv(csv_file, mode='a', header=False, index=False)
+
+def gather_structures():
+    # function to gather cif or pdb files into single folder
+    pass
+
+
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
