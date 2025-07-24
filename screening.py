@@ -61,37 +61,49 @@ class Screen(object):
         # Read input files
         self.options = helpers.read_yaml(path=self.yaml_options)
         self.system = system.System(path=self.yaml_system)
-        self.data_csv = helpers.read_csv(file_path=self.csv,
+        self.ligands = helpers.read_csv(file_path=self.csv,
                                          columns=[self.col_smiles,self.col_id])
 
-        ## current place ##
+        self.logger.debug(f'self.options = {str(self.options)}')
+        self.logger.debug(f'self.system = {str(self.system)}')
+        self.logger.debug(f'self.ligands = {str(self.ligands)}')
 
-        lig_df = Screen.read_csv(file_path=lig_data[0].get("lig_csv"),smiles_col=smiles_col,id_col=smiles_col)
-    
-        # run boltz
-        run_dir = helpers.set_dir(path=opt_data.get("wrapper")[0].get("run_dir"))
-        
         Screen.run()
 
     def run(self):
-  
-
-
-
-
-
-
-    def run_boltz(self, run_dir, sys_data, opt_data, smiles_col, id_col, lig_df):
-    msa_path = ''
-    
-
-    for i, (row_idx, row) in enumerate(lig_df.iterrows(), start=1):  
-            self.logger.info(f"({i}/{len(lig_df)}) {row[id_col]}: {row[smiles_col]}")
+        for i, (row_idx, row) in enumerate(self.ligands.iterrows(), start=1):  
             start_time = time.time()
 
-            out_dir = helpers.set_dir(path=os.path.join(run_dir, f'{i}_{row[id_col]}'))
-            yaml_path, msa_path = system.set_yaml(out_dir, sys_data, i, row, id_col, msa_path, smiles_col)    
+            if self.col_id:
+                self.name = str(row[self.col_id])
+            else:
+                self.name = str(i)
 
+            self.smiles = row[self.col_smiles]
+
+            self.logger.debug(f'self.name = {str(self.name)}')
+            self.logger.debug(f'self.smiles = {str(self.smiles)}')
+
+            self.logger.info(f"({i}/{len(self.ligands)}) {self.name}: {self.smiles}")
+
+            self.out_dir = os.path.join(self.wrk_dir, self.name)
+            helpers.set_dir(path=self.out_dir)
+
+            if i == 1:
+                set_msa = True
+            else:
+
+            system.System.set_yaml(
+                out_dir=self.out_dir,
+                name=self.name,
+                smiles=self.smiles,
+                system=self.system,
+                variable=self.variable
+            )
+
+            path_system = system.System.get_path_msa()
+
+                
             cmd = command.set_command(yaml_path, opt_data, i, row, run_dir, id_col)       
             self.logger.info(f'running command: {" ".join(cmd)}')
 
@@ -101,6 +113,8 @@ class Screen(object):
             gather_structures(run_dir, out_dir, i, row, id_col)
 
             self.logger.info(" pred time--- %s seconds ---" % (time.time() - start_time))
+
+
             
     def gather_metrics(self, run_dir, out_dir, i, row, id_col):
         # funtion for gathering confidence  and affinity metrics into csv
