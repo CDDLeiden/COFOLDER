@@ -83,41 +83,43 @@ class Screen(object):
             start_time = time.time()
 
             name = str(row[self.col_id]) if self.col_id else str(i)
+            basename = f'{i}_{name}'
             smiles = row[self.col_smiles]
             self.logger.debug(f'self.name = {name}')
             self.logger.debug(f'self.smiles = {smiles}')
             self.logger.info(f"({i}/{len(self.ligands)}) {name}: {smiles}")
 
-            out_dir = os.path.join(self.wrk_dir, name)
+            out_dir = os.path.join(self.wrk_dir, basename)
             helpers.set_dir(path=out_dir)
 
             sys_data = self.system.data.copy()
             # For the first ligand, calculate MSA; for others, reuse
-            current_msa_path = None if i == 1 else msa_path
+            # current_msa_path = None if i == 1 else msa_path
             if i != 1 and (not msa_path or not os.path.exists(msa_path)):
                 self.logger.error(f"MSA path {msa_path} does not exist for ligand {name}. Cannot reuse MSA.")
                 raise FileNotFoundError(f"MSA path {msa_path} does not exist for ligand {name}. Cannot reuse MSA.")
-            out_yaml, new_msa_path = system.System.set_yaml(
+            yaml_path, msa_path = system.System.set_yaml(
                 out_dir=out_dir,
                 sys_data=sys_data,
                 i=i,
                 row=row,
                 id_col=self.col_id,
-                msa_path=current_msa_path,
+                msa_path=msa_path,
                 smiles_col=self.col_smiles
             )
-            # After first ligand, store and clean up MSA
-            if i == 1:
-                msa_path = new_msa_path
-                if msa_path and os.path.exists(msa_path):
-                    helpers.delete_last_line(msa_path)
 
-            cmd = command.set_command(out_yaml, self.options, i, row, out_dir, self.col_id)
+            cmd = command.set_command(yaml_path, self.options, i, row, out_dir, self.col_id)
             self.logger.info(f'running command: {" ".join(cmd)}')
             subprocess.run(cmd)
 
-            self.gather_metrics(out_dir, out_dir, i, row, self.col_id)
-            self.gather_structures(out_dir, out_dir, i, row, self.col_id)
+            # After first ligand, store and clean up MSA
+            if i == 1:
+                if msa_path and os.path.exists(msa_path):
+                    self.logger.info(f'Cleaning up MSA file: {msa_path}')
+                    helpers.delete_last_line(msa_path)
+
+            self.gather_metrics(self.wrk_dir, out_dir, i, row, self.col_id)
+            self.gather_structures(self.wrk_dir, out_dir, i, row, self.col_id)
 
             self.logger.info(" pred time--- %s seconds ---" % (time.time() - start_time))
 
@@ -125,10 +127,11 @@ class Screen(object):
 
     def gather_metrics(self, run_dir, out_dir, i, row, id_col):
         # function for gathering confidence and affinity metrics into csv
+        basename = f'{i}_{row[id_col]}'
         csv_file = os.path.join(run_dir, "output.csv")
 
-        conf_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/confidence_{i}_{row[id_col]}_model_0.json')
-        aff_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/affinity_{i}_{row[id_col]}.json')
+        conf_path = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/confidence_{basename}_model_0.json')
+        aff_path = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/affinity_{basename}.json')
 
         if not os.path.exists(conf_path):
             self.logger.warning(f"Missing confidence file: {conf_path}")
@@ -153,7 +156,7 @@ class Screen(object):
         else:
             df_new = df_conf
 
-        df_new.insert(0, 'id', f'{i}_{row[id_col]}')
+        df_new.insert(0, 'id', f'{basename}')
 
         if not os.path.exists(csv_file):
             df_new.to_csv(csv_file, index=False)
@@ -162,10 +165,11 @@ class Screen(object):
 
     def gather_structures(self, run_dir, out_dir, i , row, id_col):
         # function to gather cif or pdb files into single folder
+        basename = f'{i}_{row[id_col]}'
         target_dir = os.path.join(run_dir, "structures")
         os.makedirs(target_dir, exist_ok=True)
 
-        structure_dir = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/')
+        structure_dir = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/')
         if not os.path.exists(structure_dir):
             self.logger.warning(f"Missing structure directory: {structure_dir}")
             return
@@ -182,11 +186,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run virtual screening with Boltz.")
     parser.add_argument("options_path", type=str, help="Path to the options YAML file.")
     args = parser.parse_args()
+    options_path = args.options_path
 
     logger = logging.getLogger(__name__)
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-    opt_data = helpers.read_yaml(path=args.options_path)
+    opt_data = helpers.read_yaml(path=options_path)
     sys_path = opt_data.get("wrapper")[1].get("system")
     sys_data = helpers.read_yaml(path=sys_path)
 
@@ -199,7 +204,7 @@ if __name__ == "__main__":
     screen = Screen(
         wrk_dir=opt_data.get("wrapper")[0].get("run_dir"),
         yaml_system=sys_path,
-        yaml_options=args.options_path,
+        yaml_options=options_path,
         csv=lig_csv,
         variable=None,
         col_smiles=smiles_col,

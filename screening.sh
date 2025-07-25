@@ -26,7 +26,7 @@ if [[ -z "$RUN_DIR" ]]; then
     exit 2
 fi
 
-mkdir -p "$RUN_DIR"
+mkdir -p "${RUN_DIR}"
 LOGFILE="${RUN_DIR}/screening_run_$(date +%Y%m%d_%H%M%S).log"
 
 {

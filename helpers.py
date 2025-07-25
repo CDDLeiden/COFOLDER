@@ -10,7 +10,7 @@ def set_dir(path):
     if not (os.path.isdir(path)):
         os.makedirs(path)
         helpers_logger.info("Created working dir {0}".format(path))
-    os.chdir(path)
+    # os.chdir(path)
 
 def read_csv(path, columns):
     try:
