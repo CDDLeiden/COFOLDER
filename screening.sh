@@ -16,8 +16,8 @@ if [[ ! -f "$YAML_FILE" ]]; then
     exit 1
 fi
 
-# Extract run_dir from YAML (robustly finds - run_dir: under wrapper)
-RUN_DIR=$(awk '/wrapper:/,0' "$YAML_FILE" | grep '^- run_dir:' | head -1 | sed 's/^- run_dir:[[:space:]]*//;s/[\"\'']//g' | xargs)
+# Extract run_dir from YAML (robustly finds - run_dir: under wrapper, allowing for indentation)
+RUN_DIR=$(awk '/wrapper:/,0' "$YAML_FILE" | grep -m1 -E '^[[:space:]]*- run_dir:' | sed 's/^[[:space:]]*- run_dir:[[:space:]]*//;s/["\'']//g' | xargs)
 
 # Fallback if not found
 if [[ -z "$RUN_DIR" ]]; then
