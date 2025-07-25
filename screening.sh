@@ -2,13 +2,19 @@
 
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-    echo "Usage: $0 <yaml_file> <conda_env_name>"
+# Defaults
+DEFAULT_YAML="examples/vgfr2_options.yaml"
+DEFAULT_CONDA_ENV="boltz"
+
+YAML_FILE="${1:-$DEFAULT_YAML}"
+CONDA_ENV="${2:-$DEFAULT_CONDA_ENV}"
+
+if [[ ! -f "$YAML_FILE" ]]; then
+    echo "YAML file not found: $YAML_FILE"
+    echo "Usage: $0 [yaml_file] [conda_env_name]"
+    echo "Defaults: yaml_file=$DEFAULT_YAML, conda_env_name=$DEFAULT_CONDA_ENV"
     exit 1
 fi
-
-YAML_FILE="$1"
-CONDA_ENV="$2"
 
 # Extract run_dir from YAML (assumes run_dir is the first key under wrapper)
 RUN_DIR=$(awk '/wrapper:/ {getline; getline; gsub("- run_dir: ",""); print $0; exit}' "$YAML_FILE" | xargs)
