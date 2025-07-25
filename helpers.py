@@ -42,3 +42,11 @@ def read_yaml(path):
         logging.error(f"File not found: {path}")
     except yaml.YAMLError as e:
         logging.error(f"Error parsing YAML: {e}")
+
+def delete_last_line(file_path):
+    """Delete the last line from a file (in-place)."""
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+    if lines:
+        with open(file_path, 'w') as f:
+            f.writelines(lines[:-1])

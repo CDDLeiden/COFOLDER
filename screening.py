@@ -27,7 +27,7 @@ import os
 import pandas as pd
 import subprocess
 import time
-import pandas as pd
+
 import json
 import shutil
 
@@ -71,46 +71,43 @@ class Screen(object):
         Screen.run()
 
     def run(self):
+        msa_path = None
         for i, (row_idx, row) in enumerate(self.ligands.iterrows(), start=1):
             start_time = time.time()
 
-            if self.col_id:
-                self.name = str(row[self.col_id])
-            else:
-                self.name = str(i)
+            name = str(row[self.col_id]) if self.col_id else str(i)
+            smiles = row[self.col_smiles]
+            self.logger.debug(f'self.name = {name}')
+            self.logger.debug(f'self.smiles = {smiles}')
+            self.logger.info(f"({i}/{len(self.ligands)}) {name}: {smiles}")
 
-            self.smiles = row[self.col_smiles]
+            out_dir = os.path.join(self.wrk_dir, name)
+            helpers.set_dir(path=out_dir)
 
-            self.logger.debug(f'self.name = {str(self.name)}')
-            self.logger.debug(f'self.smiles = {str(self.smiles)}')
-
-            self.logger.info(f"({i}/{len(self.ligands)}) {self.name}: {self.smiles}")
-
-            self.out_dir = os.path.join(self.wrk_dir, self.name)
-            helpers.set_dir(path=self.out_dir)
-
-            if i == 1:
-                set_msa = True
-            else:
-
-            system.System.set_yaml(
-                out_dir=self.out_dir,
-                name=self.name,
-                smiles=self.smiles,
-                system=self.system,
-                variable=self.variable
+            sys_data = self.system.data.copy()
+            # For the first ligand, calculate MSA; for others, reuse
+            current_msa_path = None if i == 1 else msa_path
+            out_yaml, new_msa_path = system.System.set_yaml(
+                out_dir=out_dir,
+                sys_data=sys_data,
+                i=i,
+                row=row,
+                id_col=self.col_id,
+                msa_path=current_msa_path,
+                smiles_col=self.col_smiles
             )
+            # After first ligand, store and clean up MSA
+            if i == 1:
+                msa_path = new_msa_path
+                if msa_path and os.path.exists(msa_path):
+                    helpers.delete_last_line(msa_path)
 
-            path_system = system.System.get_path_msa()
-
-
-            cmd = command.set_command(yaml_path, opt_data, i, row, run_dir, id_col)
+            cmd = command.set_command(out_yaml, self.options, i, row, out_dir, self.col_id)
             self.logger.info(f'running command: {" ".join(cmd)}')
-
             subprocess.run(cmd)
 
-            gather_metrics(run_dir, out_dir, i, row, id_col)
-            gather_structures(run_dir, out_dir, i, row, id_col)
+            self.gather_metrics(out_dir, out_dir, i, row, self.col_id)
+            self.gather_structures(out_dir, out_dir, i, row, self.col_id)
 
             self.logger.info(" pred time--- %s seconds ---" % (time.time() - start_time))
 
