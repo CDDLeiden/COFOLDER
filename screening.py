@@ -94,6 +94,9 @@ class Screen(object):
             sys_data = self.system.data.copy()
             # For the first ligand, calculate MSA; for others, reuse
             current_msa_path = None if i == 1 else msa_path
+            if i != 1 and (not msa_path or not os.path.exists(msa_path)):
+                self.logger.error(f"MSA path {msa_path} does not exist for ligand {name}. Cannot reuse MSA.")
+                raise FileNotFoundError(f"MSA path {msa_path} does not exist for ligand {name}. Cannot reuse MSA.")
             out_yaml, new_msa_path = system.System.set_yaml(
                 out_dir=out_dir,
                 sys_data=sys_data,

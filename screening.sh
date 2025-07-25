@@ -17,7 +17,8 @@ if [[ ! -f "$YAML_FILE" ]]; then
 fi
 
 # Extract run_dir from YAML (robustly finds - run_dir: under wrapper, allowing for indentation)
-RUN_DIR=$(awk '/wrapper:/,0' "$YAML_FILE" | grep -m1 -E '^[[:space:]]*- run_dir:' | sed 's/^[[:space:]]*- run_dir:[[:space:]]*//;s/["\'']//g' | xargs)
+RUN_DIR=$(awk '/wrapper:/,0' "$YAML_FILE" | grep -m1 -E '^[[:space:]]*- run_dir:' | sed 's/^[[:space:]]*- run_dir:[[:space:]]*//;s/["\'']//g')
+RUN_DIR=$(echo "$RUN_DIR" | xargs)
 
 # Fallback if not found
 if [[ -z "$RUN_DIR" ]]; then
@@ -26,7 +27,7 @@ if [[ -z "$RUN_DIR" ]]; then
 fi
 
 mkdir -p "$RUN_DIR"
-LOGFILE="$RUN_DIR/screening_run_$(date +%Y%m%d_%H%M%S).log"
+LOGFILE="${RUN_DIR}/screening_run_$(date +%Y%m%d_%H%M%S).log"
 
 {
     echo "===== Screening Run Log ====="
