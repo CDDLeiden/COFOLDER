@@ -37,6 +37,8 @@ import system
 
 import logging
 
+import argparse
+
 class Screen(object):
     def __init__(self, *args, **kwargs):
         self.wrk_dir = kwargs.get("wrk_dir")
@@ -61,14 +63,19 @@ class Screen(object):
         # Read input files
         self.options = helpers.read_yaml(path=self.yaml_options)
         self.system = system.System(path=self.yaml_system)
-        self.ligands = helpers.read_csv(file_path=self.csv,
-                                         columns=[self.col_smiles,self.col_id])
+        self.ligands = helpers.read_csv(path=self.csv, columns=[self.col_smiles, self.col_id])
+
+        # Validate required columns in YAML and CSV
+        if not self.col_smiles or not self.col_id:
+            raise ValueError("Both col_smiles and col_id must be specified in the YAML file.")
+        if self.ligands is None or self.col_smiles not in self.ligands.columns or self.col_id not in self.ligands.columns:
+            raise ValueError(f"CSV file must contain columns: {self.col_smiles}, {self.col_id}")
 
         self.logger.debug(f'self.options = {str(self.options)}')
         self.logger.debug(f'self.system = {str(self.system)}')
         self.logger.debug(f'self.ligands = {str(self.ligands)}')
 
-        Screen.run()
+        self.run()
 
     def run(self):
         msa_path = None
@@ -114,22 +121,32 @@ class Screen(object):
 
 
     def gather_metrics(self, run_dir, out_dir, i, row, id_col):
-        # funtion for gathering confidence  and affinity metrics into csv
+        # function for gathering confidence and affinity metrics into csv
         csv_file = os.path.join(run_dir, "output.csv")
 
         conf_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/confidence_{i}_{row[id_col]}_model_0.json')
         aff_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/affinity_{i}_{row[id_col]}.json')
 
-        with open(conf_path) as json_conf:
-            data_conf = json.load(json_conf)
-            df_conf = pd.json_normalize(data_conf)
+        if not os.path.exists(conf_path):
+            self.logger.warning(f"Missing confidence file: {conf_path}")
+            return
+        try:
+            with open(conf_path) as json_conf:
+                data_conf = json.load(json_conf)
+                df_conf = pd.json_normalize(data_conf)
+        except Exception as e:
+            self.logger.error(f"Error reading confidence file {conf_path}: {e}")
+            return
 
         if os.path.exists(aff_path):
-            with open(aff_path) as json_aff:
-                data_aff = json.load(json_aff)
-                df_aff = pd.json_normalize(data_aff)
-
-            df_new = pd.concat([df_aff, df_conf], axis=1)
+            try:
+                with open(aff_path) as json_aff:
+                    data_aff = json.load(json_aff)
+                    df_aff = pd.json_normalize(data_aff)
+                df_new = pd.concat([df_aff, df_conf], axis=1)
+            except Exception as e:
+                self.logger.error(f"Error reading affinity file {aff_path}: {e}")
+                df_new = df_conf
         else:
             df_new = df_conf
 
@@ -145,12 +162,18 @@ class Screen(object):
         target_dir = os.path.join(run_dir, "structures")
         os.makedirs(target_dir, exist_ok=True)
 
-        stucture_dir = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/')
-        for file_name in os.listdir(stucture_dir):
+        structure_dir = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/')
+        if not os.path.exists(structure_dir):
+            self.logger.warning(f"Missing structure directory: {structure_dir}")
+            return
+        for file_name in os.listdir(structure_dir):
             if file_name.endswith(('.cif', '.pdb')):
-                stucture_path = os.path.join(stucture_dir, file_name)
+                structure_path = os.path.join(structure_dir, file_name)
                 target_path = os.path.join(target_dir, file_name)
-                shutil.copy2(stucture_path, target_path)
+                try:
+                    shutil.copy2(structure_path, target_path)
+                except Exception as e:
+                    self.logger.error(f"Error copying {structure_path} to {target_path}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run virtual screening with Boltz.")
@@ -160,24 +183,22 @@ if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-    # options_path = "options.yaml"
-    opt_data = system.read_yaml(file_path=args.options_path)
+    opt_data = helpers.read_yaml(path=args.options_path)
     sys_path = opt_data.get("wrapper")[1].get("system")
-    sys_data = system.read_yaml(file_path=sys_path)
+    sys_data = helpers.read_yaml(path=sys_path)
 
     lig_data = opt_data.get("wrapper")[2]["ligands"]
     smiles_col = lig_data[1].get("smiles_col")
-    id_col = id_col=lig_data[2].get("id_col")
-    
-    lig_df = Screen.read_csv(file_path=lig_data[0].get("lig_csv"),smiles_col=smiles_col,id_col=smiles_col)
-    
-    # run boltz
-    run_dir = helpers.set_dir(path=opt_data.get("wrapper")[0].get("run_dir"))
-    Screen.run_boltz(
-        run_dir,
-        sys_data,
-        opt_data,
-        smiles_col,
-        id_col,
-        lig_df,
+    id_col = lig_data[2].get("id_col")
+    lig_csv = lig_data[0].get("lig_csv")
+
+    # Create and run the Screen instance
+    screen = Screen(
+        wrk_dir=opt_data.get("wrapper")[0].get("run_dir"),
+        yaml_system=sys_path,
+        yaml_options=args.options_path,
+        csv=lig_csv,
+        variable=None,
+        col_smiles=smiles_col,
+        col_id=id_col
     )

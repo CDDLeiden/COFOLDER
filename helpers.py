@@ -12,7 +12,7 @@ def set_dir(path):
         helpers_logger.info("Created working dir {0}".format(path))
     os.chdir(path)
 
-def read_csv(self, path, columns):
+def read_csv(path, columns):
     try:
         df = pd.read_csv(path)  
         helpers_logger.info(f"Read {path} containing {len(df)} entries")
