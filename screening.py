@@ -43,7 +43,7 @@ class Screen(object):
         self.yaml_system = kwargs.get("yaml_system")
         self.yaml_options = kwargs.get("yaml_options")
         self.csv = kwargs.get("csv")
-        self.variable = kwargs.get("variable") 
+        self.variable = kwargs.get("variable")
         self.col_smiles = kwargs.get("col_smiles")
         self.col_id = kwargs.get("col_id")
 
@@ -57,7 +57,7 @@ class Screen(object):
         self.logger.debug(f'self.variable = {str(self.variable)}')
         self.logger.debug(f'self.col_smiles = {str(self.col_smiles)}')
         self.logger.debug(f'self.col_id = {str(self.col_id)}')
-         
+
         # Read input files
         self.options = helpers.read_yaml(path=self.yaml_options)
         self.system = system.System(path=self.yaml_system)
@@ -71,7 +71,7 @@ class Screen(object):
         Screen.run()
 
     def run(self):
-        for i, (row_idx, row) in enumerate(self.ligands.iterrows(), start=1):  
+        for i, (row_idx, row) in enumerate(self.ligands.iterrows(), start=1):
             start_time = time.time()
 
             if self.col_id:
@@ -103,8 +103,8 @@ class Screen(object):
 
             path_system = system.System.get_path_msa()
 
-                
-            cmd = command.set_command(yaml_path, opt_data, i, row, run_dir, id_col)       
+
+            cmd = command.set_command(yaml_path, opt_data, i, row, run_dir, id_col)
             self.logger.info(f'running command: {" ".join(cmd)}')
 
             subprocess.run(cmd)
@@ -115,14 +115,14 @@ class Screen(object):
             self.logger.info(" pred time--- %s seconds ---" % (time.time() - start_time))
 
 
-            
+
     def gather_metrics(self, run_dir, out_dir, i, row, id_col):
         # funtion for gathering confidence  and affinity metrics into csv
         csv_file = os.path.join(run_dir, "output.csv")
-        
+
         conf_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/confidence_{i}_{row[id_col]}_model_0.json')
         aff_path = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/affinity_{i}_{row[id_col]}.json')
-        
+
         with open(conf_path) as json_conf:
             data_conf = json.load(json_conf)
             df_conf = pd.json_normalize(data_conf)
@@ -135,9 +135,9 @@ class Screen(object):
             df_new = pd.concat([df_aff, df_conf], axis=1)
         else:
             df_new = df_conf
-        
+
         df_new.insert(0, 'id', f'{i}_{row[id_col]}')
-        
+
         if not os.path.exists(csv_file):
             df_new.to_csv(csv_file, index=False)
         else:
@@ -147,7 +147,7 @@ class Screen(object):
         # function to gather cif or pdb files into single folder
         target_dir = os.path.join(run_dir, "structures")
         os.makedirs(target_dir, exist_ok=True)
-        
+
         stucture_dir = os.path.join(out_dir, f'boltz_results_{i}_{row[id_col]}/predictions/{i}_{row[id_col]}/')
         for file_name in os.listdir(stucture_dir):
             if file_name.endswith(('.cif', '.pdb')):
@@ -156,9 +156,15 @@ class Screen(object):
                 shutil.copy2(stucture_path, target_path)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run virtual screening with Boltz.")
+    parser.add_argument("options_path", type=str, help="Path to the options YAML file.")
+    args = parser.parse_args()
 
-    # Load input files
-    opt_data = system.read_yaml(file_path="options.yaml")
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+    # options_path = "options.yaml"
+    opt_data = system.read_yaml(file_path=args.options_path)
     sys_path = opt_data.get("wrapper")[1].get("system")
     sys_data = system.read_yaml(file_path=sys_path)
 
