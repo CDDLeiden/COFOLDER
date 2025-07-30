@@ -18,6 +18,7 @@ class System(object):
     
 
 # to be ajusted
+    @staticmethod
     def set_yaml(out_dir, sys_data, i, row, id_col, msa_path, smiles_col):
         base_name = f'{i}_{row[id_col]}'
         yaml_path = os.path.join(out_dir, f'{base_name}.yaml')
