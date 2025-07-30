@@ -185,11 +185,13 @@ def prepare_affinity_dataframe(
 
 def convert_boltz_affinity_to_ic50(
     df: pd.DataFrame,
-    affinity_col: str = 'affinity_pred_value'
+    affinity_col: str = 'affinity_pred_value',
+    output_path: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol) from a DataFrame.
     Only works on numeric values (no censoring signs).
+    Optionally saves the updated DataFrame to a CSV file.
 
     Parameters
     ----------
@@ -197,6 +199,8 @@ def convert_boltz_affinity_to_ic50(
         DataFrame containing affinity predictions.
     affinity_col : str, default='affinity_pred_value'
         Column name for affinity predictions (must be numeric).
+    output_path : str, optional
+        If provided, save the updated DataFrame to this path as a CSV file.
 
     Returns
     -------
@@ -207,6 +211,8 @@ def convert_boltz_affinity_to_ic50(
     df['affinity_value'] = df[affinity_col].astype(float)
     df['IC50_uM'] = 10 ** df['affinity_value']
     df['pIC50_kcal_per_mol'] = (6 - df['affinity_value']) * 1.364
+    if output_path is not None:
+        df.to_csv(output_path, index=False)
     return df
 
 def calculate_affinity_correlations(
@@ -259,7 +265,7 @@ def plot_affinity_correlation(
     pred_col: str,
     exp_col: str,
     sample_size: Optional[int] = None,
-    censoring: str = 'remove',
+    censoring: str = 'strip',
     output_path: Optional[str] = None
 ):
     """
@@ -277,7 +283,7 @@ def plot_affinity_correlation(
         Column name for experimental (expected) affinity values.
     sample_size : int, optional
         If set, randomly sample this many rows for plotting.
-    censoring : {'remove', 'strip'}, default='remove'
+    censoring : {'remove', 'strip'}, default='strip'
         If 'remove', remove rows with censoring signs in either column.
         If 'strip', remove censoring signs and use the numeric part.
     output_path : str, optional
