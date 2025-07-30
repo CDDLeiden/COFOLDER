@@ -317,8 +317,8 @@ def plot_affinity_correlation(
     df = drop_and_log_nans(df, [pred_col, exp_col], context="correlation plotting")
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
-    x = df[pred_col]
-    y = df[exp_col]
+    x = df[exp_col]
+    y = df[pred_col]
     # Important to note here that we already sampled the DataFrame above,
     # so we don't need to sample again for metrics calculation.
     # Also censoring is handled in the prepare_affinity_dataframe function. so 'remove' or 'strip' is already applied.
@@ -336,7 +336,7 @@ def plot_affinity_correlation(
         f"MAE = {metrics['mae']:.3f}"
     ])
     g.ax_joint.legend([legend], loc='upper left', fontsize=9, frameon=True)
-    g.set_axis_labels('Predicted Affinity', 'Experimental Affinity')
+    g.set_axis_labels('Experimental Affinity', 'Predicted Affinity' )
     plt.tight_layout()
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
