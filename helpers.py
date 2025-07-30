@@ -5,6 +5,11 @@ import yaml
 import numpy as np
 from typing import Optional, List
 
+from scipy.stats import pearsonr, spearmanr, kendalltau
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 import logging
 helpers_logger = logging.getLogger('boltz-tools.helpers')
 
@@ -79,3 +84,99 @@ def convert_affinity_to_ic50(
     if output_path:
         df.to_csv(output_path, index=False)
     return df
+
+def calculate_affinity_correlations(
+    pred_csv: str,
+    exp_csv: str,
+    pred_id_col: str = 'id',
+    exp_id_col: str = 'id',
+    pred_affinity_col: str = 'affinity_pred_value',
+    exp_affinity_col: str = 'affinity_exp',
+    sample_size: Optional[int] = None
+) -> dict:
+    """
+    Calculate correlation metrics between predicted and experimental affinities.
+    Matches by extracting the numeric id after '_' in the id column.
+
+    Args:
+        pred_csv (str): Path to CSV with predictions.
+        exp_csv (str): Path to CSV with experimental values.
+        pred_id_col (str): Column name for prediction ids.
+        exp_id_col (str): Column name for experimental ids.
+        pred_affinity_col (str): Column name for predicted affinity.
+        exp_affinity_col (str): Column name for experimental affinity.
+        sample_size (Optional[int]): If set, randomly sample this many rows for metrics/plots.
+
+    Returns:
+        dict: Dictionary of correlation metrics.
+    """
+    pred_df = pd.read_csv(pred_csv)
+    exp_df = pd.read_csv(exp_csv)
+    # Extract numeric id after '_' for matching
+    pred_df['match_id'] = pred_df[pred_id_col].astype(str).str.split('_').str[-1]
+    exp_df['match_id'] = exp_df[exp_id_col].astype(str).str.split('_').str[-1]
+    merged = pd.merge(pred_df, exp_df, on='match_id', suffixes=('_pred', '_exp'))
+    if sample_size is not None and sample_size < len(merged):
+        merged = merged.sample(n=sample_size, random_state=42)
+    x = merged[pred_affinity_col]
+    y = merged[exp_affinity_col]
+    metrics = {
+        'r2': r2_score(y, x),
+        'pearson': pearsonr(x, y)[0],
+        'spearman': spearmanr(x, y)[0],
+        'kendall': kendalltau(x, y)[0],
+        'rmse': mean_squared_error(y, x, squared=False),
+        'mae': mean_absolute_error(y, x)
+    }
+    return metrics
+
+def plot_affinity_correlation(
+    pred_csv: str,
+    exp_csv: str,
+    pred_id_col: str = 'id',
+    exp_id_col: str = 'id',
+    pred_affinity_col: str = 'affinity_pred_value',
+    exp_affinity_col: str = 'affinity_exp',
+    sample_size: Optional[int] = None,
+    outdir: str = 'figures',
+    outname: str = 'affinity_correlation.png'
+):
+    """
+    Plot predicted vs experimental affinities with jointplot and correlation metrics.
+    Saves the plot to the specified directory.
+    """
+    pred_df = pd.read_csv(pred_csv)
+    exp_df = pd.read_csv(exp_csv)
+    pred_df['match_id'] = pred_df[pred_id_col].astype(str).str.split('_').str[-1]
+    exp_df['match_id'] = exp_df[exp_id_col].astype(str).str.split('_').str[-1]
+    merged = pd.merge(pred_df, exp_df, on='match_id', suffixes=('_pred', '_exp'))
+    if sample_size is not None and sample_size < len(merged):
+        merged = merged.sample(n=sample_size, random_state=42)
+    x = merged[pred_affinity_col]
+    y = merged[exp_affinity_col]
+    metrics = {
+        'r2': r2_score(y, x),
+        'pearson': pearsonr(x, y)[0],
+        'spearman': spearmanr(x, y)[0],
+        'kendall': kendalltau(x, y)[0],
+        'rmse': mean_squared_error(y, x, squared=False),
+        'mae': mean_absolute_error(y, x)
+    }
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+    plt.figure(figsize=(7,7))
+    g = sns.jointplot(x=x, y=y, kind='scatter', marginal_kws=dict(bins=30, fill=True))
+    g.ax_joint.plot([x.min(), x.max()], [x.min(), x.max()], 'r--', alpha=0.5)
+    legend = '\n'.join([
+        f"R² = {metrics['r2']:.3f}",
+        f"Pearson = {metrics['pearson']:.3f}",
+        f"Spearman = {metrics['spearman']:.3f}",
+        f"Kendall = {metrics['kendall']:.3f}",
+        f"RMSE = {metrics['rmse']:.3f}",
+        f"MAE = {metrics['mae']:.3f}"
+    ])
+    g.ax_joint.legend([legend], loc='upper left', fontsize=9, frameon=True)
+    g.set_axis_labels('Predicted Affinity', 'Experimental Affinity')
+    plt.tight_layout()
+    plt.savefig(os.path.join(outdir, outname))
+    plt.close()
