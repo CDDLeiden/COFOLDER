@@ -58,46 +58,100 @@ def delete_last_line(file_path):
         with open(file_path, 'w') as f:
             f.writelines(lines[:-1])
 
-def convert_affinity_to_ic50(
-    csv_path: str,
-    affinity_col: str = 'affinity_pred_value',
-    output_path: Optional[str] = None
+def parse_censored_affinity(
+    affinity_series: pd.Series,
+    keep_sign: bool = True
 ) -> pd.DataFrame:
     """
-    Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol).
-    Adds two new columns: 'IC50_uM' and 'pIC50_kcal_per_mol'.
-    Optionally saves the result to a new CSV file.
+    Parse affinity values with possible censoring signs (e.g., '>', '<', '>=', '<=') and separate them from the numeric part.
 
-    Args:
-        csv_path (str): Path to the input CSV file with affinity predictions.
-        affinity_col (str): Column name for affinity predictions (default: 'affinity_pred_value').
-        output_path (Optional[str]): If provided, save the new DataFrame to this path.
+    Parameters
+    ----------
+    affinity_series : pd.Series
+        Series of affinity values, possibly as strings with censoring signs.
+    keep_sign : bool, default=True
+        Whether to keep the censoring sign in the output DataFrame.
 
-    Returns:
-        pd.DataFrame: DataFrame with added columns.
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns 'affinity_value' (float) and 'affinity_sign' (str or None).
     """
-    df = pd.read_csv(csv_path)
-    if affinity_col not in df.columns:
-        raise ValueError(f"Column '{affinity_col}' not found in {csv_path}")
-    df['IC50_uM'] = 10 ** df[affinity_col]
-    df['pIC50_kcal_per_mol'] = (6 - df[affinity_col]) * 1.364
-    if output_path:
-        df.to_csv(output_path, index=False)
+    import re
+    signs = ['>=', '<=', '>', '<']
+    def split_sign(val):
+        if pd.isnull(val):
+            return (None, None)
+        val = str(val).strip()
+        for s in signs:
+            if val.startswith(s):
+                try:
+                    return (float(val[len(s):].strip()), s)
+                except ValueError:
+                    return (None, s)
+        try:
+            return (float(val), None)
+        except ValueError:
+            return (None, None)
+    parsed = affinity_series.apply(split_sign)
+    df = pd.DataFrame(parsed.tolist(), columns=['affinity_value', 'affinity_sign'])
+    if not keep_sign:
+        df['affinity_sign'] = None
+    return df
+
+def convert_affinity_to_ic50(
+    df: pd.DataFrame,
+    affinity_col: str = 'affinity_pred_value',
+    keep_sign: bool = True
+) -> pd.DataFrame:
+    """
+    Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol) from a DataFrame.
+    Handles censored values (e.g., '>', '<', '>=', '<=') and can optionally keep the sign in the output.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing affinity predictions.
+    affinity_col : str, default='affinity_pred_value'
+        Column name for affinity predictions (may contain censoring signs).
+    keep_sign : bool, default=True
+        Whether to keep the censoring sign in the output DataFrame.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with added columns: 'IC50_uM', 'pIC50_kcal_per_mol', and optionally 'affinity_sign'.
+    """
+    parsed = parse_censored_affinity(df[affinity_col], keep_sign=keep_sign)
+    df = df.copy()
+    df['affinity_value'] = parsed['affinity_value']
+    if keep_sign:
+        df['affinity_sign'] = parsed['affinity_sign']
+    df['IC50_uM'] = 10 ** df['affinity_value']
+    df['pIC50_kcal_per_mol'] = (6 - df['affinity_value']) * 1.364
+    if keep_sign:
+        # Merge sign as prefix if present
+        def prefix_sign(val, sign):
+            if pd.isnull(sign) or sign is None:
+                return str(val) if not pd.isnull(val) else None
+            return f"{sign}{val}" if not pd.isnull(val) else None
+        df['IC50_uM'] = [prefix_sign(v, s) for v, s in zip(df['IC50_uM'], df['affinity_sign'])]
+        df['pIC50_kcal_per_mol'] = [prefix_sign(v, s) for v, s in zip(df['pIC50_kcal_per_mol'], df['affinity_sign'])]
     return df
 
 def calculate_affinity_correlations(
-    csv_path: str,
+    df: pd.DataFrame,
     pred_col: str,
     exp_col: str,
     sample_size: Optional[int] = None
 ) -> dict:
     """
-    Calculate correlation metrics between predicted and experimental affinities from a single CSV file.
+    Calculate correlation metrics between predicted and experimental affinities from a DataFrame.
 
     Parameters
     ----------
-    csv_path : str
-        Path to the CSV file containing both predicted and experimental values.
+    df : pd.DataFrame
+        DataFrame containing both predicted and experimental values.
     pred_col : str
         Column name for predicted affinity values.
     exp_col : str
@@ -110,7 +164,6 @@ def calculate_affinity_correlations(
     dict
         Dictionary of correlation metrics (R², Pearson, Spearman, Kendall, RMSE, MAE).
     """
-    df = pd.read_csv(csv_path)
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
