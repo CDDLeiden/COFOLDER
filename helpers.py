@@ -215,6 +215,29 @@ def convert_boltz_affinity_to_ic50(
         df.to_csv(output_path, index=False)
     return df
 
+def drop_and_log_nans(df: pd.DataFrame, cols: list, context: str = "") -> pd.DataFrame:
+    """
+    Drop rows with NaN in any of the specified columns and log the number of dropped rows.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to process.
+    cols : list of str
+        Columns to check for NaN values.
+    context : str, optional
+        Context string to include in the log message.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with rows containing NaN in specified columns removed.
+    """
+    nan_count = df[cols].isna().any(axis=1).sum()
+    if nan_count > 0:
+        logging.info(f"Removed {nan_count} rows with NaN in {cols} {f'for {context}' if context else ''}.")
+    return df.dropna(subset=cols)
+
 def calculate_affinity_correlations(
     df: pd.DataFrame,
     pred_col: str,
@@ -246,6 +269,7 @@ def calculate_affinity_correlations(
         Dictionary of correlation metrics (R², Pearson, Spearman, Kendall, RMSE, MAE).
     """
     df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
+    df = drop_and_log_nans(df, [pred_col, exp_col], context="correlation calculation")
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
@@ -290,6 +314,7 @@ def plot_affinity_correlation(
         If provided, save the plot to this path. If None, display the plot interactively.
     """
     df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
+    df = drop_and_log_nans(df, [pred_col, exp_col], context="correlation plotting")
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
