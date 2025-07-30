@@ -2,6 +2,8 @@
 import os
 import pandas as pd
 import yaml
+import numpy as np
+from typing import Optional, List
 
 import logging
 helpers_logger = logging.getLogger('boltz-tools.helpers')
@@ -50,3 +52,30 @@ def delete_last_line(file_path):
     if lines:
         with open(file_path, 'w') as f:
             f.writelines(lines[:-1])
+
+def convert_affinity_to_ic50(
+    csv_path: str,
+    affinity_col: str = 'affinity_pred_value',
+    output_path: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol).
+    Adds two new columns: 'IC50_uM' and 'pIC50_kcal_per_mol'.
+    Optionally saves the result to a new CSV file.
+
+    Args:
+        csv_path (str): Path to the input CSV file with affinity predictions.
+        affinity_col (str): Column name for affinity predictions (default: 'affinity_pred_value').
+        output_path (Optional[str]): If provided, save the new DataFrame to this path.
+
+    Returns:
+        pd.DataFrame: DataFrame with added columns.
+    """
+    df = pd.read_csv(csv_path)
+    if affinity_col not in df.columns:
+        raise ValueError(f"Column '{affinity_col}' not found in {csv_path}")
+    df['IC50_uM'] = 10 ** df[affinity_col]
+    df['pIC50_kcal_per_mol'] = (6 - df[affinity_col]) * 1.364
+    if output_path:
+        df.to_csv(output_path, index=False)
+    return df
