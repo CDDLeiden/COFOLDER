@@ -48,6 +48,7 @@ class Screen(object):
         self.variable = kwargs.get("variable")
         self.col_smiles = kwargs.get("col_smiles")
         self.col_id = kwargs.get("col_id")
+        self.merge_columns = kwargs.get("merge_columns", [])
 
         self.logger = logging.getLogger('boltz-tools.screening.Screen')
 
@@ -63,13 +64,14 @@ class Screen(object):
         # Read input files
         self.options = helpers.read_yaml(path=self.yaml_options)
         self.system = system.System(path=self.yaml_system)
-        self.ligands = helpers.read_csv(path=self.csv, columns=[self.col_smiles, self.col_id])
+        self.ligands = helpers.read_csv(path=self.csv, columns=[self.col_smiles, self.col_id] + self.merge_columns)
 
         # Validate required columns in YAML and CSV
         if not self.col_smiles or not self.col_id:
             raise ValueError("Both col_smiles and col_id must be specified in the YAML file.")
-        if self.ligands is None or self.col_smiles not in self.ligands.columns or self.col_id not in self.ligands.columns:
-            raise ValueError(f"CSV file must contain columns: {self.col_smiles}, {self.col_id}")
+        missing_cols = [col for col in [self.col_smiles, self.col_id] + self.merge_columns if col not in self.ligands.columns]
+        if self.ligands is None or missing_cols:
+            raise ValueError(f"CSV file must contain columns: {', '.join(missing_cols)}")
 
         self.logger.debug(f'self.options = {str(self.options)}')
         self.logger.debug(f'self.system = {str(self.system)}')
@@ -156,12 +158,26 @@ class Screen(object):
         else:
             df_new = df_conf
 
-        df_new.insert(0, 'id', f'{basename}')
-
+        # Build a single output row as a dictionary
+        output_row = {
+            'index': i,
+            'id': row[id_col] if id_col in row else None,
+            'basename': basename,
+            'smiles': row[self.col_smiles] if self.col_smiles in row else None
+        }
+        # Add merge_columns, skipping any already added
+        for col in self.merge_columns:
+            if col not in output_row:
+                output_row[col] = row[col] if col in row else None
+        # Add all metrics columns from df_new (flattened)
+        for col in df_new.columns:
+            output_row[col] = df_new.iloc[0][col]
+        # Write to CSV
+        output_df = pd.DataFrame([output_row])
         if not os.path.exists(csv_file):
-            df_new.to_csv(csv_file, index=False)
+            output_df.to_csv(csv_file, index=False)
         else:
-            df_new.to_csv(csv_file, mode='a', header=False, index=False)
+            output_df.to_csv(csv_file, mode='a', header=False, index=False)
 
     def gather_structures(self, run_dir, out_dir, i , row, id_col):
         # function to gather cif or pdb files into single folder
@@ -185,8 +201,10 @@ class Screen(object):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run virtual screening with Boltz.")
     parser.add_argument("options_path", type=str, help="Path to the options YAML file.")
+    parser.add_argument("--merge_columns", type=str, default=None, help="Comma-separated list of columns from the input CSV to merge into the output CSV.")
     args = parser.parse_args()
     options_path = args.options_path
+    merge_columns = [col.strip() for col in args.merge_columns.split(",")] if args.merge_columns else []
 
     logger = logging.getLogger(__name__)
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -199,14 +217,16 @@ if __name__ == "__main__":
     smiles_col = lig_data[1].get("smiles_col")
     id_col = lig_data[2].get("id_col")
     lig_csv = lig_data[0].get("lig_csv")
+    run_dir = opt_data.get("wrapper")[0].get("run_dir")
 
     # Create and run the Screen instance
     screen = Screen(
-        wrk_dir=opt_data.get("wrapper")[0].get("run_dir"),
+        wrk_dir=run_dir,
         yaml_system=sys_path,
         yaml_options=options_path,
         csv=lig_csv,
         variable=None,
         col_smiles=smiles_col,
-        col_id=id_col
+        col_id=id_col,
+        merge_columns=merge_columns
     )
