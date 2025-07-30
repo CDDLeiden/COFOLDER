@@ -86,40 +86,35 @@ def convert_affinity_to_ic50(
     return df
 
 def calculate_affinity_correlations(
-    pred_csv: str,
-    exp_csv: str,
-    pred_id_col: str = 'id',
-    exp_id_col: str = 'id',
-    pred_affinity_col: str = 'affinity_pred_value',
-    exp_affinity_col: str = 'affinity_exp',
+    csv_path: str,
+    pred_col: str,
+    exp_col: str,
     sample_size: Optional[int] = None
 ) -> dict:
     """
-    Calculate correlation metrics between predicted and experimental affinities.
-    Matches by extracting the numeric id after '_' in the id column.
+    Calculate correlation metrics between predicted and experimental affinities from a single CSV file.
 
-    Args:
-        pred_csv (str): Path to CSV with predictions.
-        exp_csv (str): Path to CSV with experimental values.
-        pred_id_col (str): Column name for prediction ids.
-        exp_id_col (str): Column name for experimental ids.
-        pred_affinity_col (str): Column name for predicted affinity.
-        exp_affinity_col (str): Column name for experimental affinity.
-        sample_size (Optional[int]): If set, randomly sample this many rows for metrics/plots.
+    Parameters
+    ----------
+    csv_path : str
+        Path to the CSV file containing both predicted and experimental values.
+    pred_col : str
+        Column name for predicted affinity values.
+    exp_col : str
+        Column name for experimental (expected) affinity values.
+    sample_size : int, optional
+        If set, randomly sample this many rows for metrics/plots.
 
-    Returns:
-        dict: Dictionary of correlation metrics.
+    Returns
+    -------
+    dict
+        Dictionary of correlation metrics (R², Pearson, Spearman, Kendall, RMSE, MAE).
     """
-    pred_df = pd.read_csv(pred_csv)
-    exp_df = pd.read_csv(exp_csv)
-    # Extract numeric id after '_' for matching
-    pred_df['match_id'] = pred_df[pred_id_col].astype(str).str.split('_').str[-1]
-    exp_df['match_id'] = exp_df[exp_id_col].astype(str).str.split('_').str[-1]
-    merged = pd.merge(pred_df, exp_df, on='match_id', suffixes=('_pred', '_exp'))
-    if sample_size is not None and sample_size < len(merged):
-        merged = merged.sample(n=sample_size, random_state=42)
-    x = merged[pred_affinity_col]
-    y = merged[exp_affinity_col]
+    df = pd.read_csv(csv_path)
+    if sample_size is not None and sample_size < len(df):
+        df = df.sample(n=sample_size, random_state=42)
+    x = df[pred_col]
+    y = df[exp_col]
     metrics = {
         'r2': r2_score(y, x),
         'pearson': pearsonr(x, y)[0],
@@ -131,29 +126,37 @@ def calculate_affinity_correlations(
     return metrics
 
 def plot_affinity_correlation(
-    pred_csv: str,
-    exp_csv: str,
-    pred_id_col: str = 'id',
-    exp_id_col: str = 'id',
-    pred_affinity_col: str = 'affinity_pred_value',
-    exp_affinity_col: str = 'affinity_exp',
+    csv_path: str,
+    pred_col: str,
+    exp_col: str,
     sample_size: Optional[int] = None,
     outdir: str = 'figures',
     outname: str = 'affinity_correlation.png'
 ):
     """
-    Plot predicted vs experimental affinities with jointplot and correlation metrics.
+    Plot predicted vs experimental affinities from a single CSV file with jointplot and correlation metrics.
     Saves the plot to the specified directory.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the CSV file containing both predicted and experimental values.
+    pred_col : str
+        Column name for predicted affinity values.
+    exp_col : str
+        Column name for experimental (expected) affinity values.
+    sample_size : int, optional
+        If set, randomly sample this many rows for plotting.
+    outdir : str, default='figures'
+        Directory to save the plot.
+    outname : str, default='affinity_correlation.png'
+        Filename for the saved plot.
     """
-    pred_df = pd.read_csv(pred_csv)
-    exp_df = pd.read_csv(exp_csv)
-    pred_df['match_id'] = pred_df[pred_id_col].astype(str).str.split('_').str[-1]
-    exp_df['match_id'] = exp_df[exp_id_col].astype(str).str.split('_').str[-1]
-    merged = pd.merge(pred_df, exp_df, on='match_id', suffixes=('_pred', '_exp'))
-    if sample_size is not None and sample_size < len(merged):
-        merged = merged.sample(n=sample_size, random_state=42)
-    x = merged[pred_affinity_col]
-    y = merged[exp_affinity_col]
+    df = pd.read_csv(csv_path)
+    if sample_size is not None and sample_size < len(df):
+        df = df.sample(n=sample_size, random_state=42)
+    x = df[pred_col]
+    y = df[exp_col]
     metrics = {
         'r2': r2_score(y, x),
         'pearson': pearsonr(x, y)[0],
