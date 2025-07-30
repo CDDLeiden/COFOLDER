@@ -6,7 +6,7 @@ import numpy as np
 from typing import Optional, List
 
 from scipy.stats import pearsonr, spearmanr, kendalltau
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, root_mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -275,12 +275,12 @@ def calculate_affinity_correlations(
     x = df[pred_col]
     y = df[exp_col]
     metrics = {
-        'r2': r2_score(y, x),
-        'pearson': pearsonr(x, y)[0],
-        'spearman': spearmanr(x, y)[0],
-        'kendall': kendalltau(x, y)[0],
-        'rmse': mean_squared_error(y, x, squared=False),
-        'mae': mean_absolute_error(y, x)
+        'r2': float(r2_score(y, x)),
+        'pearson': float(pearsonr(x, y)[0]),
+        'spearman': float(spearmanr(x, y)[0]),
+        'kendall': float(kendalltau(x, y)[0]),
+        'rmse': float(root_mean_squared_error(y, x)),
+        'mae': float(mean_absolute_error(y, x))
     }
     return metrics
 
