@@ -213,10 +213,12 @@ def calculate_affinity_correlations(
     df: pd.DataFrame,
     pred_col: str,
     exp_col: str,
-    sample_size: Optional[int] = None
+    sample_size: Optional[int] = None,
+    censoring: str = 'strip'  # options: 'remove', 'strip'
 ) -> dict:
     """
     Calculate correlation metrics between predicted and experimental affinities from a DataFrame.
+    Handles censoring signs according to the 'censoring' argument.
 
     Parameters
     ----------
@@ -228,12 +230,16 @@ def calculate_affinity_correlations(
         Column name for experimental (expected) affinity values.
     sample_size : int, optional
         If set, randomly sample this many rows for metrics/plots.
+    censoring : {'remove', 'strip'}, default='strip'
+        If 'remove', remove rows with censoring signs in either column.
+        If 'strip', remove censoring signs and use the numeric part.
 
     Returns
     -------
     dict
         Dictionary of correlation metrics (R², Pearson, Spearman, Kendall, RMSE, MAE).
     """
+    df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
@@ -249,47 +255,44 @@ def calculate_affinity_correlations(
     return metrics
 
 def plot_affinity_correlation(
-    csv_path: str,
+    df: pd.DataFrame,
     pred_col: str,
     exp_col: str,
     sample_size: Optional[int] = None,
-    outdir: str = 'figures',
-    outname: str = 'affinity_correlation.png'
+    censoring: str = 'remove',
+    output_path: Optional[str] = None
 ):
     """
-    Plot predicted vs experimental affinities from a single CSV file with jointplot and correlation metrics.
-    Saves the plot to the specified directory.
+    Plot predicted vs experimental affinities from a DataFrame with jointplot and correlation metrics.
+    Handles censoring signs according to the 'censoring' argument.
+    Saves the plot to the specified output_path or displays it if output_path is None.
 
     Parameters
     ----------
-    csv_path : str
-        Path to the CSV file containing both predicted and experimental values.
+    df : pd.DataFrame
+        DataFrame containing both predicted and experimental values.
     pred_col : str
         Column name for predicted affinity values.
     exp_col : str
         Column name for experimental (expected) affinity values.
     sample_size : int, optional
         If set, randomly sample this many rows for plotting.
-    outdir : str, default='figures'
-        Directory to save the plot.
-    outname : str, default='affinity_correlation.png'
-        Filename for the saved plot.
+    censoring : {'remove', 'strip'}, default='remove'
+        If 'remove', remove rows with censoring signs in either column.
+        If 'strip', remove censoring signs and use the numeric part.
+    output_path : str, optional
+        If provided, save the plot to this path. If None, display the plot interactively.
     """
-    df = pd.read_csv(csv_path)
+    df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
     y = df[exp_col]
-    metrics = {
-        'r2': r2_score(y, x),
-        'pearson': pearsonr(x, y)[0],
-        'spearman': spearmanr(x, y)[0],
-        'kendall': kendalltau(x, y)[0],
-        'rmse': mean_squared_error(y, x, squared=False),
-        'mae': mean_absolute_error(y, x)
-    }
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
+    # Important to note here that we already sampled the DataFrame above,
+    # so we don't need to sample again for metrics calculation.
+    # Also censoring is handled in the prepare_affinity_dataframe function. so 'remove' or 'strip' is already applied.
+    # And there is no need to pass
+    metrics = calculate_affinity_correlations(df, pred_col, exp_col, sample_size=None)
     plt.figure(figsize=(7,7))
     g = sns.jointplot(x=x, y=y, kind='scatter', marginal_kws=dict(bins=30, fill=True))
     g.ax_joint.plot([x.min(), x.max()], [x.min(), x.max()], 'r--', alpha=0.5)
@@ -304,5 +307,9 @@ def plot_affinity_correlation(
     g.ax_joint.legend([legend], loc='upper left', fontsize=9, frameon=True)
     g.set_axis_labels('Predicted Affinity', 'Experimental Affinity')
     plt.tight_layout()
-    plt.savefig(os.path.join(outdir, outname))
-    plt.close()
+    if output_path:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        plt.savefig(output_path)
+        plt.close()
+    else:
+        plt.show()
