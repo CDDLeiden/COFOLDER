@@ -99,44 +99,114 @@ def parse_censored_affinity(
         df['affinity_sign'] = None
     return df
 
-def convert_affinity_to_ic50(
+def remove_censored_affinity(
     df: pd.DataFrame,
-    affinity_col: str = 'affinity_pred_value',
-    keep_sign: bool = True
+    cols: list
+) -> pd.DataFrame:
+    """
+    Remove rows where any of the specified columns contain censoring signs (>, <, >=, <=).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to filter.
+    cols : list of str
+        List of column names to check for censoring signs.
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered DataFrame with only rows where all specified columns are numeric.
+    """
+    import re
+    censor_pattern = re.compile(r'^(>=|<=|>|<)')
+    mask = pd.Series([True] * len(df))
+    for col in cols:
+        mask &= ~df[col].astype(str).str.strip().str.match(censor_pattern)
+    return df[mask].copy()
+
+def strip_censoring_signs(
+    df: pd.DataFrame,
+    cols: list
+) -> pd.DataFrame:
+    """
+    Remove censoring signs (>, <, >=, <=) from the start of values in specified columns, converting them to floats.
+    Non-numeric values after stripping will be set to NaN.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to process.
+    cols : list of str
+        List of column names to strip censoring signs from.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with censoring signs removed and values converted to float in specified columns.
+    """
+    import re
+    df = df.copy()
+    censor_pattern = re.compile(r'^(>=|<=|>|<)')
+    for col in cols:
+        df[col] = df[col].astype(str).str.strip().str.replace(censor_pattern, '', regex=True)
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
+def prepare_affinity_dataframe(
+    df: pd.DataFrame,
+    cols: list,
+    censoring: str = 'remove'  # options: 'remove', 'strip'
+) -> pd.DataFrame:
+    """
+    Prepare a DataFrame for affinity correlation/plotting by handling censoring signs.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame to process.
+    cols : list of str
+        List of column names to check/clean for censoring signs.
+    censoring : {'remove', 'strip'}, default='remove'
+        If 'remove', remove rows with censoring signs in any of the columns.
+        If 'strip', remove censoring signs and use the numeric part.
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned DataFrame ready for numeric analysis.
+    """
+    if censoring == 'remove':
+        return remove_censored_affinity(df, cols)
+    elif censoring == 'strip':
+        return strip_censoring_signs(df, cols)
+    else:
+        raise ValueError("censoring must be 'remove' or 'strip'")
+
+def convert_boltz_affinity_to_ic50(
+    df: pd.DataFrame,
+    affinity_col: str = 'affinity_pred_value'
 ) -> pd.DataFrame:
     """
     Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol) from a DataFrame.
-    Handles censored values (e.g., '>', '<', '>=', '<=') and can optionally keep the sign in the output.
+    Only works on numeric values (no censoring signs).
 
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame containing affinity predictions.
     affinity_col : str, default='affinity_pred_value'
-        Column name for affinity predictions (may contain censoring signs).
-    keep_sign : bool, default=True
-        Whether to keep the censoring sign in the output DataFrame.
+        Column name for affinity predictions (must be numeric).
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with added columns: 'IC50_uM', 'pIC50_kcal_per_mol', and optionally 'affinity_sign'.
+        DataFrame with added columns: 'IC50_uM', 'pIC50_kcal_per_mol'.
     """
-    parsed = parse_censored_affinity(df[affinity_col], keep_sign=keep_sign)
     df = df.copy()
-    df['affinity_value'] = parsed['affinity_value']
-    if keep_sign:
-        df['affinity_sign'] = parsed['affinity_sign']
+    df['affinity_value'] = df[affinity_col].astype(float)
     df['IC50_uM'] = 10 ** df['affinity_value']
     df['pIC50_kcal_per_mol'] = (6 - df['affinity_value']) * 1.364
-    if keep_sign:
-        # Merge sign as prefix if present
-        def prefix_sign(val, sign):
-            if pd.isnull(sign) or sign is None:
-                return str(val) if not pd.isnull(val) else None
-            return f"{sign}{val}" if not pd.isnull(val) else None
-        df['IC50_uM'] = [prefix_sign(v, s) for v, s in zip(df['IC50_uM'], df['affinity_sign'])]
-        df['pIC50_kcal_per_mol'] = [prefix_sign(v, s) for v, s in zip(df['pIC50_kcal_per_mol'], df['affinity_sign'])]
     return df
 
 def calculate_affinity_correlations(
