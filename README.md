@@ -1,5 +1,14 @@
 # boltz_wrapper
 
+# 🚨 **TEMP DEVELOPMENT FREEZE** 🚨
+
+**⛔ Do not make any changes to this repository until this notice is removed.**
+
+I'm working on a **major architecture overhaul** to enablele easy simultaneaus contibutions and packaging.  
+Any commits during this period may cause conflicts or break restructuring work.
+
+**📅 Estimated end of freeze:** **Next Monday: 18th August**
+
 ## Installation
 Make sure to have an operational version of boltz working in your conda environment. 
 pip install boltz=2.0.3
@@ -77,4 +86,5 @@ Input:
   - YAML option file containing Boltz parameters
 Output: 
   - RMSD co-folded protein to reference protein
+
   - RMSD co-folded ligand to reference ligand
