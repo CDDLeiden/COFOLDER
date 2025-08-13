@@ -1,6 +1,7 @@
 # boltz_tools
 
 ## Package Structure
+```
 boltz_tools/
 │
 ├── __init__.py
@@ -27,6 +28,7 @@ boltz_tools/
 │
 tests/
 pyproject.toml
+```
 
 ## Installation
 ```
