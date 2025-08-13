@@ -49,6 +49,22 @@ Output:
   - output affinity (affinity_pred_value, affinity_probability_binary, ...)
   - RMSD of diffusion samples
 
+### Usage: Merging Additional Columns from Input CSV to Output CSV
+You can specify extra columns from your input CSV to be included in the output CSV using the `--merge_columns` argument:
+
+```bash
+python screening.py options.yaml --merge_columns "column1,column2,extra_info"
+```
+This will ensure that `column1`, `column2`, and `extra_info` from your input CSV are present in the output CSV, in addition to the default columns.
+
+#### Output CSV Columns
+The output CSV will always include the following columns at the front:
+- `index`: Row number in the input CSV (starting from 1)
+- `id`: Value from your specified ID column
+- `basename`: Unique basename for each row
+- `smiles`: Value from your specified SMILES column
+- Any columns specified in `--merge_columns`
+
 ## oracle.py - NON-OPERATIONAL
 Script for running Boltz as an oracle function.
 

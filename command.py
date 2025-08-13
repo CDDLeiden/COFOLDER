@@ -20,8 +20,8 @@ def set_command(yaml_path, opt_data, i, row, run_dir, id_col):
             value = str(value)
 
             if key == "out_dir":
-                cmd.extend([f"--out_dir"])
-                cmd.extend([os.path.join(run_dir, f'{i}_{row[id_col]}')])   
+                cmd.extend([f"--out_dir", run_dir])
+                # cmd.extend([os.path.join(run_dir, f'{i}_{row[id_col]}')])
                 continue     
             
             if key == "use_msa_server":
