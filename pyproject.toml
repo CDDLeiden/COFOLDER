@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boltz-tools"
+version = "0.0.1"
+description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [
+  {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
+]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "boltz[cuda]"
+]
+
+[project.optional-dependencies]
+test = [
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["boltz-tools*"]

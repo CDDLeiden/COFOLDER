@@ -1,13 +1,42 @@
 # boltz_tools
 
+## Package Structure
+boltz_tools/
+│
+├── __init__.py
+├── __main__.py
+├── cli.py                     # Root CLI
+│
+├── commands/                  # Subcommands
+│   ├── __init__.py
+│   ├── predict.py
+│   ├── validate.py
+│   ├── screen.py
+│   └── oracle.py
+│
+├── helpers/                   # General utilities
+│   ├── __init__.py
+│   ├── command.py
+│   ├── helpers.py
+│   └── system.py
+│
+├── analytics/                 # Data analysis utilities
+│   ├── __init__.py
+│   ├── stats.py
+│   └── plotting.py
+│
+tests/
+pyproject.toml
+
 ## Installation
-Make sure to have an operational version of boltz working in your conda environment. 
-pip install boltz=2.0.3
+```
+# Clone repository
+git clone https://github.com/rlvandenbroek/boltz-tools.git
 
-You can check if the istall is functional using the following command:
-boltz predict --help
-
-Note, if you have not downloaded the cache yet, the first run will download this, which may take a few hours.
+# Install package
+cd boltz-tools
+pip install -e .
+```
 
 ## How to run
 from boltz_wrapper/templates copy options.yaml into your cwd (TODO: make this adjustable when calling the wrapper).
