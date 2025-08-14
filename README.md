@@ -1,4 +1,4 @@
-# boltz_tools
+# boltz-tools
 
 ## Introduction 
 Boltz Tools is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
@@ -157,3 +157,4 @@ Input:
 Output: 
   - RMSD co-folded protein to reference protein
   - RMSD co-folded ligand to reference ligand
+
