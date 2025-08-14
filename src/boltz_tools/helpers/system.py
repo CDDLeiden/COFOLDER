@@ -3,7 +3,7 @@
 import os
 import yaml
 
-import helpers
+from ..helpers import utils
 
 import logging
 helpers_logger = logging.getLogger('boltz-tools.helpers')
@@ -14,7 +14,7 @@ class System(object):
 
         self.logger = logging.getLogger('boltz-tools.system.System')
 
-        self.data = helpers.read_yaml(path=self.path)
+        self.data = utils.read_yaml(path=self.path)
     
 
 # to be ajusted

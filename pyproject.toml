@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boltz-tools"
-version = "0.0.1"
+version = "0.0.0-dev"
 description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
@@ -12,12 +12,17 @@ authors = [
 ]
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "boltz[cuda]"
+    "boltz[cuda]",
+    "matplotlib",
+    "seaborn"
 ]
 
 [project.optional-dependencies]
 test = [
 ]
+
+[project.scripts]
+boltz-tools = "boltz_tools.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

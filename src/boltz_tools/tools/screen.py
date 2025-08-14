@@ -1,43 +1,104 @@
-# Script for performing virtual screening using Boltz.
-
-# Input: 
-#   - [OPTIONAL] SMILES or FASTA sequence to inject into YAML system
-#   - [OPTIONAL] CSV file containing SMILES or FASTA sequences to inject into YAML system
-#   - [OPTIONAL] SMILES column when iterating through CSV file
-#   - [OPTIONAL] ID column when iterating through CSV file (if not specified, index will be used)
-#   - YAML system file containing: 
-#       - FASTA sequence of protein(s)
-#       - [OPTIONAL] Co-factors
-#       - [OPTIONAL] Boltz Constraints and/or Templates
-# Output:
-#   - output confidence metric (confidence_score, ptm, ...)    
-#   - output affinity (affinity_pred_value, affinity_probability_binary, ...)
-#   - RMSD of diffusion samples
-
-# This script should (co-)fold a protein, protein-ligand complex or a virtual screening (when provided)
-# with an CSV file. Results should be gathered into a singlular output file, and structures should be 
-# copied to a single folder.
-
-# EXTRA IDEAS:
-#   - Toggle saving for saving either all data, only structures and output file, OR only output file
-#   - Allow for Grid search of Boltz parameters, co-factors and Boltz Constraints/Templates
-#   - Add IFP profiling for ligands
-
 import os
 import pandas as pd
 import subprocess
 import time
-
 import json
 import shutil
-
-import command
-import helpers
-import system
-
 import logging
 
-import argparse
+from .. import helpers
+from ..helpers import command, system, utils
+
+def add_arguments(parser):
+    """Add screen-specific CLI arguments."""
+    parser.add_argument('-w', '--wrk_dir',
+                        dest='wrk_dir',
+                        help='Working dir if different from cwd.',
+                        default=os.getcwd())
+
+    parser.add_argument('-y', '--yaml_system',
+                        dest='yaml_system',
+                        help='Path to system YAML file.')
+
+    parser.add_argument('-b', '--yaml_boltz',
+                        dest='yaml_boltz',
+                        help='Path to boltz options YAML file.')
+
+    parser.add_argument('-c', '--csv',
+                        dest='csv',
+                        help='Path to ligands CSV file')
+    
+    parser.add_argument('-v', '--variable',
+                        dest='variable',
+                        help='Location to inject variable into YAML system',
+                        default='INJECT')
+    
+    parser.add_argument('--col_smiles',
+                        dest='col_smiles',
+                        help='Column containing SMILES molecule.')
+    
+    parser.add_argument('--col_id',
+                        dest='col_id',
+                        help='Column containing ID molecule',
+                        default=None)
+    
+    parser.add_argument('--merge_columns',
+                        type=str,
+                        default=None,
+                        help='Comma-separated list of CSV columns to merge into output.')
+    
+    parser.add_argument('-d', '--debug',
+                    action='store_true',
+                    help='Enable debug logging')
+
+def main(args):
+    """Run the virtual screening tool."""
+    # Setup logging before running the tool
+    logger = logging.getLogger('boltz-tools')
+    initiate_logger(logger, debug=args.debug)
+
+    logger.info("Boltz-tools started.")
+    utils.set_dir(args.wrk_dir)
+
+    
+    merge_columns = [col.strip() for col in args.merge_columns.split(",")] if args.merge_columns else []
+
+    screen = Screen(
+        wrk_dir=args.wrk_dir,
+        yaml_system=args.yaml_system,
+        yaml_options=args.yaml_boltz,
+        csv=args.csv,
+        variable=args.variable,
+        col_smiles=args.col_smiles,
+        col_id=args.col_id,
+        merge_columns=merge_columns
+    )
+    screen.run()
+
+def initiate_logger(logger, debug):
+    log_file = 'boltz-tools.log'
+    with open(log_file, 'w+'):
+        pass
+    fh = logging.FileHandler(log_file)
+
+    if debug:
+        logger.setLevel(logging.DEBUG)
+        fh.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+        fh.setLevel(logging.INFO)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.WARNING)
+
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d,%H:%M:%S')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+
+    logger.addHandler(fh)
+    logger.addHandler(ch)
 
 class Screen(object):
     def __init__(self, *args, **kwargs):
@@ -197,36 +258,3 @@ class Screen(object):
                     shutil.copy2(structure_path, target_path)
                 except Exception as e:
                     self.logger.error(f"Error copying {structure_path} to {target_path}: {e}")
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run virtual screening with Boltz.")
-    parser.add_argument("options_path", type=str, help="Path to the options YAML file.")
-    parser.add_argument("--merge_columns", type=str, default=None, help="Comma-separated list of columns from the input CSV to merge into the output CSV.")
-    args = parser.parse_args()
-    options_path = args.options_path
-    merge_columns = [col.strip() for col in args.merge_columns.split(",")] if args.merge_columns else []
-
-    logger = logging.getLogger(__name__)
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-
-    opt_data = helpers.read_yaml(path=options_path)
-    sys_path = opt_data.get("wrapper")[1].get("system")
-    sys_data = helpers.read_yaml(path=sys_path)
-
-    lig_data = opt_data.get("wrapper")[2]["ligands"]
-    smiles_col = lig_data[1].get("smiles_col")
-    id_col = lig_data[2].get("id_col")
-    lig_csv = lig_data[0].get("lig_csv")
-    run_dir = opt_data.get("wrapper")[0].get("run_dir")
-
-    # Create and run the Screen instance
-    screen = Screen(
-        wrk_dir=run_dir,
-        yaml_system=sys_path,
-        yaml_options=options_path,
-        csv=lig_csv,
-        variable=None,
-        col_smiles=smiles_col,
-        col_id=id_col,
-        merge_columns=merge_columns
-    )

@@ -1,15 +1,15 @@
 # boltz_tools
 
 ## Introduction 
-Collection of helpful tools for performing various co-folding tasks using Boltz.
+Boltz Tools is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
 
 ## Installation
-
 Install directly from GitHub for newest updates:
 ```
 git clone https://github.com/rlvandenbroek/boltz-tools.git
 cd boltz-tools; pip install -e .
 ```
+
 ## Contributing
 1. Create a feature branch 
 2. Make your changes
@@ -49,6 +49,25 @@ README.md
 pyprject.toml
 ```
 
+## Usage
+The main command is `boltz-tools`, which supports several subcommands:
+```
+boltz-tools [-h] [-v] {predict,screen,oracle,validate}
+```
+
+### Subcommands
+- **predict**: Co-fold a single system using Boltz.  
+- **screen**: Co-fold a library using Boltz for virtual screening.  
+- **oracle**: Use Boltz as an oracle function for single SMILES predictions.  
+- **validate**: Validate Boltz system configuration.
+
+Use the -h flag with any command to see detailed usage:
+```
+boltz-tools -h
+boltz-tools screen -h
+```
+
+# Remove below when tutorials are operational
 ## How to run
 from boltz_wrapper/templates copy options.yaml into your cwd (TODO: make this adjustable when calling the wrapper).
 In options.yaml, specify wrapper options.
