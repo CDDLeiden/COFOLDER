@@ -133,9 +133,13 @@ build/
 dist/
 
 # Temporary files
+tmp/
 *.tmp
 *.temp
 *.log
+
+# Cache files
+cache/
 
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/

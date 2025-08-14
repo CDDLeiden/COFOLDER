@@ -14,8 +14,9 @@ cd boltz-tools; pip install -e .
 1. Create a feature branch 
 2. Make your changes
 3. Add tests for new functionality -- (applicable when tests are in place)
-4. Ensure all tests pass -- (applicable when tests are in place)          
-5. Submit a pull request 
+4. Ensure all tests pass -- (applicable when tests are in place)    
+5. Include new features in tutorials      
+6. Submit a pull request 
 
 ## Package Structure
 ```
