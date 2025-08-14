@@ -1,5 +1,16 @@
 # boltz_tools
 
+## Introduction 
+Collection of helpful tools for performing various co-folding tasks using Boltz.
+
+## Installation
+
+Install directly from GitHub for newest updates:
+```
+git clone https://github.com/rlvandenbroek/boltz-tools.git
+cd boltz-tools; pip install -e .
+```
+
 ## Package Structure
 ```
 boltz_tools/
@@ -8,7 +19,7 @@ boltz_tools/
 ├── __main__.py
 ├── cli.py                     # Root CLI
 │
-├── commands/                  # Subcommands
+├── tools/                     # Tools / subcommands
 │   ├── __init__.py
 │   ├── predict.py
 │   ├── validate.py
@@ -28,16 +39,6 @@ boltz_tools/
 │
 tests/
 pyproject.toml
-```
-
-## Installation
-```
-# Clone repository
-git clone https://github.com/rlvandenbroek/boltz-tools.git
-
-# Install package
-cd boltz-tools
-pip install -e .
 ```
 
 ## How to run
