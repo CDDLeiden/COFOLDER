@@ -10,35 +10,43 @@ Install directly from GitHub for newest updates:
 git clone https://github.com/rlvandenbroek/boltz-tools.git
 cd boltz-tools; pip install -e .
 ```
+## Contributing
+1. Create a feature branch 
+2. Make your changes
+3. Add tests for new functionality -- (applicable when tests are in place)
+4. Ensure all tests pass -- (applicable when tests are in place)          
+5. Submit a pull request 
 
 ## Package Structure
 ```
-boltz_tools/
-│
-├── __init__.py
-├── __main__.py
-├── cli.py                     # Root CLI
-│
-├── tools/                     # Tools / subcommands
-│   ├── __init__.py
-│   ├── predict.py
-│   ├── validate.py
-│   ├── screen.py
-│   └── oracle.py
-│
-├── helpers/                   # General utilities
-│   ├── __init__.py
-│   ├── command.py
-│   ├── helpers.py
-│   └── system.py
-│
-├── analytics/                 # Data analysis utilities
-│   ├── __init__.py
-│   ├── stats.py
-│   └── plotting.py
-│
-tests/
-pyproject.toml
+examples/                          # Example input files for tutorials 
+legacy/                            # Outdated files
+src/
+└── boltz_tools/
+    ├── __init__.py
+    ├── __main__.py
+    ├── cli.py                     # Root CLI 
+    ├── tools/                     # Tools / subcommands 
+    │   ├── __init__.py
+    │   ├── predict.py
+    │   ├── validate.py
+    │   ├── screen.py
+    │   └── oracle.py
+    ├── helpers/                   # General utilities 
+    │   ├── __init__.py
+    │   ├── command.py
+    │   ├── helpers.py
+    │   └── system.py
+    └── analytics/                 # Data analysis utilities 
+        ├── __init__.py
+        ├── stats.py
+        └── plotting.py
+templates/                         # Templates for input files (Remove if examples/ is extensive)
+tests/                             # Unit tests
+tutorials/                         # Tutorials
+LISENCE
+README.md
+pyprject.toml
 ```
 
 ## How to run
