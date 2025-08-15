@@ -1,23 +1,74 @@
-# boltz_wrapper
+# boltz-tools
 
-# 🚨 **TEMP DEVELOPMENT FREEZE** 🚨
-
-**⛔ Do not make any changes to this repository until this notice is removed.**
-
-I'm working on a **major architecture overhaul** to enablele easy simultaneaus contibutions and packaging.  
-Any commits during this period may cause conflicts or break restructuring work.
-
-**📅 Estimated end of freeze:** **Next Monday: 18th August**
+## Introduction 
+Boltz Tools is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
 
 ## Installation
-Make sure to have an operational version of boltz working in your conda environment. 
-pip install boltz=2.0.3
+Install directly from GitHub for newest updates:
+```
+git clone https://github.com/rlvandenbroek/boltz-tools.git
+cd boltz-tools; pip install -e .
+```
 
-You can check if the istall is functional using the following command:
-boltz predict --help
+## Contributing
+1. Create a feature branch 
+2. Make your changes
+3. Add tests for new functionality -- (applicable when tests are in place)
+4. Ensure all tests pass -- (applicable when tests are in place)    
+5. Include new features in tutorials      
+6. Submit a pull request 
 
-Note, if you have not downloaded the cache yet, the first run will download this, which may take a few hours.
+## Package Structure
+```
+examples/                          # Example input files for tutorials 
+legacy/                            # Outdated files
+src/
+└── boltz_tools/
+    ├── __init__.py
+    ├── __main__.py
+    ├── cli.py                     # Root CLI 
+    ├── tools/                     # Tools / subcommands 
+    │   ├── __init__.py
+    │   ├── predict.py
+    │   ├── validate.py
+    │   ├── screen.py
+    │   └── oracle.py
+    ├── helpers/                   # General utilities 
+    │   ├── __init__.py
+    │   ├── command.py
+    │   ├── helpers.py
+    │   └── system.py
+    └── analytics/                 # Data analysis utilities 
+        ├── __init__.py
+        ├── stats.py
+        └── plotting.py
+templates/                         # Templates for input files (Remove if examples/ is extensive)
+tests/                             # Unit tests
+tutorials/                         # Tutorials
+LISENCE
+README.md
+pyprject.toml
+```
 
+## Usage
+The main command is `boltz-tools`, which supports several subcommands:
+```
+boltz-tools [-h] [-v] {predict,screen,oracle,validate}
+```
+
+### Subcommands
+- **predict**: Co-fold a single system using Boltz.  
+- **screen**: Co-fold a library using Boltz for virtual screening.  
+- **oracle**: Use Boltz as an oracle function for single SMILES predictions.  
+- **validate**: Validate Boltz system configuration.
+
+Use the -h flag with any command to see detailed usage:
+```
+boltz-tools -h
+boltz-tools screen -h
+```
+
+# Remove below when tutorials are operational
 ## How to run
 from boltz_wrapper/templates copy options.yaml into your cwd (TODO: make this adjustable when calling the wrapper).
 In options.yaml, specify wrapper options.
@@ -30,6 +81,7 @@ In options.yaml, specify wrapper options.
 Additionally boltz options can be adjusted in this file.
 
 for the YAML system file, as for now, keep the following format (i.e. first define protein and ligand sequences, only then all other sytem features):
+
 sequences:
   - protein:
       id: [A]
@@ -37,6 +89,8 @@ sequences:
   - ligand:
       id: [B]
       smiles: {your SMILES}
+
+Run the screening.py with the following command: python {your_path}/boltz_wrapper/screening.py
 
 ## screening.py - WORK IN PROGRESS
 Script for performing virtual screening using Boltz.
@@ -54,6 +108,22 @@ Output:
   - output confidence metric (confidence_score, ptm, ...)    
   - output affinity (affinity_pred_value, affinity_probability_binary, ...)
   - RMSD of diffusion samples
+
+### Usage: Merging Additional Columns from Input CSV to Output CSV
+You can specify extra columns from your input CSV to be included in the output CSV using the `--merge_columns` argument:
+
+```bash
+python screening.py options.yaml --merge_columns "column1,column2,extra_info"
+```
+This will ensure that `column1`, `column2`, and `extra_info` from your input CSV are present in the output CSV, in addition to the default columns.
+
+#### Output CSV Columns
+The output CSV will always include the following columns at the front:
+- `index`: Row number in the input CSV (starting from 1)
+- `id`: Value from your specified ID column
+- `basename`: Unique basename for each row
+- `smiles`: Value from your specified SMILES column
+- Any columns specified in `--merge_columns`
 
 ## oracle.py - NON-OPERATIONAL
 Script for running Boltz as an oracle function.
@@ -86,5 +156,5 @@ Input:
   - YAML option file containing Boltz parameters
 Output: 
   - RMSD co-folded protein to reference protein
-
   - RMSD co-folded ligand to reference ligand
+

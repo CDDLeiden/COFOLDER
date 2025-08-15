@@ -4,12 +4,14 @@
 import multiprocessing
 import os
 
-def set_command(yaml_path, opt_data, i, row, run_dir, id_col):
+def set_command(yaml_path, opt_data, i, run_dir):
     cmd = [
         "boltz",
         "predict",
         yaml_path
     ]
+
+    cmd.extend([f"--out_dir", run_dir])
 
     if i == 1:
         cmd.extend([f"--use_msa_server"])
@@ -18,11 +20,6 @@ def set_command(yaml_path, opt_data, i, row, run_dir, id_col):
     for n, item in enumerate(options):
         for key, value in item.items():
             value = str(value)
-
-            if key == "out_dir":
-                cmd.extend([f"--out_dir"])
-                cmd.extend([os.path.join(run_dir, f'{i}_{row[id_col]}')])   
-                continue     
             
             if key == "use_msa_server":
                 continue

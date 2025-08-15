@@ -21,6 +21,9 @@
 
 # TODO: everything
 
+def add_arguments(parser):
+    """Add predict-specific CLI arguments."""
+    parser.add_argument('--some_predict_flag', help='Example flag for predict')
 
-if __name__ == "__main__":
-    pass
+def main(args):
+    print(f"[PREDICT] Running in {args.wrk_dir} with system={args.yaml_system}")

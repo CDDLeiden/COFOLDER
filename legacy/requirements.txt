@@ -1,0 +1,8 @@
+# installing boltz sometimes gives issues. It can be installed using:
+# this list is not yet comprehensive.
+
+Conda python version 3.12
+pip install boltz==2.0.3
+triton 3.2.0
+pytorch lighling install
+torch 2.6.0
