@@ -1,42 +1,56 @@
-# Script containing boltz functions, such as the compiling of the boltz predict
-# command.
-
 import multiprocessing
-import os
+import logging
+from ..helpers import utils
 
-def set_command(yaml_path, opt_data, i, run_dir):
-    cmd = [
-        "boltz",
-        "predict",
-        yaml_path
-    ]
+logger = logging.getLogger('boltz-tools.helpers')
 
-    cmd.extend([f"--out_dir", run_dir])
+class Command:
+    def __init__(self, options=None, options_path=None):
+        """
+        Initialize Command object from dictionary or YAML file.
 
-    if i == 1:
-        cmd.extend([f"--use_msa_server"])
+        Args:
+            options (dict, optional): Pre-loaded options dictionary.
+            options_path (str, optional): Path to YAML file with options.
+        """
+        self.logger = logging.getLogger('boltz-tools.helpers.command.Command')
 
-    options = opt_data.get("options")
-    for n, item in enumerate(options):
-        for key, value in item.items():
-            value = str(value)
-            
-            if key == "use_msa_server":
-                continue
+        if options and options_path:
+            raise ValueError("Provide either 'options' or 'options_path', not both.")
 
-            if value == "None" or value == "False":
-                continue
+        if options:
+            self.options = options
+        elif options_path:
+            self.logger.debug(f"Loading options YAML from {options_path}")
+            self.options = utils.read_yaml(path=options_path)
+        else:
+            raise ValueError("Either 'options' or 'options_path' must be provided.")
+    
+    def set_command(self, system):
+        """
+        Build the 'boltz predict' command based on system and options.
 
-            if value == "True":
-                cmd.extend([f"--{key}"])
-                continue
+        Args:
+            system (System): System object for querying settings.
 
-            if value == "multiprocessing.cpu_count()":
-                cmd.extend([f"--{key}"])
-                cmd.extend([str(multiprocessing.cpu_count())])
-                continue
-            
-            cmd.extend([f"--{key}"])
-            cmd.extend([str(value)]) 
+        Returns:
+            list: Complete command ready for subprocess execution.
+        """
+        cmd = ["boltz", "predict", self.system_path, "--out_dir", self.out_dir]
 
-    return cmd
+        # Include MSA server option if not defined in the system
+        if system.find_value(key="msa") is None:
+            cmd.append("--use_msa_server")
+
+        for item in self.options.get("options", []):
+            for key, value in item.items():
+                if key == "use_msa_server" or value in (None, "None", "False"):
+                    continue
+                if value == "True":
+                    cmd.append(f"--{key}")
+                elif value == "multiprocessing.cpu_count()":
+                    cmd.extend([f"--{key}", str(multiprocessing.cpu_count())])
+                else:
+                    cmd.extend([f"--{key}", str(value)])
+
+        return cmd
