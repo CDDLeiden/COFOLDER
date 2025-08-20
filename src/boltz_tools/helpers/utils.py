@@ -3,8 +3,10 @@ import os
 import pandas as pd
 import yaml
 import numpy as np
-from typing import Optional, List
+from typing import Optional, List, Union
 from rdkit import Chem
+from rdkit.Chem import AllChem
+
 import pickle
 
 from scipy.stats import pearsonr, spearmanr, kendalltau
@@ -417,3 +419,75 @@ def cache_mols_from_file(file_path: str, id_col_or_prop: str, smiles_col: Option
                 helpers_logger.error(f"Failed to process ID {mol_id}: {e}")
     else:
         raise ValueError(f"Unsupported file type: {ext}. Only .csv and .sdf are supported.")
+
+def csv_to_sdf(
+    csv_path: str,
+    smiles_col: str,
+    output_sdf_path: Optional[str] = None,
+    best_conformation: bool = False,
+    property_cols: Optional[Union[str, List[str]]] = None
+) -> None:
+    """
+    Convert a CSV file with SMILES to an SDF file, optionally generating best 3D conformations and writing specified columns as SDF properties.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the input CSV file.
+    smiles_col : str
+        Name of the column containing SMILES strings.
+    output_sdf_path : str, optional
+        Path to the output SDF file. If None, replaces .csv with .sdf.
+    best_conformation : bool, default=False
+        If True, generate and optimize 3D conformers.
+    property_cols : str or list of str, optional
+        Column(s) to write as SDF properties for each molecule.
+    """
+
+    if output_sdf_path is None:
+        output_sdf_path = os.path.splitext(csv_path)[0] + ".sdf"
+
+    df = pd.read_csv(csv_path)
+    if smiles_col not in df.columns:
+        helpers_logger.error(f"SMILES column '{smiles_col}' not found in {csv_path}")
+        return
+
+    # Normalize property_cols to a list
+    if property_cols is None:
+        property_cols = []
+    elif isinstance(property_cols, str):
+        property_cols = [property_cols]
+    else:
+        property_cols = list(property_cols)
+
+    # Warn for missing columns
+    for col in property_cols:
+        if col not in df.columns:
+            helpers_logger.warning(f"Property column '{col}' not found in {csv_path}. It will be skipped.")
+    property_cols = [col for col in property_cols if col in df.columns]
+
+    writer = Chem.SDWriter(output_sdf_path)
+    n_written = 0
+    for idx, row in df.iterrows():
+        smi = row[smiles_col]
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            helpers_logger.warning(f"Invalid SMILES at row {idx}: {smi}")
+            continue
+        if best_conformation:
+            mol = Chem.AddHs(mol)
+            try:
+                AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+                AllChem.UFFOptimizeMolecule(mol)
+            except Exception as e:
+                helpers_logger.warning(f"3D generation failed for row {idx}: {e}")
+                continue
+        # Set properties
+        for col in property_cols:
+            val = row[col]
+            if pd.notnull(val):
+                mol.SetProp(str(col), str(val))
+        writer.write(mol)
+        n_written += 1
+    writer.close()
+    helpers_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")
