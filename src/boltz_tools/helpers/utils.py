@@ -2,15 +2,11 @@
 import os
 import pandas as pd
 import yaml
-import numpy as np
-from typing import Optional, List, Union
 from rdkit import Chem
-from rdkit.Chem import AllChem
-
-import pickle
+from typing import Optional
 
 from scipy.stats import pearsonr, spearmanr, kendalltau
-from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, root_mean_squared_error
+from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -52,6 +48,20 @@ def read_yaml(path):
         logging.error(f"File not found: {path}")
     except yaml.YAMLError as e:
         logging.error(f"Error parsing YAML: {e}")
+
+def read_sdf(path):
+    try:
+        suppl = Chem.SDMolSupplier(path)
+        mols = [mol for mol in suppl if mol is not None]
+
+        logging.info(f"{path} loaded successfully. Total valid molecules: {len(mols)}")
+
+        return mols
+
+    except FileNotFoundError:
+        logging.error(f"File not found: {path}")
+    except Exception as e:
+        logging.error(f"Error reading SDF: {e}")
 
 def delete_last_line(file_path):
     """Delete the last line from a file (in-place)."""
@@ -347,146 +357,3 @@ def plot_affinity_correlation(
         plt.close()
     else:
         plt.show()
-
-def cache_mols_from_file(file_path: str, id_col_or_prop: str, smiles_col: Optional[str] = None, boltz_cache_path: str = "~/.boltz/"):
-    """
-    Cache molecule objects from a CSV or SDF file into .pkl files named by compound ID.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the input file (CSV or SDF).
-    id_col_or_prop : str
-        Column name for compound ID in CSV or property name for compound ID in SDF.
-    smiles_col : str, optional
-        Column name for SMILES in CSV file. Required if file is CSV.
-    boltz_cache_path : str, default='~/.boltz/'
-        Path to the boltz cache directory. Defaults to '~/.boltz/'.
-
-    Raises
-    ------
-    ValueError
-        If required columns/properties are missing or file type is unsupported.
-    FileNotFoundError
-        If the input file does not exist.
-    Exception
-        For other errors during molecule creation or file writing.
-    """
-    file_path = os.path.expanduser(file_path)
-    boltz_cache_path = os.path.expanduser(boltz_cache_path)
-    mols_dir = os.path.join(boltz_cache_path, "mols")
-    os.makedirs(mols_dir, exist_ok=True)
-
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"Input file not found: {file_path}")
-
-    ext = os.path.splitext(file_path)[1].lower()
-    if ext == ".csv":
-        if smiles_col is None:
-            raise ValueError("For CSV, smiles_col must be provided.")
-        df = pd.read_csv(file_path)
-        if smiles_col not in df.columns or id_col_or_prop not in df.columns:
-            raise ValueError(f"CSV missing required columns: {smiles_col}, {id_col_or_prop}")
-        for idx, row in df.iterrows():
-            smiles = row[smiles_col]
-            mol_id = str(row[id_col_or_prop])
-            try:
-                mol = Chem.MolFromSmiles(smiles)
-                if mol is None:
-                    raise ValueError(f"Invalid SMILES: {smiles} (ID: {mol_id})")
-                out_path = os.path.join(mols_dir, f"{mol_id}.pkl")
-                with open(out_path, "wb") as f:
-                    pickle.dump(mol, f)
-            except Exception as e:
-                helpers_logger.error(f"Failed to process ID {mol_id}: {e}")
-    elif ext == ".sdf":
-        if smiles_col is not None:
-            helpers_logger.warning("smiles_col argument will not be used for SDF files.")
-        suppl = Chem.SDMolSupplier(file_path)
-        for mol in suppl:
-            if mol is None:
-                continue
-            mol_id = mol.GetProp(id_col_or_prop) if mol.HasProp(id_col_or_prop) else None
-            if not mol_id:
-                helpers_logger.error(f"SDF molecule missing ID property '{id_col_or_prop}'")
-                continue
-            try:
-                out_path = os.path.join(mols_dir, f"{mol_id}.pkl")
-                with open(out_path, "wb") as f:
-                    pickle.dump(mol, f)
-            except Exception as e:
-                helpers_logger.error(f"Failed to process ID {mol_id}: {e}")
-    else:
-        raise ValueError(f"Unsupported file type: {ext}. Only .csv and .sdf are supported.")
-
-def csv_to_sdf(
-    csv_path: str,
-    smiles_col: str,
-    output_sdf_path: Optional[str] = None,
-    best_conformation: bool = False,
-    property_cols: Optional[Union[str, List[str]]] = None
-) -> None:
-    """
-    Convert a CSV file with SMILES to an SDF file, optionally generating best 3D conformations and writing specified columns as SDF properties.
-
-    Parameters
-    ----------
-    csv_path : str
-        Path to the input CSV file.
-    smiles_col : str
-        Name of the column containing SMILES strings.
-    output_sdf_path : str, optional
-        Path to the output SDF file. If None, replaces .csv with .sdf.
-    best_conformation : bool, default=False
-        If True, generate and optimize 3D conformers.
-    property_cols : str or list of str, optional
-        Column(s) to write as SDF properties for each molecule.
-    """
-
-    if output_sdf_path is None:
-        output_sdf_path = os.path.splitext(csv_path)[0] + ".sdf"
-
-    df = pd.read_csv(csv_path)
-    if smiles_col not in df.columns:
-        helpers_logger.error(f"SMILES column '{smiles_col}' not found in {csv_path}")
-        return
-
-    # Normalize property_cols to a list
-    if property_cols is None:
-        property_cols = []
-    elif isinstance(property_cols, str):
-        property_cols = [property_cols]
-    else:
-        property_cols = list(property_cols)
-
-    # Warn for missing columns
-    for col in property_cols:
-        if col not in df.columns:
-            helpers_logger.warning(f"Property column '{col}' not found in {csv_path}. It will be skipped.")
-    property_cols = [col for col in property_cols if col in df.columns]
-
-    writer = Chem.SDWriter(output_sdf_path)
-    n_written = 0
-    for idx, row in df.iterrows():
-        smi = row[smiles_col]
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            helpers_logger.warning(f"Invalid SMILES at row {idx}: {smi}")
-            continue
-        if best_conformation:
-            mol = Chem.AddHs(mol)
-            try:
-                AllChem.EmbedMolecule(mol, AllChem.ETKDG())
-                AllChem.UFFOptimizeMolecule(mol)
-            except Exception as e:
-                helpers_logger.warning(f"3D generation failed for row {idx}: {e}")
-                continue
-        # Set properties
-        for col in property_cols:
-            val = row[col]
-            if pd.notnull(val):
-                mol.SetProp(str(col), str(val))
-        writer.write(mol)
-        n_written += 1
-    writer.close()
-    helpers_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")

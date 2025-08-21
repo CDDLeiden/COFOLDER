@@ -6,7 +6,9 @@ import json
 import shutil
 import logging
 
-from ..helpers import command, system, utils
+from rdkit import Chem
+
+from ..helpers import command, conformers, system, utils
 
 def add_arguments(parser):
     """Add screen-specific CLI arguments."""
@@ -55,13 +57,33 @@ def add_arguments(parser):
                         dest='col_id',
                         help='Column containing variable ID (required if --csv is used).')
     
-    parser.add_argument('--merge_columns',
+    parser.add_argument('-s,', '--variable_sdf',
                         type=str,
                         default=None,
-                        help='Comma-separated list of CSV columns to merge into output. \
-                            (optional if --csv is used)')
+                        dest='variable_sdf',
+                        help='Path to SDF file containing variables. If provided, you must \
+                            also specify --propterty_id.')
     
-    # TODO: Add SDF input support
+    parser.add_argument('--property_id',
+                        type=str,
+                        default=None,
+                        dest='property_id',
+                        help='Property name for compound ID in SDF file. Required if \
+                            --variable_sdf is used.')
+    
+    parser.add_argument('--generate_conformers',
+                        choices=['2D', '3D'],
+                        default=None,
+                        dest='generate_conformers',
+                        help='Generate 2D or 3D conformers for CCD input. If not specified, \
+                            original SMILES (csv) or MolBlock (sdf) are used as system input. \
+                            Note: This only works for SMILES, not any other variable type.')
+    
+    parser.add_argument('--merge_data',
+                        type=str,
+                        default=None,
+                        help='Comma-separated list of CSV columns or SDF prperties from input \
+                            to merge into output. (optional)')
     
     parser.add_argument('-d', '--debug',
                         action='store_true',
@@ -82,10 +104,13 @@ def main(args):
         variable=args.variable,
         variable_csv=args.variable_csv,
         col_variable=args.col_variable,
-        col_id=args.col_id,
-        merge_columns=args.merge_columns
+        col_id=args.col_id, 
+        variable_sdf=args.variable_sdf,
+        property_id=args.property_id,
+        generate_conformers=args.generate_conformers,
+        merge_data=args.merge_data,
     )
-    screen.run()
+    screen.iterate()
 
 def initiate_logger(logger, debug, wrk_dir):
     log_file = os.path.join(wrk_dir, 'boltz-tools.log')
@@ -116,8 +141,14 @@ class Screen(object):
         self.variable_csv = kwargs.get("variable_csv")
         self.col_variable = kwargs.get("col_variable")
         self.col_id = kwargs.get("col_id")
-        self._merge_columns = kwargs.get("merge_columns", [])
-        self.merge_columns = [col.strip() for col in self._merge_columns.split(",")] if self._merge_columns else []
+        
+        self.variable_sdf = kwargs.get("variable_sdf")
+        self.property_id = kwargs.get("property_id")
+        
+        self.generate_conformers = kwargs.get("generate_conformers")
+
+        self._merge_data = kwargs.get("merge_data", [])
+        self.merge_data = [col.strip() for col in self._merge_data.split(",")] if self._merge_data else []
         
         self.logger = logging.getLogger('boltz-tools.screening.Screen')
         self.logger.debug(f"Screen args: {kwargs}")
@@ -128,31 +159,80 @@ class Screen(object):
         self._system = utils.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
+        self.load_screen()
+        self.iterate()
+
+    def load_screen(self):
         # Load variables from CSV if provided
         if self.variable_csv:
-            self.variables = utils.read_csv(path=self.variable_csv, columns=[self.col_variable, self.col_id] + self.merge_columns) 
             if not self.col_variable or not self.col_id:
                 raise ValueError("Both col_smiles and col_id must be specified.")
-            missing = [c for c in [self.col_variable, self.col_id] + self.merge_columns if c not in self.variables.columns]
-            if missing:
-                raise ValueError(f"CSV missing columns: {', '.join(missing)}")
-            
-        # TODO: Add SDF input support
-        
-    def run(self):      
-        # Run the screening process for each variable
-        for i, (_, row) in enumerate(self.variables.iterrows(), 1):
-            start_time = time.time()
 
-            # Set basename and variable for CSV input
-            if self.variable_csv:
+            if self.generate_conformers:
+                self.variable_sdf = os.path.splitext(self.variable_csv)[0] + ".sdf"
+                self.property_id = self.col_id
+                conformers.csv_to_sdf(
+                    csv_path=self.variable_csv,
+                    smiles_col=self.col_variable,
+                    output_sdf_path=self.variable_sdf,
+                    property_cols=[self.col_id]+self.merge_data
+                )     
+
+            else:
+                self.variables = utils.read_csv(
+                    path=self.variable_csv, 
+                    columns=[self.col_variable, self.col_id] + self.merge_data
+                ) 
+
+                missing = [c for c in [self.col_variable, self.col_id] + self.merge_data 
+                        if c not in self.variables.columns]
+                if missing:
+                    raise ValueError(f"CSV missing columns: {', '.join(missing)}")
+        
+        # If SDF exists (either provided or generated from CSV)
+        if self.variable_sdf:
+            self.variables = utils.read_sdf(path=self.variable_sdf)
+            #self.variables = conformers.refine_sdf(self._variables)
+
+            if self.generate_conformers == "2D":
+                conformers.generate_2d_conformers(self.variable_sdf)
+            elif self.generate_conformers == "3D":
+                conformers.generate_3d_conformers(self.variable_sdf)
+
+            # Cache SDF as PKL
+            conformers.cache_mols_from_sdf(self.variable_sdf, 
+                                            property_id=self.property_id, 
+                                            cache=self.opt.find_value(key='cache') or '~/.boltz/')
+                
+    def iterate(self):      
+        if self.variable_sdf:
+            for i, mol in enumerate(self.variables, 1):
+                start_time = time.time()
+                    
+                name = mol.GetProp(self.property_id)
+                basename = f"{i}_{name}"
+                variable = name 
+
+                self.run(variable, basename)
+
+                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
+
+        # Set basename and variable for CSV input         
+        elif self.variable_csv:
+            # Run the screening process for each variable
+            for i, (_, row) in enumerate(self.variables.iterrows(), 1):
+                start_time = time.time()
+
                 name = str(row[self.col_id])
                 basename = f'{i}_{name}'
                 variable = row[self.col_variable]
                 self.logger.info(f"({i}/{len(self.variables)}) {name}: {variable}")
 
-            # TODO: Add SDF input support
+                self.run(variable, basename)
+                
+                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
 
+    def run(self, variable, basename):
             self.sys.update_system(value=variable, path=self.variable)
             
             # Set output directory and update system
@@ -186,10 +266,9 @@ class Screen(object):
                 except ValueError:
                     self.logger.info(f'MSA recycling not available for multimers in current version')
 
-            # Gather metrics and structures
-            self.gather_metrics(out_dir, i, row)
-            self.gather_structures(out_dir, i, row)
-            self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
+            #self.gather_metrics(out_dir, i, row)
+            #self.gather_structures(out_dir, i, row)
+
 
     def gather_metrics(self, out_dir, i, row):
         # function for gathering confidence and affinity metrics into csv
@@ -217,7 +296,7 @@ class Screen(object):
                 self.logger.error(f"Error reading {aff_file}: {e}")
 
         output = {**{'index': i, 'id': row[self.col_id], 'basename': basename, 'smiles': row[self.col_variable]},
-                  **{col: row[col] for col in self.merge_columns},
+                  **{col: row[col] for col in self.merge_data},
                   **df_new.iloc[0].to_dict()}
 
         pd.DataFrame([output]).to_csv(csv_file, mode='a', header=not os.path.exists(csv_file), index=False)
