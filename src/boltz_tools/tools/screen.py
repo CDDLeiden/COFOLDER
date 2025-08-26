@@ -266,6 +266,7 @@ class Screen(object):
                 except ValueError:
                     self.logger.info(f'MSA recycling not available for multimers in current version')
 
+            #TODO: gather results (sdf/csv independent) | Current: Only CSV
             #self.gather_metrics(out_dir, i, row)
             #self.gather_structures(out_dir, i, row)
 

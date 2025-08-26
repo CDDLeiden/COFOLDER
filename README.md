@@ -35,8 +35,8 @@ src/
     │   └── oracle.py
     ├── helpers/                   # General utilities 
     │   ├── __init__.py
-    │   ├── ccd.py                 # CCD 
     │   ├── command.py             # Boltz CLI 
+    │   ├── conformers.py          # CCD 
     │   ├── system.py              # System YAML modifications
     │   └── utils.py               # General utilities
     │    system.py
