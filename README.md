@@ -35,9 +35,11 @@ src/
     │   └── oracle.py
     ├── helpers/                   # General utilities 
     │   ├── __init__.py
-    │   ├── command.py
-    │   ├── helpers.py
-    │   └── system.py
+    │   ├── command.py             # Boltz CLI 
+    │   ├── conformers.py          # CCD 
+    │   ├── system.py              # System YAML modifications
+    │   └── utils.py               # General utilities
+    │    system.py
     └── analytics/                 # Data analysis utilities 
         ├── __init__.py
         ├── stats.py
@@ -47,7 +49,7 @@ tests/                             # Unit tests
 tutorials/                         # Tutorials
 LISENCE
 README.md
-pyprject.toml
+pyproject.toml
 ```
 
 ## Usage

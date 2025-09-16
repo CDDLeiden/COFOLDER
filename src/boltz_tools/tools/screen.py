@@ -6,46 +6,84 @@ import json
 import shutil
 import logging
 
-from .. import helpers
-from ..helpers import command, system, utils
+from rdkit import Chem
+
+from ..helpers import command, conformers, system, utils
 
 def add_arguments(parser):
     """Add screen-specific CLI arguments."""
     parser.add_argument('-w', '--wrk_dir',
+                        type=str,
                         dest='wrk_dir',
-                        help='Working dir if different from cwd.',
+                        help='Set Working directory if different from CWD.',
                         default=os.getcwd())
 
-    parser.add_argument('-y', '--yaml_system',
-                        dest='yaml_system',
-                        help='Path to system YAML file.')
+    parser.add_argument('-s', '--system_path',
+                        type=str,
+                        dest='system_path',
+                        help='Path to system YAML file.',
+                        required=True)
 
-    parser.add_argument('-b', '--yaml_boltz',
-                        dest='yaml_boltz',
-                        help='Path to boltz options YAML file.')
-
-    parser.add_argument('-c', '--csv',
-                        dest='csv',
-                        help='Path to ligands CSV file')
+    parser.add_argument('-b', '--boltz_options_path',
+                        type=str,
+                        dest='options_path',
+                        help='Path to Boltz options YAML file.',
+                        required=True)
     
     parser.add_argument('-v', '--variable',
+                        type=str,
                         dest='variable',
-                        help='Location to inject variable into YAML system',
-                        default='INJECT')
+                        help='Comma-seperated list of keys specifying the nested path in \
+                            the system YAML to update. (e.g. "sequences,1,ligand,smiles")',
+                        required=True)
     
-    parser.add_argument('--col_smiles',
-                        dest='col_smiles',
-                        help='Column containing SMILES molecule.')
-    
-    parser.add_argument('--col_id',
-                        dest='col_id',
-                        help='Column containing ID molecule',
-                        default=None)
-    
-    parser.add_argument('--merge_columns',
+    parser.add_argument('-c', '--variable_csv',
                         type=str,
                         default=None,
-                        help='Comma-separated list of CSV columns to merge into output.')
+                        dest='variable_csv',
+                        help='Path to CSV file containing variables. If provided, you must \
+                            also specify --col_variable and --col_id.')
+    
+    parser.add_argument('--col_variable',
+                        type=str,
+                        default=None,
+                        dest='col_variable',
+                        help='Column containing variable (e.g. SMILES/CCD/FASTA) (required \
+                            if --csv is used).')
+    
+    parser.add_argument('--col_id',
+                        type=str,
+                        default=None,
+                        dest='col_id',
+                        help='Column containing variable ID (required if --csv is used).')
+    
+    parser.add_argument('-s,', '--variable_sdf',
+                        type=str,
+                        default=None,
+                        dest='variable_sdf',
+                        help='Path to SDF file containing variables. If provided, you must \
+                            also specify --propterty_id.')
+    
+    parser.add_argument('--property_id',
+                        type=str,
+                        default=None,
+                        dest='property_id',
+                        help='Property name for compound ID in SDF file. Required if \
+                            --variable_sdf is used.')
+    
+    parser.add_argument('--generate_conformers',
+                        choices=['2D', '3D'],
+                        default=None,
+                        dest='generate_conformers',
+                        help='Generate 2D or 3D conformers for CCD input. If not specified, \
+                            original SMILES (csv) or MolBlock (sdf) are used as system input. \
+                            Note: This only works for SMILES, not any other variable type.')
+    
+    parser.add_argument('--merge_data',
+                        type=str,
+                        default=None,
+                        help='Comma-separated list of CSV columns or SDF prperties from input \
+                            to merge into output. (optional)')
     
     parser.add_argument('-d', '--debug',
                         action='store_true',
@@ -59,19 +97,20 @@ def main(args):
     initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
     logger.info("Boltz-tools screen started.")
 
-    merge_columns = [col.strip() for col in args.merge_columns.split(",")] if args.merge_columns else []
-
     screen = Screen(
         wrk_dir=args.wrk_dir,
-        yaml_system=args.yaml_system,
-        yaml_options=args.yaml_boltz,
-        csv=args.csv,
+        system_path=args.system_path,
+        options_path=args.options_path,
         variable=args.variable,
-        col_smiles=args.col_smiles,
-        col_id=args.col_id,
-        merge_columns=merge_columns
+        variable_csv=args.variable_csv,
+        col_variable=args.col_variable,
+        col_id=args.col_id, 
+        variable_sdf=args.variable_sdf,
+        property_id=args.property_id,
+        generate_conformers=args.generate_conformers,
+        merge_data=args.merge_data,
     )
-    screen.run()
+    screen.iterate()
 
 def initiate_logger(logger, debug, wrk_dir):
     log_file = os.path.join(wrk_dir, 'boltz-tools.log')
@@ -94,65 +133,143 @@ def initiate_logger(logger, debug, wrk_dir):
 class Screen(object):
     def __init__(self, **kwargs):
         self.wrk_dir = kwargs.get("wrk_dir")
-        self.yaml_system = kwargs.get("yaml_system")
-        self.yaml_options = kwargs.get("yaml_options")
-        self.csv = kwargs.get("csv")
-        self.variable = kwargs.get("variable")
-        self.col_smiles = kwargs.get("col_smiles")
+        self.system_path = kwargs.get("system_path")
+        self.options_path = kwargs.get("options_path")
+        self._variable = kwargs.get("variable", [])
+        self.variable = self.variable = self.variable = [int(v.strip()) if v.strip().isdigit() else v.strip() for v in self._variable.split(",")] if self._variable else []
+        
+        self.variable_csv = kwargs.get("variable_csv")
+        self.col_variable = kwargs.get("col_variable")
         self.col_id = kwargs.get("col_id")
-        self.merge_columns = kwargs.get("merge_columns", [])
+        
+        self.variable_sdf = kwargs.get("variable_sdf")
+        self.property_id = kwargs.get("property_id")
+        
+        self.generate_conformers = kwargs.get("generate_conformers")
 
+        self._merge_data = kwargs.get("merge_data", [])
+        self.merge_data = [col.strip() for col in self._merge_data.split(",")] if self._merge_data else []
+        
         self.logger = logging.getLogger('boltz-tools.screening.Screen')
         self.logger.debug(f"Screen args: {kwargs}")
 
-        # Read input files
-        self.options = utils.read_yaml(path=self.yaml_options)
-        self.system = system.System(path=self.yaml_system)
-        self.ligands = utils.read_csv(path=self.csv, columns=[self.col_smiles, self.col_id] + self.merge_columns)
+        # Set command and system objects
+        self._options = utils.read_yaml(path=self.options_path)
+        self.opt = command.Command(options=self._options)
+        self._system = utils.read_yaml(path=self.system_path)
+        self.sys = system.System(system=self._system)
 
-        if not self.col_smiles or not self.col_id:
-            raise ValueError("Both col_smiles and col_id must be specified.")
-        missing = [c for c in [self.col_smiles, self.col_id] + self.merge_columns if c not in self.ligands.columns]
-        if missing:
-            raise ValueError(f"CSV missing columns: {', '.join(missing)}")
+        self.load_screen()
+        self.iterate()
 
-    def run(self):
-        msa_path = None
-        for i, (_, row) in enumerate(self.ligands.iterrows(), 1):
-            start_time = time.time()
-            name = str(row[self.col_id])
-            basename = f'{i}_{name}'
-            smiles = row[self.col_smiles]
-            self.logger.info(f"({i}/{len(self.ligands)}) {name}: {smiles}")
+    def load_screen(self):
+        # Load variables from CSV if provided
+        if self.variable_csv:
+            if not self.col_variable or not self.col_id:
+                raise ValueError("Both col_smiles and col_id must be specified.")
 
+            if self.generate_conformers:
+                self.variable_sdf = os.path.splitext(self.variable_csv)[0] + ".sdf"
+                self.property_id = self.col_id
+                conformers.csv_to_sdf(
+                    csv_path=self.variable_csv,
+                    smiles_col=self.col_variable,
+                    output_sdf_path=self.variable_sdf,
+                    property_cols=[self.col_id]+self.merge_data
+                )     
+
+            else:
+                self.variables = utils.read_csv(
+                    path=self.variable_csv, 
+                    columns=[self.col_variable, self.col_id] + self.merge_data
+                ) 
+
+                missing = [c for c in [self.col_variable, self.col_id] + self.merge_data 
+                        if c not in self.variables.columns]
+                if missing:
+                    raise ValueError(f"CSV missing columns: {', '.join(missing)}")
+        
+        # If SDF exists (either provided or generated from CSV)
+        if self.variable_sdf:
+            self.variables = utils.read_sdf(path=self.variable_sdf)
+            #self.variables = conformers.refine_sdf(self._variables)
+
+            if self.generate_conformers == "2D":
+                conformers.generate_2d_conformers(self.variable_sdf)
+            elif self.generate_conformers == "3D":
+                conformers.generate_3d_conformers(self.variable_sdf)
+
+            # Cache SDF as PKL
+            conformers.cache_mols_from_sdf(self.variable_sdf, 
+                                            property_id=self.property_id, 
+                                            cache=self.opt.find_value(key='cache') or '~/.boltz/')
+                
+    def iterate(self):      
+        if self.variable_sdf:
+            for i, mol in enumerate(self.variables, 1):
+                start_time = time.time()
+                    
+                name = mol.GetProp(self.property_id)
+                basename = f"{i}_{name}"
+                variable = name 
+
+                self.run(variable, basename)
+
+                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
+
+        # Set basename and variable for CSV input         
+        elif self.variable_csv:
+            # Run the screening process for each variable
+            for i, (_, row) in enumerate(self.variables.iterrows(), 1):
+                start_time = time.time()
+
+                name = str(row[self.col_id])
+                basename = f'{i}_{name}'
+                variable = row[self.col_variable]
+                self.logger.info(f"({i}/{len(self.variables)}) {name}: {variable}")
+
+                self.run(variable, basename)
+                
+                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
+
+    def run(self, variable, basename):
+            self.sys.update_system(value=variable, path=self.variable)
+            
+            # Set output directory and update system
             out_dir = os.path.join(self.wrk_dir, basename)
             utils.set_dir(out_dir)
+            self.opt.out_dir = out_dir
+            
+            # MSA recycling - only possible for monomer systems
+            self.msa = self.sys.find_value(key='msa')
+            if self.msa and not os.path.exists(self.msa):
+                raise FileNotFoundError(f"MSA file not found at {self.msa}")
 
-            sys_data = self.system.data.copy()
-            if i != 1 and (not msa_path or not os.path.exists(msa_path)):
-                raise FileNotFoundError(f"MSA path {msa_path} missing for initial system")
+            self.logger.info(f'System:\n{str(self.sys.system)}')
+            yaml_path = os.path.join(out_dir, f'{basename}.yaml')
+            self.opt.system_path = yaml_path
+            self.sys.save_system_to_yaml(path=yaml_path)
 
-            yaml_path, msa_path = system.System.set_yaml(
-                out_dir=out_dir,
-                sys_data=sys_data,
-                i=i,
-                row=row,
-                id_col=self.col_id,
-                msa_path=msa_path,
-                smiles_col=self.col_smiles
-            )
-
-            cmd = command.set_command(yaml_path, self.options, i, out_dir)
+            # Set and run command
+            cmd = self.opt.set_command(system=self.sys)
             self.logger.info(f'Running: {" ".join(cmd)}')
             subprocess.run(cmd)
 
-            if i == 1 and msa_path and os.path.exists(msa_path):
-                self.logger.info(f'Cleaning up MSA file: {msa_path}')
-                utils.delete_last_line(msa_path)
+            # update MSA after first iteration
+            if self.msa == None:
+                try:
+                    _ = self.sys.find_value(key='protein')
+                    self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
+                    self.sys.update_system(value=self.msa, parent_key='protein', sub_key='msa')
+                    self.logger.info(f'Cleaning up MSA file: {self.msa}')
+                    utils.delete_last_line(self.msa)
+                except ValueError:
+                    self.logger.info(f'MSA recycling not available for multimers in current version')
 
-            self.gather_metrics(out_dir, i, row)
-            self.gather_structures(out_dir, i, row)
-            self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
+            #TODO: gather results (sdf/csv independent) | Current: Only CSV
+            #self.gather_metrics(out_dir, i, row)
+            #self.gather_structures(out_dir, i, row)
+
 
     def gather_metrics(self, out_dir, i, row):
         # function for gathering confidence and affinity metrics into csv
@@ -179,8 +296,8 @@ class Screen(object):
             except Exception as e:
                 self.logger.error(f"Error reading {aff_file}: {e}")
 
-        output = {**{'index': i, 'id': row[self.col_id], 'basename': basename, 'smiles': row[self.col_smiles]},
-                  **{col: row[col] for col in self.merge_columns},
+        output = {**{'index': i, 'id': row[self.col_id], 'basename': basename, 'smiles': row[self.col_variable]},
+                  **{col: row[col] for col in self.merge_data},
                   **df_new.iloc[0].to_dict()}
 
         pd.DataFrame([output]).to_csv(csv_file, mode='a', header=not os.path.exists(csv_file), index=False)
