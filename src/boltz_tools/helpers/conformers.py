@@ -302,6 +302,7 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
 
     parsedResidue = parse_ccd_residue(resname, mol, 0)
 
+    add_pickled_prop(mol, 'MOL_NAME', resname)
     add_pickled_prop(mol, 'symmetries', mol.GetSubstructMatches(mol, uniquify=False))
     add_pickled_prop(mol, 'pb_edge_index', extract_constraints(parsedResidue.rdkit_bounds_constraints, 'atom_idxs', transpose=True))
     add_pickled_prop(mol, 'pb_lower_bounds', extract_constraints(parsedResidue.rdkit_bounds_constraints, 'lower_bound'))
@@ -331,7 +332,11 @@ if __name__ == "__main__":
     try:
         smiles = "CCO"
         mol = Chem.MolFromSmiles(smiles)
+        print(Chem.MolToMolBlock(mol))
+        print("Converting molecule to CCD...")
+        mol = _prepare_mol(mol)
         mol_to_ccd("CCO", mol)
+        print("Checking if CCD file was created...")
         out_path = Path(os.path.expanduser("~/.boltz/mols/CCO.pkl"))
         if out_path.exists():
             print(f"Success: CCD file created at {out_path}")
