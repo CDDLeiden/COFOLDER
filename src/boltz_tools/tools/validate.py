@@ -27,9 +27,44 @@
 #   - Allow for Grid search of Boltz parameters, co-factors and Boltz Constraints/Templates
 #   - Add IFP profiling for the co-folded and reference ligands
 
-def add_arguments(parser):
-    """Add predict-specific CLI arguments."""
-    parser.add_argument('--some_predict_flag', help='Example flag for predict')
+import os
 
+def add_arguments(parser):
+    """Add validate-specific CLI arguments."""
+    parser.add_argument('-w', '--wrk_dir',
+                        type=str,
+                        dest='wrk_dir',
+                        help='Set Working directory if different from CWD.',
+                        default=os.getcwd())
+
+    parser.add_argument('-s', '--system_path',
+                        type=str,
+                        dest='system_path',
+                        help='Path to system YAML file.',
+                        required=True)
+
+    parser.add_argument('-b', '--boltz_options_path',
+                        type=str,
+                        dest='options_path',
+                        help='Path to Boltz options YAML file.',
+                        required=True)
+    
+    parser.add_argument('-i', '--input_pdb',
+                        type=str,
+                        dest='input_pdb',
+                        help='Path to reference PDB file containing the (ligand-)protein complex.',
+                        required=True)
+
+    parser.add_argument('--generate_conformers',
+                        choices=['2D', '3D'],
+                        default=None,
+                        dest='generate_conformers',
+                        help='Generate 2D or 3D conformers for CCD input. If not specified, \
+                            original SMILES (csv) or MolBlock (sdf) are used as system input. \
+                            Note: This only works for SMILES, not any other variable type.')
+    
+    parser.add_argument('-d', '--debug',
+                        action='store_true',
+                        help='Enable debug logging')
 def main(args):
     print(f"[PREDICT] Running in {args.wrk_dir} with system={args.yaml_system}")
