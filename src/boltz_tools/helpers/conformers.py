@@ -37,6 +37,18 @@ def iterate_sdf_records(sdf_path: str, id_property: str):
         yield i, mol_id, Chem.MolToMolBlock(mol)
 
 
+def sanitize_mol_id(mol_id: str) -> str:
+    """
+    Ensures the molecule ID is at most 5 characters.
+    If longer, truncates and prints a warning.
+    """
+    if len(mol_id) > 5:
+        truncated = mol_id[:5]
+        print(f"[WARNING] Molecule ID '{mol_id}' is longer than 5 characters. "
+              f"Truncating to '{truncated}' to comply with CCD naming rules.")
+        return truncated
+    return mol_id
+
 def _prepare_mol(mol: Chem.Mol) -> Chem.Mol:
     """
     Assign per-atom names and return the molecule.
@@ -52,7 +64,7 @@ def _prepare_mol(mol: Chem.Mol) -> Chem.Mol:
         Molecule with atom names set.
     """
     for i, atom in enumerate(mol.GetAtoms()):
-        atom.SetProp("name", f"{atom.GetSymbol()}{i+1}")
+        atom.SetProp("name", f"{atom.GetSymbol()}{i+1}".upper())
     return mol
 
 
@@ -110,8 +122,9 @@ def cache_mols_from_sdf(file_path: str, property_id: str, cache: str = "~/.boltz
             ccd_logger.error(f"SDF molecule missing ID property '{property_id}'")
             continue
         try:
-            mol = _prepare_mol(mol)
-            _save_mol(mol, mol_id, mols_dir)
+            mol_to_ccd(mol_id, mol)
+            #mol = _prepare_mol(mol)
+            #_save_mol(mol, mol_id, mols_dir)
         except Exception as e:
             ccd_logger.error(f"Failed to process ID {mol_id}: {e}")
 
@@ -277,7 +290,7 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     Parameters
     ----------
     resname : str
-        Residue name (identifier for the molecule).
+        Residue name (identifier for the molecule).cache_mols_from_sdf
     mol : Chem.Mol
         RDKit molecule to convert.
     boltz_path : str or Path, optional
@@ -299,6 +312,8 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     mol.UpdatePropertyCache(strict=False)
     Chem.SanitizeMol(mol)
     rdmolops.AssignStereochemistryFrom3D(mol)
+
+    mol = _prepare_mol(mol)
 
     parsedResidue = parse_ccd_residue(resname, mol, 0)
 
@@ -322,6 +337,22 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     Chem.SetDefaultPickleProperties(Chem.PropertyPickleOptions.AllProps)
     mols_dir = Path(boltz_path) / 'mols'
     mols_dir.mkdir(parents=True, exist_ok=True)
+    
+    print("\n[DEBUG] Checking atom properties just before pickle:")
+    atoms = list(mol.GetAtoms())
+    print("Total atoms:", len(atoms))
+    missing = []
+    for atom in atoms:
+        if not atom.HasProp("name"):
+            missing.append(atom.GetIdx())
+        # show first few atoms for inspection
+        print(f"  idx {atom.GetIdx()} props: {atom.GetPropsAsDict()}")
+
+    if missing:
+        print(f"[WARNING] {len(missing)} atoms are missing 'name' property. Example indices: {missing[:10]}")
+    else:
+        print("[OK] All atoms have 'name' property.")
+        
     with open(mols_dir / f'{resname}.pkl', 'wb') as f:
         pickle.dump(mol, f)
 
