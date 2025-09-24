@@ -110,7 +110,6 @@ def main(args):
         generate_conformers=args.generate_conformers,
         merge_data=args.merge_data,
     )
-    screen.iterate()
 
 def initiate_logger(logger, debug, wrk_dir):
     log_file = os.path.join(wrk_dir, 'boltz-tools.log')
