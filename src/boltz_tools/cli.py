@@ -3,7 +3,7 @@ from . import __version__
 from .tools import predict, screen, oracle, validate
 
 TOOLS = [
-    ("predict", predict, "Co-fold a single system using Boltz."),
+    ("predict", predict, "Basic protocol for co-folding a single system using Boltz."),
     ("screen", screen, "Co-fold a library using Boltz for virtual screening."),
     ("oracle", oracle, "Use Boltz as an oracle function for single SMILES predictions."),
     ("validate", validate, "Validate Boltz system configuration."),
