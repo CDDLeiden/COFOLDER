@@ -226,17 +226,19 @@ def generate_3d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
     sdf_out = sdf_out or sdf_in
     suppl = Chem.SDMolSupplier(sdf_in)
     mols = [mol for mol in suppl if mol is not None]
+    mols_3d = []
 
     for mol in mols:
         try:
             mol = Chem.AddHs(mol)
             AllChem.EmbedMolecule(mol, AllChem.ETKDG())
             AllChem.UFFOptimizeMolecule(mol)
+            mols_3d.append(mol)
         except Exception as e:
             ccd_logger.warning(f"3D conformer generation failed for molecule: {e}")
 
     writer = Chem.SDWriter(sdf_out)
-    for mol in mols:
+    for mol in mols_3d:
         writer.write(mol)
     writer.close()
     ccd_logger.info(f"Generated 3D conformers in {sdf_out}")
