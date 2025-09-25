@@ -44,7 +44,7 @@ def sanitize_mol_id(mol_id: str) -> str:
     """
     if len(mol_id) > 5:
         truncated = mol_id[:5]
-        print(f"[WARNING] Molecule ID '{mol_id}' is longer than 5 characters. "
+        ccd_logger.warning(f"[WARNING] Molecule ID '{mol_id}' is longer than 5 characters. "
               f"Truncating to '{truncated}' to comply with CCD naming rules.")
         return truncated
     return mol_id
@@ -340,20 +340,20 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     mols_dir = Path(boltz_path) / 'mols'
     mols_dir.mkdir(parents=True, exist_ok=True)
     
-    print("\n[DEBUG] Checking atom properties just before pickle:")
+    ccd_logger.debug("Checking atom properties just before pickle:")
     atoms = list(mol.GetAtoms())
-    print("Total atoms:", len(atoms))
+    ccd_logger.debug("Total atoms:", len(atoms))
     missing = []
     for atom in atoms:
         if not atom.HasProp("name"):
             missing.append(atom.GetIdx())
         # show first few atoms for inspection
-        print(f"  idx {atom.GetIdx()} props: {atom.GetPropsAsDict()}")
+        ccd_logger.debug(f"  idx {atom.GetIdx()} props: {atom.GetPropsAsDict()}")
 
     if missing:
-        print(f"[WARNING] {len(missing)} atoms are missing 'name' property. Example indices: {missing[:10]}")
+        ccd_logger.warning(f"{len(missing)} atoms are missing 'name' property. Example indices: {missing[:10]}")
     else:
-        print("[OK] All atoms have 'name' property.")
+        ccd_logger.debug("All atoms have 'name' property.")
         
     with open(mols_dir / f'{resname}.pkl', 'wb') as f:
         pickle.dump(mol, f)
