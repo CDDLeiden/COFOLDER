@@ -1,18 +1,143 @@
 import os
 import pickle
+import logging
+from collections import Counter
 from pathlib import Path
 from typing import Optional, Union, List
-from collections import Counter
-import logging
 
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
 from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
+
 from ..helpers import command
 
-ccd_logger = logging.getLogger('boltz-tools.helpers.ccd')
+ccd_logger = logging.getLogger('boltz-tools.helpers.conformers')
 
+def sanitize_mol_id(mol_id: str) -> str:
+    """
+    Ensures the molecule ID is at most 5 characters.
+    If longer, truncates and prints a warning.
+    """
+    if len(mol_id) > 5:
+        truncated = mol_id[:5]
+        ccd_logger.warning(f"[WARNING] Molecule ID '{mol_id}' is longer than 5 characters. "
+              f"Truncating to '{truncated}' to comply with CCD naming rules.")
+        return truncated
+    return mol_id
+
+def add_pickled_prop(mol: Chem.Mol, name: str, value):
+    """
+    Pickle and set a property on the molecule.
+
+    Parameters
+    ----------
+    mol : Chem.Mol
+        RDKit molecule.
+    name : str
+        Property name.
+    value : Any
+        Value to pickle and set.
+    """
+    mol.SetProp(name, pickle.dumps(value).hex())
+
+def extract_constraints(constraints, key, transpose=False):
+    """
+    Extract a list of values from constraint objects.
+
+    Parameters
+    ----------
+    constraints : list
+        List of constraint objects.
+    key : str
+        Attribute name to extract.
+    transpose : bool, optional
+        Whether to transpose the result (default False).
+
+    Returns
+    -------
+    list or numpy.ndarray
+        Extracted values, optionally transposed.
+    """
+    result = [getattr(obj, key) for obj in constraints]
+    if transpose:
+        import numpy as np
+        return np.array(result).transpose()
+    return result
+
+def _prepare_mol(mol: Chem.Mol) -> Chem.Mol:
+    """
+    Assign per-atom names and return the molecule.
+
+    Parameters
+    ----------
+    mol : Chem.Mol
+        RDKit molecule.
+
+    Returns
+    -------
+    Chem.Mol
+        Molecule with atom names set.
+    """
+    for i, atom in enumerate(mol.GetAtoms()):
+        atom.SetProp("name", f"{atom.GetSymbol()}{i+1}".upper())
+    return mol
+
+def generate_2d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
+    """
+    Generate 2D conformers for molecules in an SDF file.
+
+    Parameters
+    ----------
+    sdf_in : str
+        Input SDF file path.
+    sdf_out : str, optional
+        Output SDF file path. If None, overwrites input file.
+    """
+    sdf_out = sdf_out or sdf_in
+    suppl = Chem.SDMolSupplier(sdf_in)
+    mols = [mol for mol in suppl if mol is not None]
+
+    for mol in mols:
+        rdDepictor.Compute2DCoords(mol)
+
+    writer = Chem.SDWriter(sdf_out)
+    for mol in mols:
+        writer.write(mol)
+    writer.close()
+    ccd_logger.info(f"Generated 2D conformers in {sdf_out}")
+
+
+def generate_3d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
+    """
+    Generate 3D conformers for molecules in an SDF file using ETKDG + UFF.
+
+    Parameters
+    ----------
+    sdf_in : str
+        Input SDF file path.
+    sdf_out : str, optional
+        Output SDF file path. If None, overwrites input file.
+    """
+    sdf_out = sdf_out or sdf_in
+    suppl = Chem.SDMolSupplier(sdf_in)
+    mols = [mol for mol in suppl if mol is not None]
+    mols_3d = []
+
+    for mol in mols:
+        try:
+            mol = Chem.AddHs(mol)
+            AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+            AllChem.UFFOptimizeMolecule(mol)
+            mols_3d.append(mol)
+        except Exception as e:
+            ccd_logger.warning(f"3D conformer generation failed for molecule: {e}")
+
+    writer = Chem.SDWriter(sdf_out)
+    for mol in mols_3d:
+        writer.write(mol)
+    writer.close()
+    ccd_logger.info(f"Generated 3D conformers in {sdf_out}")
 
 def iterate_sdf_records(sdf_path: str, id_property: str):
     """
@@ -36,128 +161,6 @@ def iterate_sdf_records(sdf_path: str, id_property: str):
             continue
         mol_id = mol.GetProp(id_property) if mol.HasProp(id_property) else f"mol_{i}"
         yield i, mol_id, Chem.MolToMolBlock(mol)
-
-
-def sanitize_mol_id(mol_id: str) -> str:
-    """
-    Ensures the molecule ID is at most 5 characters.
-    If longer, truncates and prints a warning.
-    """
-    if len(mol_id) > 5:
-        truncated = mol_id[:5]
-        ccd_logger.warning(f"[WARNING] Molecule ID '{mol_id}' is longer than 5 characters. "
-              f"Truncating to '{truncated}' to comply with CCD naming rules.")
-        return truncated
-    return mol_id
-
-def _prepare_mol(mol: Chem.Mol) -> Chem.Mol:
-    """
-    Assign per-atom names and return the molecule.
-
-    Parameters
-    ----------
-    mol : Chem.Mol
-        RDKit molecule.
-
-    Returns
-    -------
-    Chem.Mol
-        Molecule with atom names set.
-    """
-    for i, atom in enumerate(mol.GetAtoms()):
-        atom.SetProp("name", f"{atom.GetSymbol()}{i+1}".upper())
-    return mol
-
-
-def _save_mol(mol: Chem.Mol, mol_id: str, mols_dir: str):
-    """
-    Pickle the molecule to the specified directory.
-
-    Parameters
-    ----------
-    mol : Chem.Mol
-        RDKit molecule.
-    mol_id : str
-        Molecule identifier.
-    mols_dir : str
-        Directory to save the pickle file.
-    """
-    out_path = os.path.join(mols_dir, f"{mol_id}.pkl")
-    with open(out_path, "wb") as f:
-        pickle.dump(mol, f)
-    ccd_logger.info(f"Pickled molecule saved at {out_path} for ID: {mol_id}")
-
-
-def cache_mols_from_sdf(file_path: str, property_id: str, on_conflict: str = 'overwrite', cache: str = "~/.boltz/"):
-    """
-    Reads molecules from SDF, assigns atom names, and pickles each molecule.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the SDF file.
-    property_id : str
-        Property name to use as molecule ID.
-    on_conflict : {'use_cache', 'overwrite'}
-        Behavior when CCD already exists in cache.
-    cache : str, optional
-        Path to cache directory (default ~/.boltz/).
-    """
-    file_path = os.path.expanduser(file_path)
-    cache = os.path.expanduser(cache)
-    mols_dir = os.path.join(cache, "mols")
-    os.makedirs(mols_dir, exist_ok=True)
-
-    if not os.path.exists(cache):
-        ccd_logger.info(f"Cache path {cache} does not exist. Downloading default cache...")
-        command.download_cache(cache)
-
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"Input file not found: {file_path}")
-
-    # Pre-check for duplicate IDs
-    ids = []
-    suppl = Chem.SDMolSupplier(file_path)
-    for mol in suppl:
-        if mol is not None and mol.HasProp(property_id):
-            ids.append(mol.GetProp(property_id))
-    duplicates = [i for i, c in Counter(ids).items() if c > 1]
-    if duplicates:
-        raise ValueError(f"Duplicate molecule IDs found in SDF: {duplicates}")
-
-    # Existing cache
-    cached_ids = {f.stem for f in Path(mols_dir).glob("*.pkl")}
-    overlap_ids = set(ids) & cached_ids
-    if overlap_ids:
-        ccd_logger.info(f"Found {len(overlap_ids)} overlapping IDs with cache: {sorted(list(overlap_ids))[:10]}...")
-
-    # Re-iterate to process molecules
-    suppl = Chem.SDMolSupplier(file_path)
-    n_success, n_fail, n_skipped = 0, 0, 0
-    for mol in suppl:
-        if mol is None:
-            continue
-        mol_id = mol.GetProp(property_id)
-        mol_file = Path(mols_dir) / f"{mol_id}.pkl"
-
-        if mol_file.exists():
-            if on_conflict == "use_cache":
-                ccd_logger.info(f"Using cached CCD for {mol_id}")
-                n_skipped += 1
-                continue
-            elif on_conflict == "overwrite":
-                ccd_logger.info(f"Overwriting cached CCD for {mol_id}")
-            else:
-                raise ValueError(f"Invalid on_conflict mode: {on_conflict}")
-
-        try:
-            mol_to_ccd(mol_id, mol)
-            n_success += 1
-        except Exception as e:
-            ccd_logger.error(f"Failed to process ID {mol_id}: {e}")
-            n_fail += 1
-
-    ccd_logger.info(f"Caching complete — Success: {n_success}, Failed: {n_fail}, Skipped: {n_skipped}")
 
 def csv_to_sdf(
     csv_path: str,
@@ -216,104 +219,23 @@ def csv_to_sdf(
     writer.close()
     ccd_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")
 
-
-def generate_2d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
+def _save_mol(mol: Chem.Mol, mol_id: str, mols_dir: str):
     """
-    Generate 2D conformers for molecules in an SDF file.
-
-    Parameters
-    ----------
-    sdf_in : str
-        Input SDF file path.
-    sdf_out : str, optional
-        Output SDF file path. If None, overwrites input file.
-    """
-    sdf_out = sdf_out or sdf_in
-    suppl = Chem.SDMolSupplier(sdf_in)
-    mols = [mol for mol in suppl if mol is not None]
-
-    for mol in mols:
-        rdDepictor.Compute2DCoords(mol)
-
-    writer = Chem.SDWriter(sdf_out)
-    for mol in mols:
-        writer.write(mol)
-    writer.close()
-    ccd_logger.info(f"Generated 2D conformers in {sdf_out}")
-
-
-def generate_3d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
-    """
-    Generate 3D conformers for molecules in an SDF file using ETKDG + UFF.
-
-    Parameters
-    ----------
-    sdf_in : str
-        Input SDF file path.
-    sdf_out : str, optional
-        Output SDF file path. If None, overwrites input file.
-    """
-    sdf_out = sdf_out or sdf_in
-    suppl = Chem.SDMolSupplier(sdf_in)
-    mols = [mol for mol in suppl if mol is not None]
-    mols_3d = []
-
-    for mol in mols:
-        try:
-            mol = Chem.AddHs(mol)
-            AllChem.EmbedMolecule(mol, AllChem.ETKDG())
-            AllChem.UFFOptimizeMolecule(mol)
-            mols_3d.append(mol)
-        except Exception as e:
-            ccd_logger.warning(f"3D conformer generation failed for molecule: {e}")
-
-    writer = Chem.SDWriter(sdf_out)
-    for mol in mols_3d:
-        writer.write(mol)
-    writer.close()
-    ccd_logger.info(f"Generated 3D conformers in {sdf_out}")
-
-
-def add_pickled_prop(mol: Chem.Mol, name: str, value):
-    """
-    Pickle and set a property on the molecule.
+    Pickle the molecule to the specified directory.
 
     Parameters
     ----------
     mol : Chem.Mol
         RDKit molecule.
-    name : str
-        Property name.
-    value : Any
-        Value to pickle and set.
+    mol_id : str
+        Molecule identifier.
+    mols_dir : str
+        Directory to save the pickle file.
     """
-    mol.SetProp(name, pickle.dumps(value).hex())
-
-
-def extract_constraints(constraints, key, transpose=False):
-    """
-    Extract a list of values from constraint objects.
-
-    Parameters
-    ----------
-    constraints : list
-        List of constraint objects.
-    key : str
-        Attribute name to extract.
-    transpose : bool, optional
-        Whether to transpose the result (default False).
-
-    Returns
-    -------
-    list or numpy.ndarray
-        Extracted values, optionally transposed.
-    """
-    result = [getattr(obj, key) for obj in constraints]
-    if transpose:
-        import numpy as np
-        return np.array(result).transpose()
-    return result
-
+    out_path = os.path.join(mols_dir, f"{mol_id}.pkl")
+    with open(out_path, "wb") as f:
+        pickle.dump(mol, f)
+    ccd_logger.info(f"Pickled molecule saved at {out_path} for ID: {mol_id}")
 
 def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] = os.path.expanduser("~/.boltz")):
     """
@@ -388,9 +310,78 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     with open(mols_dir / f'{resname}.pkl', 'wb') as f:
         pickle.dump(mol, f)
 
+def cache_mols_from_sdf(file_path: str, property_id: str, on_conflict: str = 'overwrite', cache: str = "~/.boltz/"):
+    """
+    Reads molecules from SDF, assigns atom names, and pickles each molecule.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the SDF file.
+    property_id : str
+        Property name to use as molecule ID.
+    on_conflict : {'use_cache', 'overwrite'}
+        Behavior when CCD already exists in cache.
+    cache : str, optional
+        Path to cache directory (default ~/.boltz/).
+    """
+    file_path = os.path.expanduser(file_path)
+    cache = os.path.expanduser(cache)
+    mols_dir = os.path.join(cache, "mols")
+    os.makedirs(mols_dir, exist_ok=True)
+
+    if not os.path.exists(cache):
+        ccd_logger.info(f"Cache path {cache} does not exist. Downloading default cache...")
+        command.download_cache(cache)
+
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"Input file not found: {file_path}")
+
+    # Pre-check for duplicate IDs
+    ids = []
+    suppl = Chem.SDMolSupplier(file_path)
+    for mol in suppl:
+        if mol is not None and mol.HasProp(property_id):
+            ids.append(mol.GetProp(property_id))
+    duplicates = [i for i, c in Counter(ids).items() if c > 1]
+    if duplicates:
+        raise ValueError(f"Duplicate molecule IDs found in SDF: {duplicates}")
+
+    # Existing cache
+    cached_ids = {f.stem for f in Path(mols_dir).glob("*.pkl")}
+    overlap_ids = set(ids) & cached_ids
+    if overlap_ids:
+        ccd_logger.info(f"Found {len(overlap_ids)} overlapping IDs with cache: {sorted(list(overlap_ids))[:10]}...")
+
+    # Re-iterate to process molecules
+    suppl = Chem.SDMolSupplier(file_path)
+    n_success, n_fail, n_skipped = 0, 0, 0
+    for mol in suppl:
+        if mol is None:
+            continue
+        mol_id = mol.GetProp(property_id)
+        mol_file = Path(mols_dir) / f"{mol_id}.pkl"
+
+        if mol_file.exists():
+            if on_conflict == "use_cache":
+                ccd_logger.info(f"Using cached CCD for {mol_id}")
+                n_skipped += 1
+                continue
+            elif on_conflict == "overwrite":
+                ccd_logger.info(f"Overwriting cached CCD for {mol_id}")
+            else:
+                raise ValueError(f"Invalid on_conflict mode: {on_conflict}")
+
+        try:
+            mol_to_ccd(mol_id, mol)
+            n_success += 1
+        except Exception as e:
+            ccd_logger.error(f"Failed to process ID {mol_id}: {e}")
+            n_fail += 1
+
+    ccd_logger.info(f"Caching complete — Success: {n_success}, Failed: {n_fail}, Skipped: {n_skipped}")
 
 if __name__ == "__main__":
-    import sys
     print("Testing mol_to_ccd with ethanol (CCO)...")
     try:
         smiles = "CCO"
