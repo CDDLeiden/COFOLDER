@@ -110,7 +110,6 @@ def main(args):
         generate_conformers=args.generate_conformers,
         merge_data=args.merge_data,
     )
-    screen.iterate()
 
 def initiate_logger(logger, debug, wrk_dir):
     log_file = os.path.join(wrk_dir, 'boltz-tools.log')
@@ -199,10 +198,21 @@ class Screen(object):
             elif self.generate_conformers == "3D":
                 conformers.generate_3d_conformers(self.variable_sdf)
 
-            # Cache SDF as PKL
-            conformers.cache_mols_from_sdf(self.variable_sdf, 
-                                            property_id=self.property_id, 
-                                            cache=self.opt.find_value(key='cache') or '~/.boltz/')
+            # Cache each mol as PKL
+            cache_dir = self.opt.find_value(key='cache') or '~/.boltz/'
+            for mol in self.variables:
+                if mol is None:
+                    continue
+                if mol.HasProp(self.property_id):
+                    mol_id = mol.GetProp(self.property_id)
+                    mol_id = conformers.sanitize_mol_id(mol_id)
+                else:
+                    self.logger.error(f"SDF molecule missing ID property '{self.property_id}'")
+                    continue
+                try:
+                    conformers.mol_to_ccd(mol_id, mol, boltz_path=cache_dir)
+                except Exception as e:
+                    self.logger.error(f"Failed to process ID {mol_id}: {e}")
                 
     def iterate(self):      
         if self.variable_sdf:
@@ -211,7 +221,14 @@ class Screen(object):
                     
                 name = mol.GetProp(self.property_id)
                 basename = f"{i}_{name}"
-                variable = name 
+
+                variable = name
+                if len(name) > 5:
+                    truncated = name[:5]
+                    print(f"[WARNING] Variable name '{name}' is longer than 5 characters. "
+                        f"Truncating to '{truncated}' to comply with CCD naming rules.")
+                    variable = truncated
+
 
                 self.run(variable, basename)
 
@@ -232,43 +249,43 @@ class Screen(object):
                 
                 self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
 
-    def run(self, variable, basename):
-            self.sys.update_system(value=variable, path=self.variable)
-            
-            # Set output directory and update system
-            out_dir = os.path.join(self.wrk_dir, basename)
-            utils.set_dir(out_dir)
-            self.opt.out_dir = out_dir
-            
-            # MSA recycling - only possible for monomer systems
-            self.msa = self.sys.find_value(key='msa')
-            if self.msa and not os.path.exists(self.msa):
-                raise FileNotFoundError(f"MSA file not found at {self.msa}")
+    def run(self, variable, basename):       
+        self.sys.update_system(value=variable, path=self.variable)
+        
+        # Set output directory and update system
+        out_dir = os.path.join(self.wrk_dir, basename)
+        utils.set_dir(out_dir)
+        self.opt.out_dir = out_dir
+        
+        # MSA recycling - only possible for monomer systems
+        self.msa = self.sys.find_value(key='msa')
+        if self.msa and not os.path.exists(self.msa):
+            raise FileNotFoundError(f"MSA file not found at {self.msa}")
 
-            self.logger.info(f'System:\n{str(self.sys.system)}')
-            yaml_path = os.path.join(out_dir, f'{basename}.yaml')
-            self.opt.system_path = yaml_path
-            self.sys.save_system_to_yaml(path=yaml_path)
+        self.logger.info(f'System:\n{str(self.sys.system)}')
+        yaml_path = os.path.join(out_dir, f'{basename}.yaml')
+        self.opt.system_path = yaml_path
+        self.sys.save_system_to_yaml(path=yaml_path)
 
-            # Set and run command
-            cmd = self.opt.set_command(system=self.sys)
-            self.logger.info(f'Running: {" ".join(cmd)}')
-            subprocess.run(cmd)
+        # Set and run command
+        cmd = self.opt.set_command(system=self.sys)
+        self.logger.info(f'Running: {" ".join(cmd)}')
+        subprocess.run(cmd)
 
-            # update MSA after first iteration
-            if self.msa == None:
-                try:
-                    _ = self.sys.find_value(key='protein')
-                    self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
-                    self.sys.update_system(value=self.msa, parent_key='protein', sub_key='msa')
-                    self.logger.info(f'Cleaning up MSA file: {self.msa}')
-                    utils.delete_last_line(self.msa)
-                except ValueError:
-                    self.logger.info(f'MSA recycling not available for multimers in current version')
+        # update MSA after first iteration
+        if self.msa == None:
+            try:
+                _ = self.sys.find_value(key='protein')
+                self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
+                self.sys.update_system(value=self.msa, parent_key='protein', sub_key='msa')
+                self.logger.info(f'Cleaning up MSA file: {self.msa}')
+                utils.delete_last_line(self.msa)
+            except ValueError:
+                self.logger.info(f'MSA recycling not available for multimers in current version')
 
-            #TODO: gather results (sdf/csv independent) | Current: Only CSV
-            #self.gather_metrics(out_dir, i, row)
-            #self.gather_structures(out_dir, i, row)
+        #TODO: gather results (sdf/csv independent) | Current: Only CSV
+        #self.gather_metrics(out_dir, i, row)
+        #self.gather_structures(out_dir, i, row)
 
 
     def gather_metrics(self, out_dir, i, row):
