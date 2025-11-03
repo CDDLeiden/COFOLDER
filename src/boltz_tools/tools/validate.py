@@ -167,7 +167,8 @@ class Validate(object):
         for i in range(self.repeats):
             seed = self.seeds[i] if self.seeds else None
             self.logger.info(f"Repeat {i+1}/{self.repeats}, using seed={seed}")
-
+            self.opt.update_options(value=seed, path="options,seed")
+            
             # Run Boltz predict (assuming self.opt.predict returns dict with results)
             result = self.opt.predict(system=self.sys, seed=seed)
             self.results.append(result)
