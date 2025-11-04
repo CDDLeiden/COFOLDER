@@ -4,6 +4,7 @@
 import os
 import logging
 from Bio import PDB
+import subprocess
 
 from ..helpers import command, conformers, system, utils
 
@@ -135,7 +136,9 @@ class Validate(object):
 
         # Set command and system objects
         self._options = utils.read_yaml(path=self.options_path)
-        self.opt = command.Command(options=self._options)
+        self.opt = command.Command(options=self._options)      
+
+        print(self.opt)  
         self._system = utils.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
@@ -144,9 +147,8 @@ class Validate(object):
     def run(self):
         reference_structure = self._load_reference_structure()
 
-##### Generated code from here, to be implemented #####
-        self._run_predict()
-#### ^ WIP ^ ####
+        self.run_boltz()
+        ##### Generated code from here, to be implemented #####
         
         self._extract_confidence_affinity()
         self._sequence_similarity()
@@ -160,18 +162,24 @@ class Validate(object):
         self._aggregate_results()
         self.logger.info("Validation complete.")
 
-    def _run_predict(self):
+    def run_boltz(self):
         self.logger.info(f"Running Boltz predictions for {self.repeats} repeats")
         self.results = []
 
+        self.opt.system_path = self.system_path
+        self.name = os.path.splitext(os.path.basename(self.system_path))[0]
+
         for i in range(self.repeats):
+            self.opt.out_dir = os.path.join(self.wrk_dir, f'{self.name}_{str(i+1)}')
             seed = self.seeds[i] if self.seeds else None
             self.logger.info(f"Repeat {i+1}/{self.repeats}, using seed={seed}")
-            self.opt.update_options(value=seed, path="options,seed")
-            
-            # Run Boltz predict (assuming self.opt.predict returns dict with results)
-            result = self.opt.predict(system=self.sys, seed=seed)
-            self.results.append(result)
+            self.opt.update_options(value=seed, path=["options", 0, "seed"]) 
+
+            print(self.opt.options)
+        
+            cmd = self.opt.set_command(system=self.sys)
+            self.logger.info(f'Running: {" ".join(cmd)}')
+            subprocess.run(cmd)
 
     def _extract_confidence_affinity(self):
         for i, result in enumerate(self.results):
