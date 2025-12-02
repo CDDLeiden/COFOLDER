@@ -1,3 +1,5 @@
 options:
     - cache: ./cache/.boltz
     - use_potentials: "True"
+    - diffusion_samples: 2
+    - diffusion_samples_affinity: 2

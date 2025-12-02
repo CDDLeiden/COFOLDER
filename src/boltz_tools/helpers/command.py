@@ -131,3 +131,50 @@ class Command:
             if len(found) > 1:
                 raise ValueError(f"Key '{key}' appears multiple times; use path instead.")
             return found[0]
+        
+    def update_options(self, value, path=None, parent_key=None, sub_key=None):
+        """
+        Update options dictionary at a specific path or parent key.
+
+        Args:
+            value: Value to set.
+            path (list, optional): Path to the value in nested dict/list.
+            parent_key (str, optional): Top-level or nested key to update.
+            sub_key (str, optional): Sub-key inside parent key.
+        """
+        if path:
+            d = self.options
+            for key in path[:-1]:
+                if isinstance(d, dict):
+                    d = d.setdefault(key, {})
+                elif isinstance(d, list):
+                    idx = int(key)
+                    d = d[idx]
+                else:
+                    raise ValueError(f"Cannot traverse into object at {key} in path {path}")
+
+            last_key = path[-1]
+            if isinstance(d, dict):
+                d[last_key] = value
+            elif isinstance(d, list):
+                d[int(last_key)] = value
+            else:
+                raise ValueError(f"Cannot set value at path {path}")
+
+        elif parent_key:
+            def set_key(d):
+                if isinstance(d, dict):
+                    if parent_key in d:
+                        if sub_key:
+                            d[parent_key] = d.get(parent_key, {})
+                            d[parent_key][sub_key] = value
+                        else:
+                            d[parent_key] = value
+                        return True
+                    return any(set_key(v) for v in d.values())
+                if isinstance(d, list):
+                    return any(set_key(i) for i in d)
+                return False
+
+            if not set_key(self.options):
+                raise KeyError(f"Parent key '{parent_key}' not found in the options.")
