@@ -1,12 +1,12 @@
 import argparse
 from .. import __version__
-from ..recipes import predict, screen, oracle, validate
+from ..recipes import evaluate, predict, screen, oracle
 
 TOOLS = [
     ("predict", predict, "Basic protocol for co-folding a single system using Boltz."),
     ("screen", screen, "Co-fold a library using Boltz for virtual screening."),
     ("oracle", oracle, "Use Boltz as an oracle function for single SMILES predictions."),
-    ("validate", validate, "Validate Boltz system configuration."),
+    ("evaluate", evaluate, "Evaluate Boltz system configuration."),
 ]
 
 def main(argv=None):

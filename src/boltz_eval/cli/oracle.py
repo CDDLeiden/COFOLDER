@@ -1,29 +1,48 @@
-# Script for running Boltz as an oracle function.
+import os
+import logging
 
-# Input: 
-#   - SMILES that varies per oracle call.
-#   - YAML system file containing:
-#       - FASTA sequence of protein
-#       - [OPTIONAL] Co-factors
-#       - [OPTIONAL] Contraints and/or Templates
-#   - choice of output metric:
-#       - output confidence metric (confidence_score, ptm, ...)    
-#       - output affinity (affinity_pred_value, affinity_probability_binary, ...)
-#       - RMSD of diffusion samples
-# Output:
-#   - Metric of choice   
-
-# This script should take in a singular SMILES and return a singular float
-# value. 
-
-# EXTRA IDEAS:
-#   - Add FASTA sequence as variable input.
-
-# TODO: everything
+from ..recipes.oracle import Oracle
+from ..modules import utils
+from ..modules.logger import initiate_logger
 
 def add_arguments(parser):
-    """Add predict-specific CLI arguments."""
-    parser.add_argument('--some_predict_flag', help='Example flag for predict')
+    """Add oracle-specific CLI arguments."""
+    parser.add_argument('-w', '--wrk_dir',
+                        type=str,
+                        dest='wrk_dir',
+                        help='Set Working directory if different from CWD.',
+                        default=os.getcwd())
+
+    parser.add_argument('-s', '--system_path',
+                        type=str,
+                        dest='system_path',
+                        help='Path to system YAML file.',
+                        required=True)
+
+    parser.add_argument('-b', '--boltz_options_path',
+                        type=str,
+                        dest='options_path',
+                        help='Path to Boltz options YAML file.',
+                        required=True)
+    
+    parser.add_argument('-d', '--debug',
+                    action='store_true',
+                    help='Enable debug logging')
 
 def main(args):
-    print(f"[PREDICT] Running in {args.wrk_dir} with system={args.yaml_system}")
+    """Run the oracle recipe."""
+    utils.set_dir(args.wrk_dir) 
+
+    logger = logging.getLogger("boltz-eval.oracle")
+    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
+
+    logger.info("Starting Boltz-eval oracle pipeline.")
+
+    oracle = Oracle(
+        wrk_dir=args.wrk_dir,
+        system_path=args.system_path,
+        options_path=args.options_path
+    )
+
+    oracle.run()
+    logger.info("Oracle pipeline completed.")
