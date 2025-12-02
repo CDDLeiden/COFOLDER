@@ -1,7 +1,7 @@
-# Boltz-Tools
+# Boltz-Eval
 
 ## Introduction 
-Boltz-Tools is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
+Boltz-Eval is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
 
 ## Installation
 Install directly from GitHub for newest updates:
@@ -11,9 +11,9 @@ cd boltz-tools; pip install -e .
 ```
 
 ## Usage
-The main command is `boltz-tools`, which supports several subcommands:
+The main command is `boltz-eval`, which supports several subcommands:
 ```
-boltz-tools [-h] [-v] {predict,screen,oracle,validate}
+boltz-eval [-h] [-v] {predict,screen,oracle,validate}
 ```
 
 ### Subcommands
@@ -24,8 +24,8 @@ boltz-tools [-h] [-v] {predict,screen,oracle,validate}
 
 Use the -h flag with any command to see detailed usage:
 ```
-boltz-tools -h
-boltz-tools screen -h
+boltz-eval -h
+boltz-eval screen -h
 ```
 
 ## Contributing
@@ -38,31 +38,37 @@ boltz-tools screen -h
 
 ## Package Structure
 ```
-examples/                          # Example input files for tutorials 
-legacy/                            # Obsolete files
+examples/
+legacy/
 src/
-└── boltz_tools/
+└── boltz_eval/
     ├── __init__.py
     ├── __main__.py
-    ├── cli.py                     # Root CLI 
-    ├── helpers/                   # General utilities 
-    │   ├── __init__.py
-    │   ├── command.py             # Boltz CLI 
-    │   ├── conformers.py          # CCD handling
-    │   ├── system.py              # System YAML modification
-    │   └── utils.py               # General utilities
-    ├── tools/                     # Tools / subcommands 
+    ├── cli/
     │   ├── __init__.py
     │   ├── predict.py
     │   ├── validate.py
     │   ├── screen.py
     │   └── oracle.py
-    └── analytics/                 # Data analysis utilities 
-        ├── __init__.py
-        ├── stats.py
-        └── plotting.py
-tests/                             # Unit tests
-tutorials/                         # Tutorials
+    ├── recipes/
+    │   ├── __init__.py
+    │   ├── predict.py
+    │   ├── validate.py
+    │   ├── screen.py
+    │   └── oracle.py
+    └── modules/
+        ├── helpers/
+        │   ├── __init__.py
+        │   ├── command.py
+        │   ├── conformers.py
+        │   ├── system.py
+        │   └── utils.py
+        └── analytics/
+            ├── __init__.py
+            ├── stats.py
+            └── plotting.py
+tests/
+tutorials/
 LISENCE
 pyproject.toml
 README.md

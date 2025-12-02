@@ -1,6 +1,6 @@
 import argparse
-from . import __version__
-from .tools import predict, screen, oracle, validate
+from .. import __version__
+from ..recipes import predict, screen, oracle, validate
 
 TOOLS = [
     ("predict", predict, "Basic protocol for co-folding a single system using Boltz."),
@@ -11,7 +11,7 @@ TOOLS = [
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        prog='boltz-tools',
+        prog='boltz-eval',
         description='Collection of helpful tools for performing various co-folding tasks using Boltz.'
     )
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
