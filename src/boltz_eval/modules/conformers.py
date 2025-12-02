@@ -10,7 +10,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
 from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
 
-from ..helpers import command
+from ..modules import command
 
 ccd_logger = logging.getLogger('boltz-tools.helpers.conformers')
 
