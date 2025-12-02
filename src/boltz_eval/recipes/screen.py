@@ -6,158 +6,67 @@ import json
 import shutil
 import logging
 
-from rdkit import Chem
+from ..modules import command, conformers, system, utils
 
-from ..helpers import command, conformers, system, utils
+class Screen:
+    """High-level orchestrator for virtual screening workflow."""
+    def __init__(
+        self,
+        wrk_dir: str,
+        system_path: str,
+        options_path: str,
+        variable: str | None = None,
+        variable_csv: str | None = None,
+        col_variable: str | None = None,
+        col_id: str | None = None,
+        variable_sdf: str | None = None,
+        property_id: str | None = None,
+        generate_conformers: str | None = None,
+        merge_data: str | None = None,
+        debug: bool = False,
+    ):
+        self.wrk_dir = wrk_dir
+        self.system_path = system_path
+        self.options_path = options_path
 
-def add_arguments(parser):
-    """Add screen-specific CLI arguments."""
-    parser.add_argument('-w', '--wrk_dir',
-                        type=str,
-                        dest='wrk_dir',
-                        help='Set Working directory if different from CWD.',
-                        default=os.getcwd())
+        # Parse variables (comma-separated string)
+        self.variable = self._parse_list(variable)
+        self.merge_data = self._parse_list(merge_data)
 
-    parser.add_argument('-s', '--system_path',
-                        type=str,
-                        dest='system_path',
-                        help='Path to system YAML file.',
-                        required=True)
+        self.variable_csv = variable_csv
+        self.col_variable = col_variable
+        self.col_id = col_id
+        self.variable_sdf = variable_sdf
+        self.property_id = property_id
+        self.generate_conformers = generate_conformers
 
-    parser.add_argument('-b', '--boltz_options_path',
-                        type=str,
-                        dest='options_path',
-                        help='Path to Boltz options YAML file.',
-                        required=True)
-    
-    parser.add_argument('-v', '--variable',
-                        type=str,
-                        dest='variable',
-                        help='Comma-seperated list of keys specifying the nested path in \
-                            the system YAML to update. (e.g. "sequences,1,ligand,smiles")',
-                        required=True)
-    
-    parser.add_argument('-c', '--variable_csv',
-                        type=str,
-                        default=None,
-                        dest='variable_csv',
-                        help='Path to CSV file containing variables. If provided, you must \
-                            also specify --col_variable and --col_id.')
-    
-    parser.add_argument('--col_variable',
-                        type=str,
-                        default=None,
-                        dest='col_variable',
-                        help='Column containing variable (e.g. SMILES/CCD/FASTA) (required \
-                            if --csv is used).')
-    
-    parser.add_argument('--col_id',
-                        type=str,
-                        default=None,
-                        dest='col_id',
-                        help='Column containing variable ID (required if --csv is used).')
-    
-    parser.add_argument('-s,', '--variable_sdf',
-                        type=str,
-                        default=None,
-                        dest='variable_sdf',
-                        help='Path to SDF file containing variables. If provided, you must \
-                            also specify --propterty_id.')
-    
-    parser.add_argument('--property_id',
-                        type=str,
-                        default=None,
-                        dest='property_id',
-                        help='Property name for compound ID in SDF file. Required if \
-                            --variable_sdf is used.')
-    
-    parser.add_argument('--generate_conformers',
-                        choices=['2D', '3D'],
-                        default=None,
-                        dest='generate_conformers',
-                        help='Generate 2D or 3D conformers for CCD input. If not specified, \
-                            original SMILES (csv) or MolBlock (sdf) are used as system input. \
-                            Note: This only works for SMILES, not any other variable type.')
-    
-    parser.add_argument('--merge_data',
-                        type=str,
-                        default=None,
-                        help='Comma-separated list of CSV columns or SDF prperties from input \
-                            to merge into output. (optional)')
-    
-    parser.add_argument('-d', '--debug',
-                        action='store_true',
-                        help='Enable debug logging')
+        # Logger setup
+        self.logger = logging.getLogger('boltz-eval.screening.Screen')
+        self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
+        self.logger.debug("Initializing Screen with parameters: %s", {
+            "wrk_dir": wrk_dir,
+            "system_path": system_path,
+            "options_path": options_path,
+            "variable": variable,
+            "variable_csv": variable_csv,
+            "col_variable": col_variable,
+            "col_id": col_id,
+            "variable_sdf": variable_sdf,
+            "property_id": property_id,
+            "generate_conformers": generate_conformers,
+            "merge_data": merge_data,
+        })
 
-def main(args):
-    """Run the virtual screening tool."""
-    utils.set_dir(args.wrk_dir)  
-
-    logger = logging.getLogger('boltz-tools')
-    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
-    logger.info("Boltz-tools screen started.")
-
-    screen = Screen(
-        wrk_dir=args.wrk_dir,
-        system_path=args.system_path,
-        options_path=args.options_path,
-        variable=args.variable,
-        variable_csv=args.variable_csv,
-        col_variable=args.col_variable,
-        col_id=args.col_id, 
-        variable_sdf=args.variable_sdf,
-        property_id=args.property_id,
-        generate_conformers=args.generate_conformers,
-        merge_data=args.merge_data,
-    )
-
-def initiate_logger(logger, debug, wrk_dir):
-    log_file = os.path.join(wrk_dir, 'boltz-tools.log')
-    open(log_file, 'w+').close()
-    
-    fh = logging.FileHandler(log_file)
-    ch = logging.StreamHandler()
-    
-    fh.setLevel(logging.DEBUG if debug else logging.INFO)
-    ch.setLevel(logging.WARNING)
-    
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d,%H:%M:%S')
-    fh.setFormatter(formatter)
-    ch.setFormatter(formatter)
-    
-    logger.setLevel(logging.DEBUG if debug else logging.INFO)
-    logger.addHandler(fh)
-    logger.addHandler(ch)
-
-class Screen(object):
-    def __init__(self, **kwargs):
-        self.wrk_dir = kwargs.get("wrk_dir")
-        self.system_path = kwargs.get("system_path")
-        self.options_path = kwargs.get("options_path")
-        self._variable = kwargs.get("variable", [])
-        self.variable = self.variable = self.variable = [int(v.strip()) if v.strip().isdigit() else v.strip() for v in self._variable.split(",")] if self._variable else []
-        
-        self.variable_csv = kwargs.get("variable_csv")
-        self.col_variable = kwargs.get("col_variable")
-        self.col_id = kwargs.get("col_id")
-        
-        self.variable_sdf = kwargs.get("variable_sdf")
-        self.property_id = kwargs.get("property_id")
-        
-        self.generate_conformers = kwargs.get("generate_conformers")
-
-        self._merge_data = kwargs.get("merge_data", [])
-        self.merge_data = [col.strip() for col in self._merge_data.split(",")] if self._merge_data else []
-        
-        self.logger = logging.getLogger('boltz-tools.screening.Screen')
-        self.logger.debug(f"Screen args: {kwargs}")
-
-        # Set command and system objects
+        # Load system and options
         self._options = utils.read_yaml(path=self.options_path)
         self.opt = command.Command(options=self._options)
+
         self._system = utils.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
+        self.logger.debug("Screen initialization complete.")
+
+    def run(self):
         self.load_screen()
         self.iterate()
 
@@ -334,3 +243,10 @@ class Screen(object):
                     shutil.copy2(os.path.join(structure_dir, file_name), os.path.join(target_dir, file_name))
                 except Exception as e:
                     self.logger.error(f"Error copying {file_name}: {e}")
+
+    @staticmethod
+    def _parse_list(input_str: str | None) -> list:
+        """Parse a comma-separated string into a list, converting digits to int."""
+        if not input_str:
+            return []
+        return [int(v.strip()) if v.strip().isdigit() else v.strip() for v in input_str.split(",")]

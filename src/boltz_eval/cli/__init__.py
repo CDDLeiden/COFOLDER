@@ -1,8 +1,8 @@
 import argparse
 from .. import __version__
-from ..recipes import evaluate, predict, screen, oracle
+from . import evaluate, predict, screen, oracle
 
-TOOLS = [
+RECIPES = [
     ("predict", predict, "Basic protocol for co-folding a single system using Boltz."),
     ("screen", screen, "Co-fold a library using Boltz for virtual screening."),
     ("oracle", oracle, "Use Boltz as an oracle function for single SMILES predictions."),
@@ -18,10 +18,10 @@ def main(argv=None):
     
     subparsers = parser.add_subparsers(dest='command', required=True)
 
-    for name, module, help_text in TOOLS:
+    for name, recipe, help_text in RECIPES:
         sp = subparsers.add_parser(name, help=help_text)
-        module.add_arguments(sp)
-        sp.set_defaults(func=module.main)
+        recipe.add_arguments(sp)
+        sp.set_defaults(func=recipe.main)
 
     args = parser.parse_args(argv)
     args.func(args)

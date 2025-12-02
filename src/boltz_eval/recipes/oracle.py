@@ -1,29 +1,25 @@
-# Script for running Boltz as an oracle function.
+import logging
 
-# Input: 
-#   - SMILES that varies per oracle call.
-#   - YAML system file containing:
-#       - FASTA sequence of protein
-#       - [OPTIONAL] Co-factors
-#       - [OPTIONAL] Contraints and/or Templates
-#   - choice of output metric:
-#       - output confidence metric (confidence_score, ptm, ...)    
-#       - output affinity (affinity_pred_value, affinity_probability_binary, ...)
-#       - RMSD of diffusion samples
-# Output:
-#   - Metric of choice   
+class Oracle(object):
+    """High-level orchestrator for oracle workflow."""
+    def __init__(
+        self,
+        wrk_dir: str,
+        system_path: str,
+        options_path: str,
+        debug: bool = False,
+    ):
+        self.wrk_dir = wrk_dir
+        self.system_path = system_path
+        self.options_path = options_path
 
-# This script should take in a singular SMILES and return a singular float
-# value. 
+        # Setup logger
+        self.logger = logging.getLogger(f'boltz-eval.oracle.Oracle')
+        self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
+        self.logger.debug("Initializing Oracle with parameters: %s", {
+            "wrk_dir": wrk_dir,
+            "system_path": system_path,
+            "options_path": options_path
+        })
 
-# EXTRA IDEAS:
-#   - Add FASTA sequence as variable input.
-
-# TODO: everything
-
-def add_arguments(parser):
-    """Add predict-specific CLI arguments."""
-    parser.add_argument('--some_predict_flag', help='Example flag for predict')
-
-def main(args):
-    print(f"[PREDICT] Running in {args.wrk_dir} with system={args.yaml_system}")
+        self.logger.debug("Oracle initialization complete.")
