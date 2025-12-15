@@ -6,7 +6,8 @@ import json
 import shutil
 import logging
 
-from ..modules import command, conformers, system, utils
+# legacy imports
+from ..modules.legacy import command, system, utils
 
 class Screen:
     """High-level orchestrator for virtual screening workflow."""

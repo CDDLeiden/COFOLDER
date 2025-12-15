@@ -3,7 +3,12 @@ import logging
 from Bio import PDB
 import subprocess
 
-from ..modules import command, system, utils
+from ..modules.utils import parse_list_as_str
+
+# legacy imports
+from ..modules.legacy import command, system, utils
+
+logger = logging.getLogger('boltz-eval.recipes.evaluate')
 
 class Evaluate(object):
     """High-level orchestrator for evaluation workflow."""
@@ -17,20 +22,19 @@ class Evaluate(object):
         input_pdb: str | None = None,
         ifp: str | None = None,
         generate_conformers: str | None = None,
-        debug: bool = False,
     ):
         self.wrk_dir = wrk_dir
         self.system_path = system_path
         self.options_path = options_path
         self.repeats = repeats
+        self._seeds = seeds
+        self.seeds = parse_list_as_str(self._seeds, separator=',', item_type=int, expected_length=self.repeats) if self._seeds else []
+
         self.input_pdb = input_pdb
         self.ifp = ifp
         self.generate_conformers = generate_conformers
 
-        # Setup logger
-        self.logger = logging.getLogger(f'boltz-eval.evaluate.Evaluate')
-        self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
-        self.logger.debug("Initializing Evaluate with parameters: %s", {
+        logger.debug("Initializing Evaluate with parameters: %s", {
             "wrk_dir": wrk_dir,
             "system_path": system_path,
             "options_path": options_path,
@@ -41,23 +45,24 @@ class Evaluate(object):
             "generate_conformers": generate_conformers
         })
 
-        # Parse seeds
-        self.seeds = self._parse_seeds(seeds)
 
-        # Validate seeds length
-        if self.seeds and len(self.seeds) != self.repeats:
-            raise ValueError(f"Number of seeds ({len(self.seeds)}) must match repeats ({self.repeats}).")
+        self.opt = None
+        self.sys = None
 
-        # Load system and options
-        self._options = utils.read_yaml(path=self.options_path)
-        self.opt = command.Command(options=self._options)
-
-        self._system = utils.read_yaml(path=self.system_path)
-        self.sys = system.System(system=self._system)
-
-        self.logger.debug("Evaluate initialization complete.")
+        logger.debug("Evaluate initialization complete.")
 
     def run(self):
+        pass
+
+    def _run(self):
+        self.load_config()      # helper function that loads YAML config files
+        # Load system and options
+        #self._options = utils.read_yaml(path=self.options_path)
+        #self.opt = command.Command(options=self._options)
+
+        #self._system = utils.read_yaml(path=self.system_path)
+        #self.sys = system.System(system=self._system)
+
         reference_structure = self._load_reference_structure()
 
         self.run_boltz()

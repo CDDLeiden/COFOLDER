@@ -27,11 +27,11 @@ def initiate_logger(logger: logging.Logger, debug: bool = False, wrk_dir: str = 
 
     # Console handler (warnings and above)
     ch = logging.StreamHandler()
-    ch.setLevel(logging.WARNING)
+    ch.setLevel(logging.DEBUG if debug else logging.INFO)
 
     # Formatter
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        '%(asctime)s - %(module)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d,%H:%M:%S'
     )
     fh.setFormatter(formatter)
@@ -44,6 +44,8 @@ def initiate_logger(logger: logging.Logger, debug: bool = False, wrk_dir: str = 
     logger.setLevel(logging.DEBUG if debug else logging.INFO)
     logger.addHandler(fh)
     logger.addHandler(ch)
+
+    logger.propagate = False
 
     logger.debug(f"Logger initialized. Log file: {log_file}, debug={debug}")
     return logger

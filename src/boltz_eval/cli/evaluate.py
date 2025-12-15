@@ -36,8 +36,8 @@ def add_arguments(parser):
                         type=str,
                         default=None,
                         dest='seeds',
-                        help=('Optional, List of integer seeds to use for repeats. '
-                              'Must be the same length as --repeats, e.g. "[42, 123, 999]".'))
+                        help=('Optional, A comma-seperated list of integer seeds to use for repeats. '
+                              'Must be the same length as --repeats, e.g. --repeats 3 --seeds 42,123,999 '))
     
     parser.add_argument('-i', '--input_pdb',
                         type=str,
@@ -69,9 +69,9 @@ def add_arguments(parser):
     
 def main(args):
     """Run the evaluate system recipe."""
-    utils.set_dir(args.wrk_dir) 
+    utils.create_dir(args.wrk_dir) 
 
-    logger = logging.getLogger("boltz-eval.evaluate")
+    logger = logging.getLogger("evaluate")
     initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
 
     logger.info("Starting Boltz-eval evaluation pipeline.")

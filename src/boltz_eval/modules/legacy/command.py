@@ -1,6 +1,6 @@
 import multiprocessing
 import logging
-from ..modules import utils
+from . import utils
 
 logger = logging.getLogger('boltz-tools.helpers')
 

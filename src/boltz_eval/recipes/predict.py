@@ -3,7 +3,8 @@ import subprocess
 import time
 import logging
 
-from ..modules import command, system, utils
+# legacy imports
+from ..modules.legacy import command, system, utils
 
 class Predict(object):
     """High-level orchestrator for prediction workflow."""

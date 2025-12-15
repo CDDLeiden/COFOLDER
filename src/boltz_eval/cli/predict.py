@@ -39,7 +39,7 @@ def add_arguments(parser):
 
 def main(args):
     """Run the predict tool."""
-    utils.set_dir(args.wrk_dir)  
+    utils.create_dir(args.wrk_dir)  
 
     logger = logging.getLogger("boltz-eval.predict")
     initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)

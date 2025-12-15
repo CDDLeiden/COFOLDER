@@ -31,7 +31,7 @@ def add_arguments(parser):
 
 def main(args):
     """Run the oracle recipe."""
-    utils.set_dir(args.wrk_dir) 
+    utils.create_dir(args.wrk_dir) 
 
     logger = logging.getLogger("boltz-eval.oracle")
     initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
