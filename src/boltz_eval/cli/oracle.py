@@ -3,7 +3,7 @@ import logging
 
 from ..recipes.oracle import Oracle
 from ..modules import utils
-from ..modules.logger import initiate_logger
+#from ..modules.logger import initiate_logger
 
 def add_arguments(parser):
     """Add oracle-specific CLI arguments."""
@@ -34,7 +34,7 @@ def main(args):
     utils.create_dir(args.wrk_dir) 
 
     logger = logging.getLogger("boltz-eval.oracle")
-    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
+    #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
 
     logger.info("Starting Boltz-eval oracle pipeline.")
 

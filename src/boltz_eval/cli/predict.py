@@ -3,7 +3,7 @@ import logging
 
 from ..recipes.predict import Predict
 from ..modules import utils
-from ..modules.logger import initiate_logger
+#from ..modules.logger import initiate_logger
 
 def add_arguments(parser):
     """Add predict-specific CLI arguments."""
@@ -42,7 +42,7 @@ def main(args):
     utils.create_dir(args.wrk_dir)  
 
     logger = logging.getLogger("boltz-eval.predict")
-    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
+    #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
 
     logger.info("Starting Boltz-eval prediction pipeline.")
 

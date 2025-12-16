@@ -3,7 +3,7 @@ import logging
 
 from ..recipes.screen import Screen
 from ..modules import utils
-from ..modules.logger import initiate_logger
+#from ..modules.logger import initiate_logger
 
 def add_arguments(parser):
     """Add screen-specific CLI arguments."""
@@ -89,7 +89,7 @@ def main(args):
     utils.create_dir(args.wrk_dir)  
 
     logger = logging.getLogger("boltz-eval.evaluate")
-    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
+    #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
 
     logger.info("Starting Boltz-eval screening pipeline.")
 

@@ -3,12 +3,13 @@ import logging
 from Bio import PDB
 import subprocess
 
-from ..modules.utils import parse_list_as_str
+from boltz_eval.modules.utils.helpers import parse_list_as_str
+
+
+logger = logging.getLogger(__name__)
 
 # legacy imports
 from ..modules.legacy import command, system, utils
-
-logger = logging.getLogger('boltz-eval.recipes.evaluate')
 
 class Evaluate(object):
     """High-level orchestrator for evaluation workflow."""
@@ -22,6 +23,7 @@ class Evaluate(object):
         input_pdb: str | None = None,
         ifp: str | None = None,
         generate_conformers: str | None = None,
+        parent_logger=None
     ):
         self.wrk_dir = wrk_dir
         self.system_path = system_path
@@ -34,6 +36,17 @@ class Evaluate(object):
         self.ifp = ifp
         self.generate_conformers = generate_conformers
 
+        # Use parent logger if provided, otherwise create own
+        #if parent_logger is not None:
+        #    self.logger = parent_logger.getChild('Evaluate')
+        #else:
+        #    self.logger = initiate_logger(
+        #        logger_name='recipes.evaluate.Evaluate',
+        #       #debug=True,
+        #       wrk_dir=self.wrk_dir,
+        #       log_name='log'
+        #    )
+
         logger.debug("Initializing Evaluate with parameters: %s", {
             "wrk_dir": wrk_dir,
             "system_path": system_path,
@@ -44,7 +57,6 @@ class Evaluate(object):
             "ifp": ifp,
             "generate_conformers": generate_conformers
         })
-
 
         self.opt = None
         self.sys = None

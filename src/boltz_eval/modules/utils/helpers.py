@@ -1,7 +1,8 @@
 import os
 import logging
 
-logger = logging.getLogger("evaluate")
+
+logger = logging.getLogger(__name__)
 
 def create_dir(path: str):
     """

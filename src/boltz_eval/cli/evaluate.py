@@ -2,8 +2,9 @@ import os
 import logging
 
 from ..recipes.evaluate import Evaluate
-from ..modules import utils
-from ..modules.logger import initiate_logger
+from boltz_eval.modules.utils import helpers
+
+from boltz_eval.modules.utils.log import setup_root_logger
 
 def add_arguments(parser):
     """Add evaluate-specific CLI arguments."""
@@ -63,17 +64,31 @@ def add_arguments(parser):
                             original SMILES (csv) or MolBlock (sdf) are used as system input. \
                             Note: This only works for SMILES, not any other variable type.')
     
+    parser.add_argument('--log_name',
+                        type=str,
+                        default='log',
+                        help='Base name for log file. Defaults to "log".')
+
     parser.add_argument('-d', '--debug',
                         action='store_true',
                         help='Enable debug logging')
     
 def main(args):
     """Run the evaluate system recipe."""
-    utils.create_dir(args.wrk_dir) 
+    helpers.create_dir(args.wrk_dir) 
 
-    logger = logging.getLogger("evaluate")
-    initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
+    setup_root_logger(logging.DEBUG) if args.debug else setup_root_logger(logging.INFO)    
 
+    logger = logging.getLogger(__name__)
+    # Initialize logger
+    #cli_logger = initiate_logger(
+    #    logger_name='cli',
+    #    debug=args.debug,
+    #    wrk_dir=args.wrk_dir,
+    #    log_name=args.log_name
+    #)
+
+    logger.info(f"Logger initialized. Log file: {os.path.join(args.wrk_dir, args.log_name)+'.log'}, debug={args.debug}")
     logger.info("Starting Boltz-eval evaluation pipeline.")
 
     evaluator = Evaluate(
@@ -84,7 +99,8 @@ def main(args):
         seeds=args.seeds,
         input_pdb=args.input_pdb,
         ifp=args.ifp,
-        generate_conformers=args.generate_conformers
+        generate_conformers=args.generate_conformers,
+        #parent_logger=cli_logger
     )
 
     evaluator.run()
