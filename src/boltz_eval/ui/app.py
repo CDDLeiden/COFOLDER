@@ -128,18 +128,18 @@ OPTION_INFO = {
 st.markdown("""
     <style>
     :root {
-        /* Use Streamlit theme variables when available, with fallbacks */
-        --app-bg: var(--background-color, #ffffff);
-        --app-bg-2: var(--secondary-background-color, #f5f5f5);
-        --app-text: var(--text-color, #262730);
-        --app-primary: var(--primary-color, #667eea);
+        /* Use Streamlit theme variables only; avoid hard fallbacks so theme switching works */
+        --app-bg: var(--background-color);
+        --app-bg-2: var(--secondary-background-color);
+        --app-text: var(--text-color);
+        --app-primary: var(--primary-color);
         --app-accent-2: #764ba2; /* header gradient second color */
         --success-border: rgba(40, 167, 69, 0.6);
         --error-border: rgba(220, 53, 69, 0.7);
         --info-border: rgba(23, 162, 184, 0.6);
     }
 
-    body, .stApp { background-color: var(--app-bg); color: var(--app-text); }
+    /* Do not force background/text here; let Streamlit theme apply globally */
 
     .main-header {
         font-size: 2.5em;
@@ -758,10 +758,11 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
 
         if variable_csv:
             cmd.extend(['-c', variable_csv])
-            cmd.extend(['--col_variable', col_variable])
+            if col_variable:
+                cmd.extend(['--col_variable', col_variable])
 
         if variable_sdf:
-            cmd.extend(['-s,', variable_sdf])
+            cmd.extend(['-s', variable_sdf])
             cmd.extend(['--property_id', property_id])
 
         cmd.extend(['--col_id', col_id])
@@ -937,6 +938,12 @@ def main():
         if st.button('🔄 Reset Options to Defaults'):
             st.session_state.options = DEFAULT_OPTIONS.copy()
             st.rerun()
+
+        st.markdown('---')
+        st.markdown('### 🎨 Appearance')
+        st.caption(
+            "Use the app menu (⋮ → Settings → Theme) to switch between Light/Dark/Auto. "
+            "Your choice is saved per browser.")
 
 
 if __name__ == '__main__':

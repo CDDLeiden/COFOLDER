@@ -5,12 +5,5 @@ toolbarMode = "developer"   # ensure app menu (⋮) is fully enabled
 [logger]
 level = "info"
 
-# Theme section: use a base theme so the app menu can switch between Light/Dark/Auto at runtime.
-# Users can change theme via the Streamlit menu (⋮ → Settings → Theme).
-[theme]
-base = "light"            # default base theme; users can switch to dark in the app menu
-primaryColor = "#667eea"  # accent color
-# Avoid overriding text/background colors here so runtime theme switching stays effective
-
 [browser]
 gatherUsageStats = false
