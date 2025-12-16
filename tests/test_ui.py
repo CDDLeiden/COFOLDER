@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Test suite for Boltz-Eval UI
+Test suite for Boltz-Lab UI
 Validates that all UI components work correctly
 """
 import sys
