@@ -22,7 +22,7 @@ class System:
             self.system = system
         elif system_path:
             self.logger.debug(f"Loading system YAML from {system_path}")
-            self.system = utils.read_yaml(path=system_path)
+            self.system = helpers.read_yaml(path=system_path)
         else:
             raise ValueError("Either 'system' or 'system_path' must be provided.")
     

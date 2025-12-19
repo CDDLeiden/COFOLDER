@@ -110,13 +110,13 @@ class Evaluate(object):
         sequence = self.sys.get_sequence()  # assuming System class has this
         self.logger.info(f"Protein sequence: {sequence}")
         # placeholder for similarity calculation
-        self.sequence_similarity_score = utils.compare_sequence_to_database(sequence)
+        self.sequence_similarity_score = helpers.compare_sequence_to_database(sequence)
   
     def _ligand_similarity(self):
         ligands = self.sys.get_ligands()
         self.ligand_similarity_scores = []
         for ligand in ligands:
-            score = utils.compare_ligand_to_database(ligand)
+            score = helpers.compare_ligand_to_database(ligand)
             self.ligand_similarity_scores.append(score)
             self.logger.info(f"Ligand similarity: {score}")
 
@@ -146,10 +146,9 @@ class Evaluate(object):
     def _calculate_rmsd_and_pocket(self, reference_structure):
         from Bio.SVDSuperimposer import SVDSuperimposer  # or custom utils
         # Placeholder function calls:
-        self.protein_rmsd = utils.calculate_protein_rmsd(self.sys, reference_structure)
-        self.ligand_rmsd = utils.calculate_ligand_rmsd(self.sys, reference_structure)
-        self.binding_pocket_overlap = utils.calculate_binding_pocket_overlap(self.sys, reference_structure)
-
+        self.protein_rmsd = helpers.calculate_protein_rmsd(self.sys, reference_structure)
+        self.ligand_rmsd = helpers.calculate_ligand_rmsd(self.sys, reference_structure)
+        self.binding_pocket_overlap = helpers.calculate_binding_pocket_overlap(self.sys, reference_structure)
         self.logger.info(f"Protein RMSD: {self.protein_rmsd}")
         self.logger.info(f"Ligand RMSD: {self.ligand_rmsd}")
         self.logger.info(f"Binding pocket overlap: {self.binding_pocket_overlap}")
@@ -160,7 +159,7 @@ class Evaluate(object):
             return
 
         if self.ifp.lower() == 'true':
-            self.ifp_data = utils.extract_ifp_from_pdb(reference_structure)
+            self.ifp_data = helpers.extract_ifp_from_pdb(reference_structure)
         else:
             # assume dictionary provided
             self.ifp_data = self.ifp
@@ -170,13 +169,13 @@ class Evaluate(object):
         if not self.ifp_data:
             self.ifp_overlap_score = None
             return
-        self.ifp_overlap_score = utils.calculate_ifp_overlap(self.sys, self.ifp_data)
+        self.ifp_overlap_score = helpers.calculate_ifp_overlap(self.sys, self.ifp_data)
         self.logger.info(f"IFP overlap score: {self.ifp_overlap_score}")
   
     def _aggregate_results(self):
         # Assuming self.results contains Boltz prediction dicts
         self.logger.info("Aggregating results over repeats")
-        self.aggregated_results = utils.aggregate_boltz_results(self.results)
+        self.aggregated_results = helpers.aggregate_boltz_results(self.results)
 
     def _parse_seeds(self, seeds_str: str | None) -> list[int]:
         """Parse seeds string into a list of integers (or strings if non-digit)."""

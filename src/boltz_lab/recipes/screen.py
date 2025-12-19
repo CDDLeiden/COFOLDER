@@ -7,6 +7,7 @@ import shutil
 import logging
 
 # legacy imports
+from boltz_lab.modules.entities import ligand
 from boltz_lab.modules.input import command, system
 from boltz_lab.modules.utils import helpers  
 
@@ -60,10 +61,10 @@ class Screen:
         })
 
         # Load system and options
-        self._options = utils.read_yaml(path=self.options_path)
+        self._options = helpers.read_yaml(path=self.options_path)
         self.opt = command.Command(options=self._options)
 
-        self._system = utils.read_yaml(path=self.system_path)
+        self._system = helpers.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
         self.logger.debug("Screen initialization complete.")
@@ -81,7 +82,7 @@ class Screen:
             if self.generate_conformers:
                 self.variable_sdf = os.path.splitext(self.variable_csv)[0] + ".sdf"
                 self.property_id = self.col_id
-                conformers.csv_to_sdf(
+                ligand.csv_to_sdf(
                     csv_path=self.variable_csv,
                     smiles_col=self.col_variable,
                     output_sdf_path=self.variable_sdf,
@@ -89,7 +90,7 @@ class Screen:
                 )     
 
             else:
-                self.variables = utils.read_csv(
+                self.variables = helpers.read_csv(
                     path=self.variable_csv, 
                     columns=[self.col_variable, self.col_id] + self.merge_data
                 ) 
@@ -101,13 +102,13 @@ class Screen:
         
         # If SDF exists (either provided or generated from CSV)
         if self.variable_sdf:
-            self.variables = utils.read_sdf(path=self.variable_sdf)
+            self.variables = helpers.read_sdf(path=self.variable_sdf)
             #self.variables = conformers.refine_sdf(self._variables)
 
             if self.generate_conformers == "2D":
-                conformers.generate_2d_conformers(self.variable_sdf)
+                ligand.generate_2d_conformers(self.variable_sdf)
             elif self.generate_conformers == "3D":
-                conformers.generate_3d_conformers(self.variable_sdf)
+                ligand.generate_3d_conformers(self.variable_sdf)
 
             # Cache each mol as PKL
             cache_dir = self.opt.find_value(key='cache') or '~/.boltz/'
@@ -116,12 +117,12 @@ class Screen:
                     continue
                 if mol.HasProp(self.property_id):
                     mol_id = mol.GetProp(self.property_id)
-                    mol_id = conformers.sanitize_mol_id(mol_id)
+                    mol_id = ligand.sanitize_mol_id(mol_id)
                 else:
                     self.logger.error(f"SDF molecule missing ID property '{self.property_id}'")
                     continue
                 try:
-                    conformers.mol_to_ccd(mol_id, mol, boltz_path=cache_dir)
+                    ligand.mol_to_ccd(mol_id, mol, boltz_path=cache_dir)
                 except Exception as e:
                     self.logger.error(f"Failed to process ID {mol_id}: {e}")
                 
@@ -165,7 +166,7 @@ class Screen:
         
         # Set output directory and update system
         out_dir = os.path.join(self.wrk_dir, basename)
-        utils.set_dir(out_dir)
+        helpers.set_dir(out_dir)
         self.opt.out_dir = out_dir
         
         # MSA recycling - only possible for monomer systems
@@ -190,7 +191,7 @@ class Screen:
                 self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
                 self.sys.update_system(value=self.msa, parent_key='protein', sub_key='msa')
                 self.logger.info(f'Cleaning up MSA file: {self.msa}')
-                utils.delete_last_line(self.msa)
+                helpers.delete_last_line(self.msa)
             except ValueError:
                 self.logger.info(f'MSA recycling not available for multimers in current version')
 

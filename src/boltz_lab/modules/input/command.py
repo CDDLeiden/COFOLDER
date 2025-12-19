@@ -57,7 +57,7 @@ class Command:
             self.options = options
         elif options_path:
             self.logger.debug(f"Loading options YAML from {options_path}")
-            self.options = utils.read_yaml(path=options_path)
+            self.options = helpers.read_yaml(path=options_path)
         else:
             raise ValueError("Either 'options' or 'options_path' must be provided.")
     
