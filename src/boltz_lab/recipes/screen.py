@@ -7,7 +7,8 @@ import shutil
 import logging
 
 # legacy imports
-from ..modules.legacy import command, system, utils
+from boltz_lab.modules.input import command, system
+from boltz_lab.modules.utils import helpers  
 
 class Screen:
     """High-level orchestrator for virtual screening workflow."""

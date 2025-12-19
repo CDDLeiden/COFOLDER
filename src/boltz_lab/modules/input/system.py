@@ -1,6 +1,6 @@
 import yaml
 import logging
-from . import utils
+from boltz_lab.modules.utils import helpers
 
 logger  = logging.getLogger('boltz-tools.helpers')
 

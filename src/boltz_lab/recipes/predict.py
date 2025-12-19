@@ -4,7 +4,8 @@ import time
 import logging
 
 # legacy imports
-from ..modules.legacy import command, system, utils
+from boltz_lab.modules.input import command, system
+from boltz_lab.modules.utils import helpers  
 
 class Predict(object):
     """High-level orchestrator for prediction workflow."""
@@ -33,10 +34,10 @@ class Predict(object):
         })
 
         # Load options and system
-        self._options = utils.read_yaml(path=self.options_path)
+        self._options = helpers.read_yaml(path=self.options_path)
         self.opt = command.Command(options=self._options)
 
-        self._system = utils.read_yaml(path=self.system_path)
+        self._system = helpers.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
         self.logger.debug("Predict initialization complete.")

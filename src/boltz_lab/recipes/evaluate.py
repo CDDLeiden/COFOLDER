@@ -1,15 +1,15 @@
 import os
+
+from boltz_lab.modules.utils.helpers import parse_list_as_str
+
 import logging
-from Bio import PDB
-import subprocess
-
-from boltz_eval.modules.utils.helpers import parse_list_as_str
-
-
 logger = logging.getLogger(__name__)
 
-# legacy imports
-from ..modules.legacy import command, system, utils
+# legacy imports - to be striped and placed with modules
+from Bio import PDB
+import subprocess
+from boltz_lab.modules.input import command, system
+from boltz_lab.modules.utils import helpers  
 
 class Evaluate(object):
     """High-level orchestrator for evaluation workflow."""
@@ -22,8 +22,7 @@ class Evaluate(object):
         seeds: str | None = None,
         input_pdb: str | None = None,
         ifp: str | None = None,
-        generate_conformers: str | None = None,
-        parent_logger=None
+        generate_conformers: str | None = None
     ):
         self.wrk_dir = wrk_dir
         self.system_path = system_path
@@ -31,21 +30,9 @@ class Evaluate(object):
         self.repeats = repeats
         self._seeds = seeds
         self.seeds = parse_list_as_str(self._seeds, separator=',', item_type=int, expected_length=self.repeats) if self._seeds else []
-
         self.input_pdb = input_pdb
         self.ifp = ifp
         self.generate_conformers = generate_conformers
-
-        # Use parent logger if provided, otherwise create own
-        #if parent_logger is not None:
-        #    self.logger = parent_logger.getChild('Evaluate')
-        #else:
-        #    self.logger = initiate_logger(
-        #        logger_name='recipes.evaluate.Evaluate',
-        #       #debug=True,
-        #       wrk_dir=self.wrk_dir,
-        #       log_name='log'
-        #    )
 
         logger.debug("Initializing Evaluate with parameters: %s", {
             "wrk_dir": wrk_dir,

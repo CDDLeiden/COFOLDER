@@ -3,7 +3,7 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "boltz-eval"
+name = "boltz-lab"
 version = "0.0.0-dev"
 description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -23,8 +23,8 @@ test = [
 ]
 
 [project.scripts]
-boltz-eval = "boltz_eval.cli:main"
+boltz-lab = "boltz_lab.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["boltz_eval*"]
+include = ["boltz_lab*"]
