@@ -1,31 +1,31 @@
-# Boltz-Eval
+# Boltz-Lab
 
-## Introduction 
-Boltz-Eval is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and validating system configurations.
+## Introduction
+Boltz-Lab is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and evaluating system configurations.
 
 ## Installation
 Install directly from GitHub for newest updates:
 ```
-git clone https://github.com/rlvandenbroek/boltz-tools.git
-cd boltz-tools; pip install -e .
+git clone https://github.com/CDDLeiden/boltz-lab.git
+cd boltz-lab; pip install -e .
 ```
 
 ## Usage
-The main command is `boltz-eval`, which supports several subcommands:
+The main command is `boltz-lab`, which supports several subcommands:
 ```
-boltz-eval [-h] [-v] {predict,screen,oracle,validate}
+boltz-lab [-h] [-v] {predict,screen,oracle,evaluate}
 ```
 
 ### Subcommands
-- **predict**: Co-fold a single system using Boltz.  
-- **screen**: Co-fold a library using Boltz for virtual screening.  
-- **oracle**: Use Boltz as an oracle function for single SMILES predictions.  
-- **validate**: Validate Boltz system configuration.
+- **predict**: Co-fold a single system using Boltz.
+- **screen**: Co-fold a library using Boltz for virtual screening.
+- **oracle**: Use Boltz as an oracle function for single SMILES predictions.
+- **evaluate**: Evaluate Boltz system configuration.
 
 Use the -h flag with any command to see detailed usage:
 ```
-boltz-eval -h
-boltz-eval screen -h
+boltz-lab -h
+boltz-lab screen -h
 ```
 
 ## Contributing
@@ -39,37 +39,37 @@ boltz-eval screen -h
 ## Package Structure
 ```
 examples/
-legacy/
 src/
-└── boltz_eval/
+└── boltz_lab/
     ├── __init__.py
     ├── __main__.py
-    ├── cli/
-    │   ├── __init__.py
-    │   ├── predict.py
-    │   ├── validate.py
-    │   ├── screen.py
-    │   └── oracle.py
+    ├── cli.py
     ├── recipes/
     │   ├── __init__.py
     │   ├── predict.py
-    │   ├── validate.py
+    │   ├── evaluate.py
     │   ├── screen.py
     │   └── oracle.py
     └── modules/
-        ├── helpers/
+        ├── input/
         │   ├── __init__.py
         │   ├── command.py
-        │   ├── conformers.py
-        │   ├── system.py
-        │   └── utils.py
-        └── analytics/
-            ├── __init__.py
-            ├── stats.py
-            └── plotting.py
+        │   └── system.py
+        ├── entities/
+        │   ├── __init__.py
+        │   └── ligand.py
+        ├── utils/
+        │   ├── __init__.py
+        │   ├── helpers.py
+        │   └── log.py
+        ├── analytics/
+        │   └── __init__.py
+        └── runners/
+            └── __init__.py
+docs/
 tests/
 tutorials/
-LISENCE
+LICENSE
 pyproject.toml
 README.md
 ```
