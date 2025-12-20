@@ -156,7 +156,6 @@ def parse_censored_affinity(
     pd.DataFrame
         DataFrame with columns 'affinity_value' (float) and 'affinity_sign' (str or None).
     """
-    import re
     signs = ['>=', '<=', '>', '<']
     def split_sign(val):
         if pd.isnull(val):
