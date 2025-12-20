@@ -1,20 +1,34 @@
+"""Command building and options management for Boltz predictions.
+
+This module provides the Command class for managing Boltz command-line
+options and building subprocess commands for predictions.
+"""
+
 import multiprocessing
 import logging
-from boltz_lab.modules.utils import helpers
-
-logger = logging.getLogger('boltz-tools.helpers')
-
 import os
 import subprocess
 
+from boltz_lab.modules.utils import helpers
+
+logger = logging.getLogger('boltz-lab.helpers')
+
 def download_cache(path: str):
-    """
-    Downloads the Boltz cache by running a minimal prediction.
+    """Download the Boltz cache by running a minimal prediction.
+
+    Triggers cache download by executing a minimal Boltz prediction with
+    a single amino acid. This ensures all required model weights and
+    data files are downloaded.
 
     Parameters
     ----------
     path : str
         Path to the Boltz cache directory to use.
+
+    Notes
+    -----
+    Creates a temporary directory and FASTA file for the minimal prediction.
+    Uses fast settings (minimal recycling and sampling steps) to reduce time.
     """
 
     tmp_dir = "./tmp"
@@ -40,15 +54,34 @@ def download_cache(path: str):
     subprocess.run(cmd, check=True)
 
 class Command:
-    def __init__(self, options=None, options_path=None):
-        """
-        Initialize Command object from dictionary or YAML file.
+    """Manage Boltz command-line options and build prediction commands.
 
-        Args:
-            options (dict, optional): Pre-loaded options dictionary.
-            options_path (str, optional): Path to YAML file with options.
-        """
-        self.logger = logging.getLogger('boltz-tools.helpers.command.Command')
+    The Command class handles loading, updating, and querying Boltz options,
+    and builds complete command-line arguments for subprocess execution.
+
+    Parameters
+    ----------
+    options : dict, optional
+        Pre-loaded options dictionary containing Boltz parameters.
+    options_path : str, optional
+        Path to YAML file with options configuration.
+
+    Raises
+    ------
+    ValueError
+        If both options and options_path are provided, or if neither is provided.
+
+    Examples
+    --------
+    >>> # Load from dictionary
+    >>> opts = {"options": [{"cache": "~/.boltz"}]}
+    >>> cmd = Command(options=opts)
+
+    >>> # Load from YAML file
+    >>> cmd = Command(options_path="options.yaml")
+    """
+    def __init__(self, options=None, options_path=None):
+        self.logger = logging.getLogger('boltz-lab.helpers.command.Command')
 
         if options and options_path:
             raise ValueError("Provide either 'options' or 'options_path', not both.")
@@ -62,14 +95,28 @@ class Command:
             raise ValueError("Either 'options' or 'options_path' must be provided.")
     
     def set_command(self, system):
-        """
-        Build the 'boltz predict' command based on system and options.
+        """Build the complete 'boltz predict' command for subprocess execution.
 
-        Args:
-            system (System): System object for querying settings.
+        Constructs the command-line arguments by combining system path,
+        output directory, and all configured options. Automatically adds
+        MSA server flag if no MSA is defined in the system.
 
-        Returns:
-            list: Complete command ready for subprocess execution.
+        Parameters
+        ----------
+        system : System
+            System object for querying molecular system settings.
+
+        Returns
+        -------
+        list of str
+            Complete command as a list ready for subprocess.run().
+
+        Notes
+        -----
+        - Filters out None, "None", and "False" values
+        - Handles boolean flags (value="True" becomes just --flag)
+        - Supports multiprocessing.cpu_count() for auto-detection
+        - Automatically adds --use_msa_server if system has no MSA defined
         """
         cmd = ["boltz", "predict", self.system_path, "--out_dir", self.out_dir]
 
@@ -91,14 +138,24 @@ class Command:
         return cmd
     
     def find_value(self, key=None, path=None):
-        """
-        Retrieve a value by path or recursively search by key.
+        """Retrieve a value from options by path or recursive key search.
 
-        Args:
-            key (str, optional): Key to search recursively.
-            path (list, optional): Specific path to the value.
-        Returns:
-            The value found, or None if not found.
+        Parameters
+        ----------
+        key : str, optional
+            Key name to search for recursively throughout the options.
+        path : list, optional
+            Specific path to the value as a list of keys/indices.
+
+        Returns
+        -------
+        any or None
+            The value found at the specified location, or None if not found.
+
+        Raises
+        ------
+        ValueError
+            If path navigation fails or if the key appears multiple times.
         """
         if path:
             cur = self.options
@@ -133,14 +190,25 @@ class Command:
             return found[0]
         
     def update_options(self, value, path=None, parent_key=None, sub_key=None):
-        """
-        Update options dictionary at a specific path or parent key.
+        """Update options configuration at a specific path or key.
 
-        Args:
-            value: Value to set.
-            path (list, optional): Path to the value in nested dict/list.
-            parent_key (str, optional): Top-level or nested key to update.
-            sub_key (str, optional): Sub-key inside parent key.
+        Parameters
+        ----------
+        value : any
+            The value to set at the specified location.
+        path : list, optional
+            Path to the target location as a list of keys/indices.
+        parent_key : str, optional
+            Top-level or nested key to search for and update.
+        sub_key : str, optional
+            Sub-key within the parent_key dictionary to update.
+
+        Raises
+        ------
+        ValueError
+            If the path traversal fails due to type mismatch.
+        KeyError
+            If the parent_key is not found in the options.
         """
         if path:
             d = self.options
