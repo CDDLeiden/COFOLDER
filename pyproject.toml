@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boltz-lab"
-version = "0.0.0-dev"
+version = "0.0.1-dev"
 description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
+  {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
 ]
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -20,6 +21,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mkdocs-autorefs>=0.5.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
 ]
 
 [project.scripts]
