@@ -1,4 +1,3 @@
-import os
 import subprocess
 import time
 import logging
@@ -8,7 +7,31 @@ from boltz_lab.modules.input import command, system
 from boltz_lab.modules.utils import helpers  
 
 class Predict(object):
-    """High-level orchestrator for prediction workflow."""
+    """High-level orchestrator for prediction workflow.
+
+    This class coordinates the prediction of protein-ligand co-folding
+    for a single system using Boltz.
+
+    Parameters
+    ----------
+    wrk_dir : str
+        Working directory for output files.
+    system_path : str
+        Path to system YAML file defining the molecular system.
+    options_path : str
+        Path to Boltz options YAML file.
+    debug : bool, optional
+        Enable debug logging (default: False).
+
+    Examples
+    --------
+    >>> predictor = Predict(
+    ...     wrk_dir="./output",
+    ...     system_path="system.yaml",
+    ...     options_path="options.yaml"
+    ... )
+    >>> predictor.run()
+    """
 
     def __init__(
         self,
@@ -24,7 +47,7 @@ class Predict(object):
         # self.generate_conformers = generate_conformers  # TODO
 
         # Setup logger
-        self.logger = logging.getLogger('boltz-eval.prediction.Predict')
+        self.logger = logging.getLogger('boltz-lab.prediction.Predict')
         self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
         self.logger.debug("Initializing Predict with parameters: %s", {
             "wrk_dir": wrk_dir,
@@ -43,7 +66,12 @@ class Predict(object):
         self.logger.debug("Predict initialization complete.")
 
     def run(self):
-        start_time = time.time()    
+        """Execute the prediction workflow.
+
+        Runs Boltz prediction on the configured system and saves
+        results to the working directory.
+        """
+        start_time = time.time()
 
         # Set output directory and update system
         self.opt.out_dir = self.wrk_dir
