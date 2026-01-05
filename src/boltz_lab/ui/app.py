@@ -15,9 +15,6 @@ from datetime import datetime
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from boltz_eval.modules import utils
-from boltz_eval.modules.legacy import command, system as sys_module
-
 # Configure Streamlit page
 st.set_page_config(
     page_title="Boltz-Lab UI",
@@ -687,7 +684,7 @@ def run_predict(wrk_dir: str, system_path: str, options_path: str, debug: bool):
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_eval', 'predict',
+            'python', '-m', 'boltz_lab', 'predict',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -749,7 +746,7 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_eval', 'screen',
+            'python', '-m', 'boltz_lab', 'screen',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -813,7 +810,7 @@ def run_oracle(wrk_dir: str, system_path: str, options_path: str, debug: bool):
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_eval', 'oracle',
+            'python', '-m', 'boltz_lab', 'oracle',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -868,7 +865,7 @@ def run_evaluate(wrk_dir: str, system_path: str, options_path: str, repeats: int
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_eval', 'evaluate',
+            'python', '-m', 'boltz_lab', 'evaluate',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
