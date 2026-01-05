@@ -14,4 +14,4 @@ echo "Starting Boltz-Lab UI..."
 echo "Access the UI at: http://localhost:8501"
 echo ""
 
-streamlit run src/boltz_eval/ui/app.py
+streamlit run src/boltz_lab/ui/app.py
