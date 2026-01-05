@@ -39,12 +39,12 @@ class Predict(object):
         system_path: str,
         options_path: str,
         debug: bool = False,
-        # generate_conformers: str | None = None  # Uncomment when implemented
+        generate_conformers: str | None = None  # Unused; to be implemented
     ):
         self.wrk_dir = wrk_dir
         self.system_path = system_path
         self.options_path = options_path
-        # self.generate_conformers = generate_conformers  # TODO
+        self.generate_conformers = generate_conformers  # TODO
 
         # Setup logger
         self.logger = logging.getLogger('boltz-lab.prediction.Predict')
@@ -53,7 +53,7 @@ class Predict(object):
             "wrk_dir": wrk_dir,
             "system_path": system_path,
             "options_path": options_path,
-            # "generate_conformers": generate_conformers
+            "generate_conformers": generate_conformers
         })
 
         # Load options and system
