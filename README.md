@@ -28,14 +28,6 @@ boltz-lab -h
 boltz-lab screen -h
 ```
 
-## Contributing
-1. Create a feature branch 
-2. Make your changes
-3. (Add tests for new functionality -- (applicable when tests are in place))
-4. (Ensure all tests pass -- (applicable when tests are in place))
-5. Include new features in tutorials      
-6. Submit a pull request 
-
 ## Package Structure
 ```
 examples/
