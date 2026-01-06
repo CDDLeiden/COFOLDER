@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boltz-lab"
+
+version = "0.0.1-dev"
+description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [
+  {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
+  {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
+]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "boltz[cuda]",
+    "rdkit",
+    "matplotlib",
+    "seaborn",
+    "streamlit>=1.28.0",
+    "streamlit-option-menu>=0.3.6",
+    "pyyaml"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mkdocs-autorefs>=0.5.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+ui = [
+    "streamlit>=1.28.0",
+    "streamlit-option-menu>=0.3.6",
+    "pyyaml"
+]
+
+[project.scripts]
+boltz-lab = "boltz_lab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["boltz_lab*"]
