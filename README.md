@@ -3,6 +3,7 @@
 ## Introduction
 Boltz-Lab is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and evaluating system configurations.
 
+
 ## Installation
 Install directly from GitHub for newest updates:
 ```
@@ -14,7 +15,7 @@ cd boltz-lab; pip install -e .
 The main command is `boltz-lab`, which supports several subcommands:
 ```
 boltz-lab [-h] [-v] {predict,screen,oracle,evaluate}
-```
+
 
 ### Subcommands
 - **predict**: Co-fold a single system using Boltz.
@@ -62,6 +63,9 @@ docs/
 tests/
 tutorials/
 LICENSE
+tests/
+tutorials/
+LISENCE
 pyproject.toml
 README.md
 ```

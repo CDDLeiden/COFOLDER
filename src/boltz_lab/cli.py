@@ -52,7 +52,6 @@ class PredictRecipe:
         helpers.create_dir(args.wrk_dir)  
 
         logger = logging.getLogger("boltz-lab.predict")
-
         logger.info("Starting Boltz-lab prediction pipeline.")
 
         predictor = Predict(
@@ -248,7 +247,6 @@ class ScreenRecipe:
 
         logger = logging.getLogger("boltz-lab.evaluate")
         #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
-
         logger.info("Starting Boltz-lab screening pipeline.")
 
         screener = Screen(
@@ -302,7 +300,6 @@ class OracleRecipe:
 
         logger = logging.getLogger("boltz-lab.oracle")
         #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
-
         logger.info("Starting Boltz-lab oracle pipeline.")
 
         oracle = Oracle(

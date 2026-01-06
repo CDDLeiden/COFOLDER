@@ -4,8 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boltz-lab"
-
-version = "0.0.1-dev"
+version = "0.0.0-dev"
 description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
