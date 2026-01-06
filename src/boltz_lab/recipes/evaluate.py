@@ -1,18 +1,56 @@
+"""Evaluation and validation workflows for Boltz predictions.
+
+This module provides the Evaluate class for running repeated predictions
+with different seeds and comparing results against reference structures.
+"""
+
 import os
-
-from boltz_lab.modules.utils.helpers import parse_list_as_str
-
+import subprocess
 import logging
-logger = logging.getLogger(__name__)
+
+from Bio import PDB
 
 # legacy imports - to be striped and placed with modules
-from Bio import PDB
-import subprocess
-from boltz_lab.modules.input import command, system
-from boltz_lab.modules.utils import helpers  
+from boltz_lab.modules.utils.helpers import parse_list_as_str
+from boltz_lab.modules.utils import helpers
+
+logger = logging.getLogger(__name__)
 
 class Evaluate(object):
-    """High-level orchestrator for evaluation workflow."""
+    """Evaluation workflow with multiple prediction repeats and validation.
+
+    Runs Boltz predictions multiple times with different random seeds and
+    optionally compares results to a reference structure for validation.
+
+    Parameters
+    ----------
+    wrk_dir : str
+        Working directory for output files.
+    system_path : str
+        Path to system YAML file defining the molecular system.
+    options_path : str
+        Path to Boltz options YAML file.
+    repeats : int, default=1
+        Number of prediction repeats to run.
+    seeds : str, optional
+        Comma-separated list of random seeds for reproducibility.
+        Must match the number of repeats if provided.
+    input_pdb : str, optional
+        Path to reference structure (PDB or CIF) for RMSD calculation.
+    ifp : str, optional
+        Interaction fingerprint mode ("true" or custom IFP dict).
+    generate_conformers : str, optional
+        Generate conformers ("2D" or "3D").
+
+    Notes
+    -----
+    The evaluation workflow includes:
+    - Running predictions with specified seeds for reproducibility
+    - Calculating RMSD to reference structure (if provided)
+    - Extracting confidence scores and predicted affinities
+    - Computing interaction fingerprint overlaps (if enabled)
+    - Aggregating statistics across repeats
+    """
     def __init__(
         self,
         wrk_dir: str,
@@ -34,7 +72,10 @@ class Evaluate(object):
         self.ifp = ifp
         self.generate_conformers = generate_conformers
 
-        logger.debug("Initializing Evaluate with parameters: %s", {
+        # Setup logger
+        self.logger = logging.getLogger('boltz-lab.evaluate.Evaluate')
+
+        self.logger.debug("Initializing Evaluate with parameters: %s", {
             "wrk_dir": wrk_dir,
             "system_path": system_path,
             "options_path": options_path,
@@ -48,7 +89,7 @@ class Evaluate(object):
         self.opt = None
         self.sys = None
 
-        logger.debug("Evaluate initialization complete.")
+        self.logger.debug("Evaluate initialization complete.")
 
     def run(self):
         pass

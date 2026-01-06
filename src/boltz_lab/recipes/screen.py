@@ -12,7 +12,51 @@ from boltz_lab.modules.input import command, system
 from boltz_lab.modules.utils import helpers  
 
 class Screen:
-    """High-level orchestrator for virtual screening workflow."""
+    """High-level orchestrator for virtual screening workflow.
+
+    Performs high-throughput screening of compound libraries by
+    iteratively running Boltz predictions with different ligands.
+
+    Parameters
+    ----------
+    wrk_dir : str
+        Working directory for output files.
+    system_path : str
+        Path to system YAML template file.
+    options_path : str
+        Path to Boltz options YAML file.
+    variable : str, optional
+        Comma-separated path to update in system (e.g., "sequences,0,ligand,smiles").
+    variable_csv : str, optional
+        Path to CSV file containing variables.
+    col_variable : str, optional
+        Column name containing variables (e.g., SMILES).
+    col_id : str, optional
+        Column name containing compound IDs.
+    variable_sdf : str, optional
+        Path to SDF file containing variables.
+    property_id : str, optional
+        Property name for compound ID in SDF.
+    generate_conformers : {"2D", "3D"}, optional
+        Generate 2D or 3D conformers for ligands.
+    merge_data : str, optional
+        Comma-separated list of columns to merge into output.
+    debug : bool, optional
+        Enable debug logging (default: False).
+
+    Examples
+    --------
+    >>> screener = Screen(
+    ...     wrk_dir="./screening",
+    ...     system_path="system.yaml",
+    ...     options_path="options.yaml",
+    ...     variable="sequences,0,ligand,smiles",
+    ...     variable_csv="compounds.csv",
+    ...     col_variable="smiles",
+    ...     col_id="compound_id"
+    ... )
+    >>> screener.run()
+    """
     def __init__(
         self,
         wrk_dir: str,
@@ -44,7 +88,7 @@ class Screen:
         self.generate_conformers = generate_conformers
 
         # Logger setup
-        self.logger = logging.getLogger('boltz-eval.screening.Screen')
+        self.logger = logging.getLogger('boltz-lab.screening.Screen')
         self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
         self.logger.debug("Initializing Screen with parameters: %s", {
             "wrk_dir": wrk_dir,
@@ -70,6 +114,7 @@ class Screen:
         self.logger.debug("Screen initialization complete.")
 
     def run(self):
+        """Execute the screening workflow."""
         self.load_screen()
         self.iterate()
 
@@ -142,7 +187,7 @@ class Screen:
                     variable = truncated
 
 
-                self.run(variable, basename)
+                self._run_single_prediction(variable, basename)
 
                 self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
 
@@ -157,11 +202,11 @@ class Screen:
                 variable = row[self.col_variable]
                 self.logger.info(f"({i}/{len(self.variables)}) {name}: {variable}")
 
-                self.run(variable, basename)
+                self._run_single_prediction(variable, basename)
                 
                 self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
 
-    def run(self, variable, basename):       
+    def _run_single_prediction(self, variable, basename):       
         self.sys.update_system(value=variable, path=self.variable)
         
         # Set output directory and update system
@@ -185,7 +230,7 @@ class Screen:
         subprocess.run(cmd)
 
         # update MSA after first iteration
-        if self.msa == None:
+        if self.msa is None:
             try:
                 _ = self.sys.find_value(key='protein')
                 self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
@@ -193,7 +238,7 @@ class Screen:
                 self.logger.info(f'Cleaning up MSA file: {self.msa}')
                 helpers.delete_last_line(self.msa)
             except ValueError:
-                self.logger.info(f'MSA recycling not available for multimers in current version')
+                self.logger.info('MSA recycling not available for multimers in current version')
 
         #TODO: gather results (sdf/csv independent) | Current: Only CSV
         #self.gather_metrics(out_dir, i, row)

@@ -51,15 +51,14 @@ class PredictRecipe:
         """Run the predict tool."""
         helpers.create_dir(args.wrk_dir)  
 
-        logger = logging.getLogger("boltz-eval.predict")
-
-        logger.info("Starting Boltz-eval prediction pipeline.")
+        logger = logging.getLogger("boltz-lab.predict")
+        logger.info("Starting Boltz-lab prediction pipeline.")
 
         predictor = Predict(
             wrk_dir=args.wrk_dir,
             system_path=args.system_path,
             options_path=args.options_path,
-            generate_conformers=args.generate_conformers,
+            generate_conformers=args.generate_conformers, # FIXME : Unexpected argument
         )
 
         predictor.run()
@@ -144,7 +143,7 @@ class EvaluateRecipe:
 
         helpers.create_dir(args.wrk_dir) 
         
-        logger.info("Starting Boltz-eval evaluation pipeline.")
+        logger.info("Starting Boltz-lab evaluation pipeline.")
         evaluator = Evaluate(
             wrk_dir=args.wrk_dir,
             system_path=args.system_path,
@@ -246,10 +245,9 @@ class ScreenRecipe:
         """Run the virtual screening tool."""
         helpers.create_dir(args.wrk_dir)  
 
-        logger = logging.getLogger("boltz-eval.evaluate")
+        logger = logging.getLogger("boltz-lab.evaluate")
         #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
-
-        logger.info("Starting Boltz-eval screening pipeline.")
+        logger.info("Starting Boltz-lab screening pipeline.")
 
         screener = Screen(
             wrk_dir=args.wrk_dir,
@@ -300,10 +298,9 @@ class OracleRecipe:
         """Run the oracle recipe."""
         helpers.create_dir(args.wrk_dir) 
 
-        logger = logging.getLogger("boltz-eval.oracle")
+        logger = logging.getLogger("boltz-lab.oracle")
         #initiate_logger(logger, debug=args.debug, wrk_dir=args.wrk_dir)
-
-        logger.info("Starting Boltz-eval oracle pipeline.")
+        logger.info("Starting Boltz-lab oracle pipeline.")
 
         oracle = Oracle(
             wrk_dir=args.wrk_dir,

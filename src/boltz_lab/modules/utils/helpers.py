@@ -15,11 +15,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 def create_dir(path: str):
-    """
-    Ensure that a directory exists. If it does not exist, create it.
+    """Ensure that a directory exists, creating it if necessary.
 
-    Args:
-        path (str): The directory path to check and/or create.
+    Parameters
+    ----------
+    path : str
+        The directory path to check and/or create.
+
+    Examples
+    --------
+    >>> create_dir("./output")
+    >>> create_dir("/tmp/my_project/results")
     """
     logger.debug(f"Checking directory: '{path}'")
 
@@ -36,21 +42,44 @@ def parse_list_as_str(
     item_type=str,
     expected_length: int = None
 ):
-    """
-    Convert a comma-separated command-line value into a typed Python list.
+    """Convert a separated string into a typed Python list.
 
-    Args:
-        list_as_str (str): The raw string containing a list (e.g. "1,2,3").
-        separator (str): Separator used in the list (default: comma).
-        item_type (type): The expected type of each element (str, int, float, etc.).
-        expected_length (int, optional): If provided, list must match this length.
-        
+    Parses a command-line string value containing delimited items and
+    converts each item to the specified type. Useful for parsing CLI
+    arguments like device lists, seeds, or other numeric sequences.
 
-    Returns:
-        list: The processed and type-casted list.
+    Parameters
+    ----------
+    list_as_str : str
+        The raw string containing a list (e.g., "1,2,3").
+    separator : str, default=","
+        Delimiter used to separate items in the string.
+    item_type : type, default=str
+        The expected type of each element (str, int, float, etc.).
+    expected_length : int, optional
+        If provided, the parsed list must match this exact length.
 
-    Raises:
-        ValueError: If type conversion fails or length is incorrect.
+    Returns
+    -------
+    list
+        The processed and type-casted list.
+
+    Raises
+    ------
+    ValueError
+        If type conversion fails or if the parsed list length doesn't
+        match expected_length.
+
+    Examples
+    --------
+    >>> parse_list_as_str("1,2,3", item_type=int)
+    [1, 2, 3]
+
+    >>> parse_list_as_str("a;b;c", separator=";")
+    ['a', 'b', 'c']
+
+    >>> parse_list_as_str("1.5,2.5", item_type=float, expected_length=2)
+    [1.5, 2.5]
     """
     logger.debug(f"Parsing list: raw='{list_as_str}', "
                  f"separator='{separator}', item_type={item_type.__name__}, "
@@ -80,13 +109,51 @@ def parse_list_as_str(
 
 
 def set_dir(path):
+    """Create a directory if it doesn't exist.
+
+    Parameters
+    ----------
+    path : str
+        The directory path to create.
+
+    Notes
+    -----
+    This is a legacy function. Consider using `create_dir()` instead,
+    which has more detailed logging and type hints.
+
+    Examples
+    --------
+    >>> set_dir("./experiments")
+    """
     if not (os.path.isdir(path)):
         os.makedirs(path)
         logger.info("Created working dir {0}".format(path))
 
 def read_csv(path, columns):
+    """Read a CSV file and validate expected columns.
+
+    Loads a CSV file into a pandas DataFrame and checks for the presence
+    of specified columns, logging warnings for any missing columns.
+
+    Parameters
+    ----------
+    path : str
+        Path to the CSV file to read.
+    columns : list of str
+        List of column names to validate in the CSV file.
+
+    Returns
+    -------
+    pd.DataFrame or None
+        DataFrame containing the CSV data, or None if file not found.
+
+    Examples
+    --------
+    >>> df = read_csv("compounds.csv", ["smiles", "id", "affinity"])
+    >>> df = read_csv("results.csv", ["name", "value"])
+    """
     try:
-        df = pd.read_csv(path)  
+        df = pd.read_csv(path)
         logger.info(f"Read {path} containing {len(df)} entries")
 
         for col in columns:
@@ -96,18 +163,44 @@ def read_csv(path, columns):
                 logger.warning(f"Column {col} not in {path}")
 
         return df
-    
+
     except FileNotFoundError:
         logging.error(f"File not found: {path}")
 
 def read_yaml(path):
+    """Read and parse a YAML file.
+
+    Loads a YAML file and logs its contents for debugging purposes.
+
+    Parameters
+    ----------
+    path : str
+        Path to the YAML file to read.
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing the parsed YAML data, or None if an error occurs.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the specified file does not exist.
+    yaml.YAMLError
+        If the YAML file is malformed or cannot be parsed.
+
+    Examples
+    --------
+    >>> config = read_yaml("config.yaml")
+    >>> system = read_yaml("system.yaml")
+    """
     try:
         with open(path, 'r') as file:
             data = yaml.safe_load(file)
             logging.info(f"{path} loaded successfully. Contents:")
             for key, value in data.items():
                 logging.info(f"\t{key}: {value}")
-            
+
             return data
 
     except FileNotFoundError:
@@ -116,6 +209,31 @@ def read_yaml(path):
         logging.error(f"Error parsing YAML: {e}")
 
 def read_sdf(path):
+    """Read molecules from an SDF file.
+
+    Loads molecules from an SDF (Structure Data File) using RDKit,
+    filtering out invalid molecules.
+
+    Parameters
+    ----------
+    path : str
+        Path to the SDF file to read.
+
+    Returns
+    -------
+    list of rdkit.Chem.Mol or None
+        List of valid RDKit molecule objects, or None if an error occurs.
+
+    Examples
+    --------
+    >>> mols = read_sdf("ligands.sdf")
+    >>> mols = read_sdf("compounds.sdf")
+
+    Notes
+    -----
+    Invalid molecules (those that RDKit cannot parse) are automatically
+    filtered out and not included in the returned list.
+    """
     try:
         suppl = Chem.SDMolSupplier(path)
         mols = [mol for mol in suppl if mol is not None]
@@ -130,7 +248,27 @@ def read_sdf(path):
         logging.error(f"Error reading SDF: {e}")
 
 def delete_last_line(file_path):
-    """Delete the last line from a file (in-place)."""
+    """Delete the last line from a file in-place.
+
+    Reads the entire file, removes the last line, and writes the
+    modified content back to the same file.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to the file to modify.
+
+    Examples
+    --------
+    >>> delete_last_line("output.txt")
+    >>> delete_last_line("results.log")
+
+    Notes
+    -----
+    This operation modifies the file in-place. If the file is empty,
+    no action is taken. For large files, consider using alternative
+    methods to avoid loading the entire file into memory.
+    """
     with open(file_path, 'r') as f:
         lines = f.readlines()
     if lines:
@@ -141,22 +279,37 @@ def parse_censored_affinity(
     affinity_series: pd.Series,
     keep_sign: bool = True
 ) -> pd.DataFrame:
-    """
-    Parse affinity values with possible censoring signs (e.g., '>', '<', '>=', '<=') and separate them from the numeric part.
+    """Parse affinity values with censoring signs into numeric and sign components.
+
+    Separates censoring indicators (e.g., '>', '<', '>=', '<=') from the
+    numeric affinity values, allowing for downstream analysis of censored data.
 
     Parameters
     ----------
     affinity_series : pd.Series
-        Series of affinity values, possibly as strings with censoring signs.
+        Series of affinity values, possibly as strings with censoring signs
+        (e.g., '>5.0', '<=3.2').
     keep_sign : bool, default=True
-        Whether to keep the censoring sign in the output DataFrame.
+        Whether to retain the censoring sign in the output DataFrame.
+        If False, the 'affinity_sign' column will be set to None.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with columns 'affinity_value' (float) and 'affinity_sign' (str or None).
+        DataFrame with two columns:
+        - 'affinity_value' : float - The numeric part of the affinity
+        - 'affinity_sign' : str or None - The censoring sign if present
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> data = pd.Series(['>5.0', '3.2', '<=2.5'])
+    >>> parse_censored_affinity(data)
+       affinity_value affinity_sign
+    0             5.0             >
+    1             3.2          None
+    2             2.5            <=
     """
-    import re
     signs = ['>=', '<=', '>', '<']
     def split_sign(val):
         if pd.isnull(val):
@@ -182,8 +335,10 @@ def remove_censored_affinity(
     df: pd.DataFrame,
     cols: list
 ) -> pd.DataFrame:
-    """
-    Remove rows where any of the specified columns contain censoring signs (>, <, >=, <=).
+    """Remove rows containing censoring signs in specified columns.
+
+    Filters out rows where any of the specified columns contain censoring
+    indicators (>, <, >=, <=), retaining only rows with purely numeric values.
 
     Parameters
     ----------
@@ -195,7 +350,20 @@ def remove_censored_affinity(
     Returns
     -------
     pd.DataFrame
-        Filtered DataFrame with only rows where all specified columns are numeric.
+        Filtered DataFrame containing only rows where all specified columns
+        have numeric values without censoring signs.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'exp': ['5.0', '>3.0', '2.5'],
+    ...     'pred': ['4.8', '3.2', '2.3']
+    ... })
+    >>> remove_censored_affinity(df, ['exp'])
+          exp pred
+    0     5.0  4.8
+    2     2.5  2.3
     """
     import re
     censor_pattern = re.compile(r'^(>=|<=|>|<)')
@@ -208,9 +376,11 @@ def strip_censoring_signs(
     df: pd.DataFrame,
     cols: list
 ) -> pd.DataFrame:
-    """
-    Remove censoring signs (>, <, >=, <=) from the start of values in specified columns, converting them to floats.
-    Non-numeric values after stripping will be set to NaN.
+    """Remove censoring signs from values and convert to floats.
+
+    Strips censoring indicators (>, <, >=, <=) from the beginning of values
+    in specified columns and converts them to numeric floats. Non-numeric
+    values after stripping are set to NaN.
 
     Parameters
     ----------
@@ -222,7 +392,21 @@ def strip_censoring_signs(
     Returns
     -------
     pd.DataFrame
-        DataFrame with censoring signs removed and values converted to float in specified columns.
+        DataFrame with censoring signs removed and values converted to float
+        in the specified columns.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'exp': ['>5.0', '3.0', '<=2.5'],
+    ...     'pred': ['4.8', '3.2', '2.3']
+    ... })
+    >>> strip_censoring_signs(df, ['exp'])
+          exp pred
+    0     5.0  4.8
+    1     3.0  3.2
+    2     2.5  2.3
     """
     import re
     df = df.copy()
@@ -235,25 +419,47 @@ def strip_censoring_signs(
 def prepare_affinity_dataframe(
     df: pd.DataFrame,
     cols: list,
-    censoring: str = 'remove'  # options: 'remove', 'strip'
+    censoring: str = 'remove'
 ) -> pd.DataFrame:
-    """
-    Prepare a DataFrame for affinity correlation/plotting by handling censoring signs.
+    """Prepare a DataFrame for affinity analysis by handling censoring signs.
+
+    Processes a DataFrame to handle censored affinity data, either by
+    removing censored rows entirely or by stripping the censoring signs
+    and retaining the numeric values.
 
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame to process.
     cols : list of str
-        List of column names to check/clean for censoring signs.
+        List of column names to check and clean for censoring signs.
     censoring : {'remove', 'strip'}, default='remove'
-        If 'remove', remove rows with censoring signs in any of the columns.
-        If 'strip', remove censoring signs and use the numeric part.
+        Strategy for handling censoring signs:
+        - 'remove': Remove rows with censoring signs in any specified column
+        - 'strip': Remove censoring signs and use the numeric part
 
     Returns
     -------
     pd.DataFrame
         Cleaned DataFrame ready for numeric analysis.
+
+    Raises
+    ------
+    ValueError
+        If censoring parameter is not 'remove' or 'strip'.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'exp': ['>5.0', '3.0'], 'pred': ['4.8', '3.2']})
+    >>> prepare_affinity_dataframe(df, ['exp'], censoring='remove')
+          exp pred
+    1     3.0  3.2
+
+    >>> prepare_affinity_dataframe(df, ['exp'], censoring='strip')
+          exp pred
+    0     5.0  4.8
+    1     3.0  3.2
     """
     if censoring == 'remove':
         return remove_censored_affinity(df, cols)
@@ -267,24 +473,43 @@ def convert_boltz_affinity_to_ic50(
     affinity_col: str = 'affinity_pred_value',
     output_path: Optional[str] = None
 ) -> pd.DataFrame:
-    """
-    Convert affinity predictions (log(IC50) in μM) to IC50 (μM) and pIC50 (kcal/mol) from a DataFrame.
-    Only works on numeric values (no censoring signs).
-    Optionally saves the updated DataFrame to a CSV file.
+    """Convert Boltz affinity predictions to IC50 and pIC50 values.
+
+    Transforms affinity predictions from log(IC50) in μM to IC50 (μM) and
+    pIC50 (kcal/mol). Optionally saves the enriched DataFrame to a CSV file.
 
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame containing affinity predictions.
     affinity_col : str, default='affinity_pred_value'
-        Column name for affinity predictions (must be numeric).
+        Column name for affinity predictions. Must contain numeric values
+        (no censoring signs).
     output_path : str, optional
         If provided, save the updated DataFrame to this path as a CSV file.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with added columns: 'IC50_uM', 'pIC50_kcal_per_mol'.
+        DataFrame with three additional columns:
+        - 'affinity_value' : float - Copy of the input affinity values
+        - 'IC50_uM' : float - IC50 in micromolar (10^affinity_value)
+        - 'pIC50_kcal_per_mol' : float - pIC50 in kcal/mol
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'affinity_pred_value': [6.0, 7.0, 5.5]})
+    >>> result = convert_boltz_affinity_to_ic50(df)
+    >>> result[['IC50_uM', 'pIC50_kcal_per_mol']]
+       IC50_uM  pIC50_kcal_per_mol
+    0      1.0                0.00
+    1     10.0               -1.36
+    2      3.16               0.68
+
+    Notes
+    -----
+    The conversion formula for pIC50 is: (6 - affinity_value) * 1.364
     """
     df = df.copy()
     df['affinity_value'] = df[affinity_col].astype(float)
@@ -295,22 +520,33 @@ def convert_boltz_affinity_to_ic50(
     return df
 
 def drop_and_log_nans(df: pd.DataFrame, cols: list, context: str = "") -> pd.DataFrame:
-    """
-    Drop rows with NaN in any of the specified columns and log the number of dropped rows.
+    """Drop rows with NaN values and log the number of rows removed.
+
+    Removes rows containing NaN values in any of the specified columns
+    and logs the count of removed rows for debugging and quality control.
 
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame to process.
     cols : list of str
-        Columns to check for NaN values.
-    context : str, optional
-        Context string to include in the log message.
+        Column names to check for NaN values.
+    context : str, default=""
+        Optional context string to include in the log message for clarity.
 
     Returns
     -------
     pd.DataFrame
         DataFrame with rows containing NaN in specified columns removed.
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> import numpy as np
+    >>> df = pd.DataFrame({'a': [1, 2, np.nan], 'b': [4, np.nan, 6]})
+    >>> drop_and_log_nans(df, ['a', 'b'], context="correlation analysis")
+         a    b
+    0  1.0  4.0
     """
     nan_count = df[cols].isna().any(axis=1).sum()
     if nan_count > 0:
@@ -322,11 +558,13 @@ def calculate_affinity_correlations(
     pred_col: str,
     exp_col: str,
     sample_size: Optional[int] = None,
-    censoring: str = 'strip'  # options: 'remove', 'strip'
+    censoring: str = 'strip'
 ) -> dict:
-    """
-    Calculate correlation metrics between predicted and experimental affinities from a DataFrame.
-    Handles censoring signs according to the 'censoring' argument.
+    """Calculate correlation metrics between predicted and experimental affinities.
+
+    Computes multiple statistical metrics to assess the agreement between
+    predicted and experimental affinity values, handling censored data
+    according to the specified strategy.
 
     Parameters
     ----------
@@ -337,15 +575,34 @@ def calculate_affinity_correlations(
     exp_col : str
         Column name for experimental (expected) affinity values.
     sample_size : int, optional
-        If set, randomly sample this many rows for metrics/plots.
+        If specified, randomly sample this many rows before calculating
+        metrics (useful for large datasets).
     censoring : {'remove', 'strip'}, default='strip'
-        If 'remove', remove rows with censoring signs in either column.
-        If 'strip', remove censoring signs and use the numeric part.
+        Strategy for handling censoring signs:
+        - 'remove': Remove rows with censoring signs in either column
+        - 'strip': Remove censoring signs and use the numeric part
 
     Returns
     -------
     dict
-        Dictionary of correlation metrics (R², Pearson, Spearman, Kendall, RMSE, MAE).
+        Dictionary containing the following correlation metrics:
+        - 'r2' : float - Coefficient of determination (R²)
+        - 'pearson' : float - Pearson correlation coefficient
+        - 'spearman' : float - Spearman rank correlation coefficient
+        - 'kendall' : float - Kendall tau correlation coefficient
+        - 'rmse' : float - Root mean squared error
+        - 'mae' : float - Mean absolute error
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'pred': [5.0, 6.0, 7.0],
+    ...     'exp': [5.2, 5.8, 7.1]
+    ... })
+    >>> metrics = calculate_affinity_correlations(df, 'pred', 'exp')
+    >>> print(f"R² = {metrics['r2']:.3f}")
+    R² = 0.982
     """
     df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
     df = drop_and_log_nans(df, [pred_col, exp_col], context="correlation calculation")
@@ -371,10 +628,12 @@ def plot_affinity_correlation(
     censoring: str = 'strip',
     output_path: Optional[str] = None
 ):
-    """
-    Plot predicted vs experimental affinities from a DataFrame with jointplot and correlation metrics.
-    Handles censoring signs according to the 'censoring' argument.
-    Saves the plot to the specified output_path or displays it if output_path is None.
+    """Create a correlation plot for predicted vs experimental affinities.
+
+    Generates a seaborn jointplot showing the relationship between predicted
+    and experimental affinity values, including marginal distributions and
+    correlation metrics. Handles censored data according to the specified
+    strategy.
 
     Parameters
     ----------
@@ -385,12 +644,35 @@ def plot_affinity_correlation(
     exp_col : str
         Column name for experimental (expected) affinity values.
     sample_size : int, optional
-        If set, randomly sample this many rows for plotting.
+        If specified, randomly sample this many rows before plotting
+        (useful for large datasets to improve performance).
     censoring : {'remove', 'strip'}, default='strip'
-        If 'remove', remove rows with censoring signs in either column.
-        If 'strip', remove censoring signs and use the numeric part.
+        Strategy for handling censoring signs:
+        - 'remove': Remove rows with censoring signs in either column
+        - 'strip': Remove censoring signs and use the numeric part
     output_path : str, optional
-        If provided, save the plot to this path. If None, display the plot interactively.
+        If provided, save the plot to this path. If None, display the plot
+        interactively using plt.show().
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({
+    ...     'pred': [5.0, 6.0, 7.0, 5.5],
+    ...     'exp': [5.2, 5.8, 7.1, 5.4]
+    ... })
+    >>> plot_affinity_correlation(df, 'pred', 'exp', output_path='correlation.png')
+
+    >>> # For large datasets, use sampling
+    >>> plot_affinity_correlation(df, 'pred', 'exp', sample_size=1000)
+
+    Notes
+    -----
+    The plot includes:
+    - Scatter plot with marginal distributions
+    - Identity line (y=x) in red dashed
+    - Legend with R², Pearson, Spearman, Kendall, RMSE, and MAE metrics
+    - Axes labeled as 'Experimental Affinity' and 'Predicted Affinity'
     """
     df = prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
     df = drop_and_log_nans(df, [pred_col, exp_col], context="correlation plotting")
