@@ -44,14 +44,14 @@ class BaseRecipe:
             '--repeats',
             type=int,
             default=1,
-            help='Number of repeats (>=1).'
+            help='Number of repeats.'
         )
 
         parser.add_argument(
-            '--seeds',
-            type=str,
+            '--seed',
+            type=int,
             default=None,
-            help='Comma-separated list of seeds (must match repeats).'
+            help='Global seed used for predictions.'
         )
 
         parser.add_argument(
@@ -97,7 +97,7 @@ class BaseRecipe:
             system_path=args.system_path,
             options_path=args.options_path,
             repeats=args.repeats,
-            seeds=args.seeds,
+            seed=args.seed,
             generate_conformers=args.generate_conformers,
             sdf_file=args.sdf_file,
         )
@@ -123,23 +123,6 @@ class BaseRecipe:
                 raise ValueError(f'--sdf_file does not exist: {sdf_path}')
             if not sdf_path.is_file():
                 raise ValueError(f'--sdf_file is not a file: {sdf_path}')
-
-        # ---- repeats/seeds validation ----
-        if args.seeds is not None:
-            try:
-                seeds = [int(s.strip()) for s in args.seeds.split(',')]
-            except ValueError:
-                raise ValueError(
-                    '--seeds must be a comma-separated list of integers'
-                )
-        if len(seeds) != args.repeats:
-            raise ValueError(
-                '--seeds must contain exactly the same number of values '
-                'as --repeats'
-            )
-
-        # store parsed seeds back to args
-        args.seeds = seeds
 
         # ---- conformer/sdf validation ----
         if args.generate_conformers == 'sdf' and args.sdf_file is None:

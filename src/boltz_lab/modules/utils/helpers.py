@@ -2,8 +2,10 @@
 import os
 import pandas as pd
 import yaml
+import random
 from rdkit import Chem
-from typing import Optional
+from typing import Optional, List
+
 
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error
@@ -274,6 +276,32 @@ def delete_last_line(file_path):
     if lines:
         with open(file_path, 'w') as f:
             f.writelines(lines[:-1])
+
+def generate_seeds(num_seeds: int, seed: Optional[int] = None) -> List[int]:
+    """
+    Generate a list of random integer seeds for reproducibility.
+
+    Parameters
+    ----------
+    num_seeds : int
+        Number of seeds to generate (must be >= 1).
+    seed : int or None
+        Optional global seed for reproducibility. If None, a random global
+        seed is generated.
+
+    Returns
+    -------
+    List[int]
+        List of generated seeds.
+    """
+    if num_seeds < 1:
+        raise ValueError(f"num_seeds must be >= 1, got {num_seeds}")
+
+    # Generate or use the global seed
+    global_seed = seed if seed is not None else random.randint(0, 2**32 - 1)
+    rng = random.Random(global_seed)
+    
+    return [rng.randint(0, 2**32 - 1) for _ in range(num_seeds)]
 
 def parse_censored_affinity(
     affinity_series: pd.Series,
