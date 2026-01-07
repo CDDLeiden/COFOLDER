@@ -96,7 +96,7 @@ class Predict(object):
             logger=self.logger
         )
 
-        # Handle conformer generation
+        # Generate conformers and store in cache
         if not self.conformers:
             self.resname = None
             logger.debug("No conformer generation requested. Using SMILES.")
@@ -111,12 +111,20 @@ class Predict(object):
                 logger=self.logger,
             )
 
-        # Set options
-        self.opt.out_dir = self.wrk_dir
-        self.opt.system_path = self.system_path
-
         # Set and run command
+        for i, seed in enumerate(self.run_seeds, 1):
+            logger.info("Running repeat %d/%d with seed %d", i, self.repeats, seed)
+            
+            # Update the options
+            self.opt.seed = seed
+            self.opt.out_dir = self.wrk_dir / f"repeat_{i}"
+            self.opt.system_path = self.system_path
 
-        # add repeats #TODO
-        cmd = self.opt.set_command(system=self.sys)
-        run_boltz(cmd)
+            # Build the command for this repeat
+            cmd = self.opt.set_command(system=self.sys)
+
+            # Log the command safely (convert all Path objects to strings)
+            logger.info("Running: %s", " ".join(map(str, cmd)))
+
+            # Execute the command
+            run_boltz(cmd)

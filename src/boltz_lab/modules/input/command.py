@@ -118,11 +118,18 @@ class Command:
         - Supports multiprocessing.cpu_count() for auto-detection
         - Automatically adds --use_msa_server if system has no MSA defined
         """
-        cmd = ["boltz", "predict", self.system_path, "--out_dir", self.out_dir]
+        cmd = ["boltz", 
+               "predict", 
+               str(self.system_path), 
+               "--out_dir", 
+               str(self.out_dir),
+               "--seed",
+               str(self.seed)]
 
         # Include MSA server option if not defined in the system
         if system.find_value(key="msa") is None:
             cmd.append("--use_msa_server")
+            logger.info("No MSA defined in system; adding --use_msa_server to command.")
 
         for item in self.options.get("options", []):
             for key, value in item.items():
