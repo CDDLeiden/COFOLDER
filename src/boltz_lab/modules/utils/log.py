@@ -13,7 +13,6 @@ from typing import Optional
 DEFAULT_FORMAT = (
     "%(asctime)s | "
     "%(levelname)-8s | "
-    "%(name)s | "
     "%(filename)s:%(lineno)d | "
     "%(funcName)s | "
     "%(message)s"

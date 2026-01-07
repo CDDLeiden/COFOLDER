@@ -56,68 +56,99 @@ def handle_conformers(
     Returns
     -------
     resname : str
-        The residue name used for CCD entry (max 5 chars).
+        mapping of ligand id -> CCD residue name..
     """
     if logger is None:
         logger = logging.getLogger(__name__)
 
     logger.info("Creating conformer: %s", conformers)
+    ccd_map = {}
 
-    # Determine SDF file path
-    sdf_file_path = (
-        Path(sdf_file) if sdf_file is not None else Path(wrk_dir) / "_smiles.sdf"
-    )
+    sequences = sys_obj.find_value(key="sequences")
+    if not sequences:
+        logger.warning("No sequences found in system, skipping conformer handling.")
+        return ccd_map
 
-    # Prepare ligand conformers
-    if conformers == "sdf":
-        # Use existing SDF file
-        logger.debug("Using provided SDF file into CCD: %s", sdf_file_path)
-    else:
-        smiles_value = sys_obj.find_value(key="smiles")
-        ligand.smiles_to_sdf(data=smiles_value, output_sdf_path=str(sdf_file_path))
+    ligand_idx = -1
+    for seq_idx, seq in enumerate(sequences):
+        ligand_info = seq.get("ligand")
+        if not ligand_info:
+            logger.debug("No ligand found in sequence %d, skipping.", seq_idx)
+            continue
 
-        if conformers == "2D":
-            ligand.generate_2d_conformers(str(sdf_file_path))
-        elif conformers == "3D":
-            ligand.generate_3d_conformers(str(sdf_file_path))
+        ligand_id = ligand_info.get("id")
+        if isinstance(ligand_id, list):
+            ligand_id = ligand_id[0]
+        ligand_idx += 1
 
-    # Read the first molecule from SDF
-    mols = helpers.read_sdf(str(sdf_file_path))
-    if not mols:
-        raise ValueError(f"No valid molecules found in SDF: {sdf_file_path}")
-    mol = mols[0]
+        smiles_value = ligand_info.get("smiles")
+        if not smiles_value:
+            logger.warning("Ligand '%s' has no SMILES, skipping.", ligand_id)
+            continue
 
-    # Determine CCD residue name
-    if mol.HasProp("id"):
-        resname = mol.GetProp("id")
-    elif mol.HasProp("name"):
-        resname = mol.GetProp("name")
-    elif sdf_file:
-        resname = Path(sdf_file).stem
-    else:
-        resname = str(global_seed or 0)
-    resname = str(resname)[:5]  # CCD requires max 5 chars
+        # Determine SDF file path
+        if sdf_file:
+            sdf_file_path = Path(sdf_file)
+        else:
+            sdf_file_path = Path(wrk_dir) / f"_smiles_{ligand_id}.sdf"
 
-    # CCD conversion
-    boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz/'
-    try:
-        ligand.mol_to_ccd(resname, mol, boltz_path=boltz_cache)
-        logger.info("Saved CCD for %s to %s/mols/", resname, boltz_cache)
-    except Exception as e:
-        logger.error("Failed to convert molecule '%s' to CCD: %s", resname, e)
+        # Prepare ligand conformers
+        if conformers == "sdf" and sdf_file:
+            logger.debug("Using provided SDF file for ligand %s: %s", ligand_id, sdf_file_path)
+        else:
+            ligand.smiles_to_sdf(data=smiles_value, output_sdf_path=str(sdf_file_path))
+            if conformers == "2D":
+                ligand.generate_2d_conformers(str(sdf_file_path))
+            elif conformers == "3D":
+                ligand.generate_3d_conformers(str(sdf_file_path))
 
-    # Update system to use CCD entry
-    sys_obj.update_system(resname, path=["sequences", 0, "ligand", "ccd"])
+        # Read the molecule from SDF
+        mols = helpers.read_sdf(str(sdf_file_path))
+        if not mols:
+            raise ValueError(f"No valid molecules found in SDF: {sdf_file_path}")
+        
+        if conformers == "sdf": mol = mols[ligand_idx]
+        else: mol = mols[0]
 
-    # Clean up temporary SDF if no explicit file and not in debug mode
-    if sdf_file is None and sdf_file_path.exists() and not logger.isEnabledFor(logging.DEBUG):
+        # Determine CCD residue name (unique and <=5 chars)
+        resname = mol.GetProp("id") if mol.HasProp("id") else (
+            mol.GetProp("name") if mol.HasProp("name") else ligand_id
+        )
+        # Ensure uniqueness across multiple ligands
+        resname = f"{ligand_idx}_{resname}" if len(sequences) > 1 else resname
+        resname = str(resname)[:5]
+
+        # CCD conversion
+        boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz/'
         try:
-            os.remove(sdf_file_path)
-            logger.debug("Temporary SDF removed: %s", sdf_file_path)
+            ligand.mol_to_ccd(resname, mol, boltz_path=boltz_cache)
+            logger.info("Saved CCD for %s to %s/mols/", resname, boltz_cache)
         except Exception as e:
-            logger.warning("Failed to remove temporary SDF: %s", e)
+            logger.error("Failed to convert molecule '%s' to CCD: %s", resname, e)
 
-    return resname
+        # Update system for each ligand ID
+        sys_obj.update_system(resname, path=["sequences", seq_idx, "ligand", "ccd"])
+        sys_obj.delete_system_key(path=["sequences", seq_idx, "ligand"], keys_to_delete=["smiles"])
+ 
+        ccd_map[ligand_id] = resname
+
+        # Clean up temporary SDF if no explicit file and not in debug mode
+        if sdf_file is None and sdf_file_path.exists() and not logger.isEnabledFor(logging.DEBUG):
+            try:
+                os.remove(sdf_file_path)
+                logger.debug("Temporary SDF removed: %s", sdf_file_path)
+            except Exception as e:
+                logger.warning("Failed to remove temporary SDF: %s", e)
+
+        # Remove temporary SDF if not provided and not in debug
+        if sdf_file is None and sdf_file_path.exists() and not logger.isEnabledFor(logging.DEBUG):
+            try:
+                os.remove(sdf_file_path)
+                logger.debug("Temporary SDF removed: %s", sdf_file_path)
+            except Exception as e:
+                logger.warning("Failed to remove temporary SDF %s: %s", sdf_file_path, e)
+
+    return ccd_map
 
 def sanitize_mol_id(mol_id: str) -> str:
     """Ensure molecule ID complies with CCD naming rules (max 5 characters).

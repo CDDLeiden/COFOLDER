@@ -60,7 +60,7 @@ class Predict(object):
         self.sdf_file = Path(sdf_file) if sdf_file else None
 
         # Setup logger
-        self.logger = logging.getLogger('boltz-lab.recipies.predict')
+        self.logger = logging.getLogger(__name__)
         self.logger.debug("Initializing Predict with parameters: %s", {
             "wrk_dir": self.wrk_dir,
             "system_path": self.system_path,
@@ -111,6 +111,14 @@ class Predict(object):
                 logger=self.logger,
             )
 
+        # --- Save updated system to YAML ---
+        yaml_path = os.path.join(self.wrk_dir, "_" + str(self.system_path.name))
+        try:
+            self.sys.save_system_to_yaml(path=yaml_path)
+            self.logger.info("Updated system saved to YAML: %s", yaml_path)
+        except Exception as e:
+            self.logger.error("Failed to save updated system YAML: %s", e)
+
         # Set and run command
         for i, seed in enumerate(self.run_seeds, 1):
             logger.info("Running repeat %d/%d with seed %d", i, self.repeats, seed)
@@ -118,13 +126,13 @@ class Predict(object):
             # Update the options
             self.opt.seed = seed
             self.opt.out_dir = self.wrk_dir / f"repeat_{i}"
-            self.opt.system_path = self.system_path
+            self.opt.system_path = yaml_path
 
             # Build the command for this repeat
             cmd = self.opt.set_command(system=self.sys)
-
-            # Log the command safely (convert all Path objects to strings)
             logger.info("Running: %s", " ".join(map(str, cmd)))
 
             # Execute the command
             run_boltz(cmd)
+
+    

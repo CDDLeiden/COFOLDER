@@ -121,6 +121,69 @@ class System:
             if not set_key(self.system):
                 raise KeyError(f"Parent key '{parent_key}' not found in the system.")
 
+    def delete_system_key(self, path=None, parent_key=None, sub_key=None, keys_to_delete=None):
+        """
+        Delete specific keys from the system configuration at a given path or key.
+
+        Parameters
+        ----------
+        path : list, optional
+            Path to the target dictionary/list as a list of keys/indices.
+            Example: ["sequences", 0, "ligand"]
+        parent_key : str, optional
+            Top-level or nested key to search for and delete keys in.
+        sub_key : str, optional
+            Sub-key within the parent_key dictionary to target.
+        keys_to_delete : list of str, optional
+            List of keys to delete from the target dictionary.
+
+        Raises
+        ------
+        ValueError
+            If path traversal fails due to type mismatch.
+        KeyError
+            If parent_key is not found in the system.
+        """
+        if keys_to_delete is None:
+            return
+
+        if path:
+            d = self.system
+            for key in path:
+                if isinstance(d, dict):
+                    d = d.setdefault(key, {})
+                elif isinstance(d, list):
+                    d = d[int(key)]
+                else:
+                    raise ValueError(f"Cannot traverse into object at {key} in path {path}")
+            if isinstance(d, dict):
+                for k in keys_to_delete:
+                    if k in d:
+                        del d[k]
+
+        elif parent_key:
+            def remove_keys(d):
+                if isinstance(d, dict):
+                    if parent_key in d:
+                        target = d[parent_key]
+                        if sub_key:
+                            target = target.get(sub_key, {})
+                            if isinstance(target, dict):
+                                for k in keys_to_delete:
+                                    target.pop(k, None)
+                        else:
+                            if isinstance(target, dict):
+                                for k in keys_to_delete:
+                                    target.pop(k, None)
+                        return True
+                    return any(remove_keys(v) for v in d.values())
+                if isinstance(d, list):
+                    return any(remove_keys(i) for i in d)
+                return False
+
+            if not remove_keys(sys_obj.system):
+                raise KeyError(f"Parent key '{parent_key}' not found in the system.")
+
     def find_value(self, key=None, path=None):
         """Retrieve a value by path or by recursively searching for a key.
 
@@ -209,4 +272,4 @@ class System:
         The YAML is written with sort_keys=False to preserve insertion order.
         """
         with open(path, "w") as file:
-            yaml.dump(self.system, file, sort_keys=False)
+            yaml.dump(self.system, file, sort_keys=False, default_flow_style=False)
