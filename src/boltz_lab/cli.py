@@ -41,15 +41,42 @@ class BaseRecipe:
         )
 
         parser.add_argument(
+            '--repeats',
+            type=int,
+            default=1,
+            help='Number of repeats (>=1).'
+        )
+
+        parser.add_argument(
+            '--seeds',
+            type=str,
+            default=None,
+            help='Comma-separated list of seeds (must match repeats).'
+        )
+
+        parser.add_argument(
             '--generate_conformers',
-            choices=['2D', '3D'],
+            choices=['2D', '3D', 'sdf'],
             default=None,
             help=(
-                'Generate 2D or 3D conformers for CCD input. '
+                'Generate 2D or 3D conformers for CCD input, or use conformers '
+                'from an existing SDF file. '
                 'Only valid for SMILES-based inputs.'
             )
         )
 
+        parser.add_argument(
+            '--sdf_file',
+            type=str,
+            default=None,
+            help=(
+                'Path to an SDF file containing conformers to use. '
+                'Required if --generate_conformers is set to "sdf".'
+            )
+        )
+
+    @staticmethod
+    def add_final_arguments(parser):
         parser.add_argument(
             '--log_name',
             type=str,
@@ -63,8 +90,67 @@ class BaseRecipe:
             help='Enable debug logging.'
         )
 
+    @staticmethod
+    def common_kwargs(args):
+        return dict(
+            wrk_dir=args.wrk_dir,
+            system_path=args.system_path,
+            options_path=args.options_path,
+            repeats=args.repeats,
+            seeds=args.seeds,
+            generate_conformers=args.generate_conformers,
+            sdf_file=args.sdf_file,
+        )
+
+    @staticmethod
+    def _validate_common_args(args):
+        # ---- path validation ----
+        system_path = Path(args.system_path)
+        if not system_path.exists():
+            raise ValueError(f'--system_path does not exist: {system_path}')
+        if not system_path.is_file():
+            raise ValueError(f'--system_path is not a file: {system_path}')
+
+        options_path = Path(args.options_path)
+        if not options_path.exists():
+            raise ValueError(f'--boltz_options_path does not exist: {options_path}')
+        if not options_path.is_file():
+            raise ValueError(f'--boltz_options_path is not a file: {options_path}')
+        
+        if args.sdf_file is not None:
+            sdf_path = Path(args.sdf_file)
+            if not sdf_path.exists():
+                raise ValueError(f'--sdf_file does not exist: {sdf_path}')
+            if not sdf_path.is_file():
+                raise ValueError(f'--sdf_file is not a file: {sdf_path}')
+
+        # ---- repeats/seeds validation ----
+        if args.seeds is not None:
+            try:
+                seeds = [int(s.strip()) for s in args.seeds.split(',')]
+            except ValueError:
+                raise ValueError(
+                    '--seeds must be a comma-separated list of integers'
+                )
+        if len(seeds) != args.repeats:
+            raise ValueError(
+                '--seeds must contain exactly the same number of values '
+                'as --repeats'
+            )
+
+        # store parsed seeds back to args
+        args.seeds = seeds
+
+        # ---- conformer/sdf validation ----
+        if args.generate_conformers == 'sdf' and args.sdf_file is None:
+            raise ValueError(
+                '--sdf_file must be provided when --generate_conformers is "sdf"'
+            )
+
     @classmethod
     def setup(cls, args):
+        cls._validate_common_args(args)
+        
         helpers.create_dir(args.wrk_dir)
 
         log_file = Path(args.wrk_dir) / f"{args.log_name}.log"
@@ -88,6 +174,7 @@ class PredictRecipe(BaseRecipe):
     @staticmethod
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
+        BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
     def main(args):
@@ -95,10 +182,7 @@ class PredictRecipe(BaseRecipe):
         logger.info("Starting Boltz-lab prediction pipeline.")
 
         predictor = Predict(
-            wrk_dir=args.wrk_dir,
-            system_path=args.system_path,
-            options_path=args.options_path,
-            generate_conformers=args.generate_conformers
+            **BaseRecipe.common_kwargs(args)
         )
 
         predictor.run()
@@ -113,20 +197,6 @@ class EvaluateRecipe(BaseRecipe):
         BaseRecipe.add_common_arguments(parser)
 
         parser.add_argument(
-            '--repeats',
-            type=int,
-            default=1,
-            help='Number of repeats (>=1).'
-        )
-
-        parser.add_argument(
-            '--seeds',
-            type=str,
-            default=None,
-            help='Comma-separated list of seeds (must match repeats).'
-        )
-
-        parser.add_argument(
             '-i', '--input_pdb',
             type=str,
             help='Reference CIF/PDB for RMSD calculations.'
@@ -138,20 +208,25 @@ class EvaluateRecipe(BaseRecipe):
             help='Interaction fingerprint specification.'
         )
 
+        parser.add_argument(
+            '--training_data_dir',
+            type=str,
+            required=True,
+            help='Path to directory containing training data used for evaluation.'
+        )
+
+        BaseRecipe.add_final_arguments(parser)
+
     @staticmethod
     def main(args):
         logger = EvaluateRecipe.setup(args)
         logger.info("Starting Boltz-lab evaluation pipeline.")
 
         evaluator = Evaluate(
-            wrk_dir=args.wrk_dir,
-            system_path=args.system_path,
-            options_path=args.options_path,
-            repeats=args.repeats,
-            seeds=args.seeds,
+            **BaseRecipe.common_kwargs(args),
             input_pdb=args.input_pdb,
             ifp=args.ifp,
-            generate_conformers=args.generate_conformers
+            training_data_dir=args.training_data_dir,
         )
 
         evaluator.run()
@@ -185,6 +260,8 @@ class ScreenRecipe(BaseRecipe):
             help='Comma-separated list of metadata fields to merge.'
         )
 
+        BaseRecipe.add_final_arguments(parser)
+
     @staticmethod
     def main(args):
         logger = ScreenRecipe.setup(args)
@@ -214,6 +291,7 @@ class OracleRecipe(BaseRecipe):
     @staticmethod
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
+        BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
     def main(args):
