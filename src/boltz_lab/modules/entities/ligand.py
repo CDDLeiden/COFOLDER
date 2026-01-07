@@ -18,8 +18,106 @@ from rdkit.Chem import AllChem, rdDepictor, rdmolops
 from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
 
 from boltz_lab.modules.input import command
+from boltz_lab.modules.entities import ligand
+from boltz_lab.modules.utils import helpers
 
 ccd_logger = logging.getLogger('boltz-lab.helpers.conformers')
+
+def handle_conformers(
+    sys_obj,
+    opt_obj,
+    wrk_dir: str,
+    conformers: Optional[str] = None,
+    sdf_file: Optional[Union[str, Path]] = None,
+    global_seed: Optional[int] = None,
+    logger: Optional[logging.Logger] = None,
+) -> Optional[str]:
+    """
+    Prepare ligand conformers in SDF format, optionally generate 2D/3D conformers,
+    convert the first molecule to CCD, and update the system object.
+
+    Parameters
+    ----------
+    sys_obj : System
+        The system object containing ligand information (must support find_value and update_system).
+    opt_obj : Command
+        Boltz options object (must support find_value).
+    wrk_dir : str
+        Working directory where temporary SDF may be written.
+    conformers : {"2D", "3D", "sdf"}, optional
+        Type of conformer generation requested.
+    sdf_file : str or Path, optional
+        Existing SDF file to use (required if conformers="sdf").
+    global_seed : int, optional
+        Global seed used as fallback for residue name if none found.
+    logger : logging.Logger, optional
+        Logger to use. Defaults to root logger if None.
+
+    Returns
+    -------
+    resname : str
+        The residue name used for CCD entry (max 5 chars).
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    logger.info("Creating conformer: %s", conformers)
+
+    # Determine SDF file path
+    sdf_file_path = (
+        Path(sdf_file) if sdf_file is not None else Path(wrk_dir) / "_smiles.sdf"
+    )
+
+    # Prepare ligand conformers
+    if conformers == "sdf":
+        # Use existing SDF file
+        logger.debug("Using provided SDF file into CCD: %s", sdf_file_path)
+    else:
+        smiles_value = sys_obj.find_value(key="smiles")
+        ligand.smiles_to_sdf(data=smiles_value, output_sdf_path=str(sdf_file_path))
+
+        if conformers == "2D":
+            ligand.generate_2d_conformers(str(sdf_file_path))
+        elif conformers == "3D":
+            ligand.generate_3d_conformers(str(sdf_file_path))
+
+    # Read the first molecule from SDF
+    mols = helpers.read_sdf(str(sdf_file_path))
+    if not mols:
+        raise ValueError(f"No valid molecules found in SDF: {sdf_file_path}")
+    mol = mols[0]
+
+    # Determine CCD residue name
+    if mol.HasProp("id"):
+        resname = mol.GetProp("id")
+    elif mol.HasProp("name"):
+        resname = mol.GetProp("name")
+    elif sdf_file:
+        resname = Path(sdf_file).stem
+    else:
+        resname = str(global_seed or 0)
+    resname = str(resname)[:5]  # CCD requires max 5 chars
+
+    # CCD conversion
+    boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz/'
+    try:
+        ligand.mol_to_ccd(resname, mol, boltz_path=boltz_cache)
+        logger.info("Saved CCD for %s to %s/mols/", resname, boltz_cache)
+    except Exception as e:
+        logger.error("Failed to convert molecule '%s' to CCD: %s", resname, e)
+
+    # Update system to use CCD entry
+    sys_obj.update_system(resname, path=["sequences", 0, "ligand", "ccd"])
+
+    # Clean up temporary SDF if no explicit file and not in debug mode
+    if sdf_file is None and sdf_file_path.exists() and not logger.isEnabledFor(logging.DEBUG):
+        try:
+            os.remove(sdf_file_path)
+            logger.debug("Temporary SDF removed: %s", sdf_file_path)
+        except Exception as e:
+            logger.warning("Failed to remove temporary SDF: %s", e)
+
+    return resname
 
 def sanitize_mol_id(mol_id: str) -> str:
     """Ensure molecule ID complies with CCD naming rules (max 5 characters).
@@ -206,75 +304,108 @@ def iterate_sdf_records(sdf_path: str, id_property: str):
         mol_id = mol.GetProp(id_property) if mol.HasProp(id_property) else f"mol_{i}"
         yield i, mol_id, Chem.MolToMolBlock(mol)
 
-def csv_to_sdf(
-    csv_path: str,
-    smiles_col: str,
+def smiles_to_sdf(
+    data: Union[str, List[str]],
+    smiles_col: Optional[str] = None,
     output_sdf_path: Optional[str] = None,
-    property_cols: Optional[Union[str, List[str]]] = None
+    property_cols: Optional[Union[dict, List[dict], str, List[str]]] = None,
 ) -> None:
-    """Convert a CSV file with SMILES strings to SDF format.
-
-    Reads SMILES from a CSV file and creates an SDF file with molecules,
-    optionally preserving specified columns as SDF properties.
+    """
+    Convert either a single SMILES / list of SMILES or a CSV file to SDF format.
 
     Parameters
     ----------
-    csv_path : str
-        Path to the input CSV file.
-    smiles_col : str
-        Name of the column containing SMILES strings.
+    data : str or list of str
+        Single SMILES string, list of SMILES, or path to a CSV file.
+    smiles_col : str, optional
+        Column name containing SMILES. Required if `data` is a CSV file.
     output_sdf_path : str, optional
-        Path to the output SDF file. If None, replaces .csv extension with .sdf.
-    property_cols : str or list of str, optional
-        Column name(s) to copy as SDF properties. Can be a single column name
-        or a list of column names.
-
-    Warnings
-    --------
-    - Logs a warning for invalid SMILES that cannot be parsed
-    - Logs a warning for requested property columns not found in CSV
-
-    Notes
-    -----
-    Invalid SMILES are skipped and not written to the output file.
-    Property values are converted to strings before attachment.
+        Path to output SDF file. Defaults to "output.sdf" for SMILES or
+        CSV file base name for CSV input.
+    property_cols : dict, list of dict, str, or list of str, optional
+        For SMILES: dict mapping property names to values (or list for multiple SMILES)
+        For CSV: column names to preserve as SDF properties
     """
-    if output_sdf_path is None:
-        output_sdf_path = os.path.splitext(csv_path)[0] + ".sdf"
 
-    df = pd.read_csv(csv_path)
-    if smiles_col not in df.columns:
-        ccd_logger.error(f"SMILES column '{smiles_col}' not found in {csv_path}")
+    # --- Case 1: SMILES input ---
+    if isinstance(data, str) or (isinstance(data, list) and all(isinstance(s, str) for s in data)):
+        smiles_list = [data] if isinstance(data, str) else list(data)
+        if output_sdf_path is None:
+            output_sdf_path = "output.sdf"
+
+        # Normalize property_cols for SMILES
+        if property_cols is None:
+            props_list = [{}] * len(smiles_list)
+        elif isinstance(property_cols, dict):
+            props_list = [property_cols] * len(smiles_list)
+        elif isinstance(property_cols, list) and all(isinstance(p, dict) for p in property_cols):
+            props_list = property_cols
+            if len(props_list) < len(smiles_list):
+                props_list.extend([{}] * (len(smiles_list) - len(props_list)))
+        else:
+            # Single list of property names (values will be None)
+            props_list = [{str(k): None for k in property_cols}] * len(smiles_list)
+
+        writer = Chem.SDWriter(output_sdf_path)
+        n_written = 0
+        for i, smi in enumerate(smiles_list):
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                ccd_logger.warning(f"Invalid SMILES at index {i}: {smi}")
+                continue
+            for k, v in props_list[i].items():
+                if v is not None:
+                    mol.SetProp(str(k), str(v))
+            writer.write(mol)
+            n_written += 1
+        writer.close()
+        ccd_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")
         return
 
-    if property_cols is None:
-        property_cols = []
-    elif isinstance(property_cols, str):
-        property_cols = [property_cols]
-    else:
-        property_cols = list(property_cols)
+    # --- Case 2: CSV input ---
+    if isinstance(data, str) and os.path.exists(data):
+        if smiles_col is None:
+            raise ValueError("smiles_col must be provided for CSV input")
 
-    for col in property_cols:
-        if col not in df.columns:
-            ccd_logger.warning(f"Property column '{col}' not found in {csv_path}. It will be skipped.")
-    property_cols = [col for col in property_cols if col in df.columns]
+        df = pd.read_csv(data)
+        if smiles_col not in df.columns:
+            ccd_logger.error(f"SMILES column '{smiles_col}' not found in {data}")
+            return
 
-    writer = Chem.SDWriter(output_sdf_path)
-    n_written = 0
-    for idx, row in df.iterrows():
-        smi = row[smiles_col]
-        mol = Chem.MolFromSmiles(smi)
-        if mol is None:
-            ccd_logger.warning(f"Invalid SMILES at row {idx}: {smi}")
-            continue
-        for col in property_cols:
-            val = row[col]
-            if pd.notnull(val):
-                mol.SetProp(str(col), str(val))
-        writer.write(mol)
-        n_written += 1
-    writer.close()
-    ccd_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")
+        if output_sdf_path is None:
+            output_sdf_path = os.path.splitext(data)[0] + ".sdf"
+
+        if property_cols is None:
+            property_cols_list = []
+        elif isinstance(property_cols, str):
+            property_cols_list = [property_cols]
+        else:
+            property_cols_list = list(property_cols)
+
+        for col in property_cols_list:
+            if col not in df.columns:
+                ccd_logger.warning(f"Property column '{col}' not found in {data}. Skipping.")
+        property_cols_list = [c for c in property_cols_list if c in df.columns]
+
+        writer = Chem.SDWriter(output_sdf_path)
+        n_written = 0
+        for idx, row in df.iterrows():
+            smi = row[smiles_col]
+            mol = Chem.MolFromSmiles(smi)
+            if mol is None:
+                ccd_logger.warning(f"Invalid SMILES at row {idx}: {smi}")
+                continue
+            for col in property_cols_list:
+                val = row[col]
+                if pd.notnull(val):
+                    mol.SetProp(str(col), str(val))
+            writer.write(mol)
+            n_written += 1
+        writer.close()
+        ccd_logger.info(f"Wrote {n_written} molecules to {output_sdf_path}")
+        return
+
+    raise ValueError("Invalid input for smiles_or_csv_to_sdf: must be SMILES string, list of SMILES, or CSV file path.")
 
 def _save_mol(mol: Chem.Mol, mol_id: str, mols_dir: str):
     """Save an RDKit molecule as a pickle file in the CCD cache.
@@ -369,7 +500,7 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     
     ccd_logger.debug("Checking atom properties just before pickle:")
     atoms = list(mol.GetAtoms())
-    ccd_logger.debug("Total atoms:", len(atoms))
+    ccd_logger.debug("Total atoms: %d", len(atoms))
     missing = []
     for atom in atoms:
         if not atom.HasProp("name"):

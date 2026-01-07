@@ -1,7 +1,9 @@
 import logging
+import os
 from pathlib import Path
 
 from boltz_lab.modules.input import command, system
+from boltz_lab.modules.entities import ligand
 from boltz_lab.modules.runners.boltz_runner import run_boltz
 from boltz_lab.modules.utils import helpers  
 
@@ -25,10 +27,10 @@ class Predict(object):
         Number of repeats.
     seeds : list[int] or None
         Optional list of seeds for reproducibility.
-    generate_conformers : str or None
+    conformers : str or None
         '2D', '3D', or 'sdf' conformer generation.
     sdf_file : str or None
-        Path to SDF file if generate_conformers='sdf'.
+        Path to existing SDF file if conformers='sdf' or save location if conformers='2D' or '3D'.
 
     Examples
     --------
@@ -46,7 +48,7 @@ class Predict(object):
         options_path: str,
         repeats: int = 1,
         seed: int | None = None,
-        generate_conformers: str | None = None,
+        conformers: str | None = None,
         sdf_file: str | None = None
     ):
         self.wrk_dir = Path(wrk_dir)
@@ -54,7 +56,7 @@ class Predict(object):
         self.options_path = Path(options_path)
         self.repeats = repeats
         self.seed = seed
-        self.generate_conformers = generate_conformers
+        self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
 
         # Setup logger
@@ -65,7 +67,7 @@ class Predict(object):
             "options_path": self.options_path,
             "repeats": self.repeats,
             "seed": self.seed,
-            "generate_conformers": self.generate_conformers,
+            "conformers": self.conformers,
             "sdf_file": self.sdf_file
         })
 
@@ -87,34 +89,27 @@ class Predict(object):
         # Ensure working directory exists
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get run seeds seeds
-        if self.seed is None:
-            # generate a random global seed if none provided
-            self.seed = helpers.generate_seeds(num_seeds=1, seed=None)[0]
-            self.logger.info("No global seed provided. Generated random global seed: %d", self.seed)
+        # Get run seeds
+        self.seed, self.run_seeds = helpers.get_seeds(
+            repeats=self.repeats,
+            seed=self.seed,
+            logger=self.logger
+        )
+
+        # Handle conformer generation
+        if not self.conformers:
+            self.resname = None
+            logger.debug("No conformer generation requested. Using SMILES.")
         else:
-            self.logger.info("Using provided global seed: %d", self.seed)
-
-        if self.repeats == 1:
-            self.run_seeds = [self.seed]
-            self.logger.debug("Single repeat: using global seed as run seed: %s", self.run_seeds)
-        else:
-            self.run_seeds = helpers.generate_seeds(
-                num_seeds=self.repeats,
-                seed=self.seed
+            self.resname = ligand.handle_conformers(
+                sys_obj=self.sys,
+                opt_obj=self.opt,
+                wrk_dir=self.wrk_dir,
+                conformers=self.conformers,
+                sdf_file=self.sdf_file,
+                global_seed=self.seed,
+                logger=self.logger,
             )
-            self.logger.debug(
-                "Multiple repeats: %d run seeds generated from global seed %d: %s",
-                self.repeats,
-                self.seed,
-                self.run_seeds
-            )
-
-        self.logger.info("Run seeds to be used for this workflow: %s", self.run_seeds)
-
-        # Handle conformer generation info
-        #if self.generate_conformers in {'2D', '3D'}:
-        #    self.logger.info("Generating %s conformers.", self.generate_conformers)
 
         # Set options
         self.opt.out_dir = self.wrk_dir

@@ -55,7 +55,7 @@ class BaseRecipe:
         )
 
         parser.add_argument(
-            '--generate_conformers',
+            '--conformers',
             choices=['2D', '3D', 'sdf'],
             default=None,
             help=(
@@ -71,7 +71,7 @@ class BaseRecipe:
             default=None,
             help=(
                 'Path to an SDF file containing conformers to use. '
-                'Required if --generate_conformers is set to "sdf".'
+                'Required if --conformers is set to "sdf".'
             )
         )
 
@@ -98,7 +98,7 @@ class BaseRecipe:
             options_path=args.options_path,
             repeats=args.repeats,
             seed=args.seed,
-            generate_conformers=args.generate_conformers,
+            conformers=args.conformers,
             sdf_file=args.sdf_file,
         )
 
@@ -125,9 +125,9 @@ class BaseRecipe:
                 raise ValueError(f'--sdf_file is not a file: {sdf_path}')
 
         # ---- conformer/sdf validation ----
-        if args.generate_conformers == 'sdf' and args.sdf_file is None:
+        if args.conformers == 'sdf' and args.sdf_file is None:
             raise ValueError(
-                '--sdf_file must be provided when --generate_conformers is "sdf"'
+                '--sdf_file must be provided when --conformers is "sdf"'
             )
 
     @classmethod
@@ -260,7 +260,7 @@ class ScreenRecipe(BaseRecipe):
             col_id=args.col_id,
             variable_sdf=args.variable_sdf,
             property_id=args.property_id,
-            generate_conformers=args.generate_conformers,
+            conformers=args.conformers,
             merge_data=args.merge_data
         )
 
@@ -285,7 +285,7 @@ class OracleRecipe(BaseRecipe):
             wrk_dir=args.wrk_dir,
             system_path=args.system_path,
             options_path=args.options_path,
-            generate_conformers=args.generate_conformers
+            conformers=args.conformers
         )
 
         oracle.run()

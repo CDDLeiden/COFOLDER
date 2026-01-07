@@ -277,6 +277,62 @@ def delete_last_line(file_path):
         with open(file_path, 'w') as f:
             f.writelines(lines[:-1])
 
+def get_seeds(
+    repeats: int,
+    seed: Optional[int] = None,
+    logger: Optional[logging.Logger] = None
+) -> (int, List[int]):
+    """
+    Generate a global seed and run seeds for repeated workflow runs.
+
+    Parameters
+    ----------
+    repeats : int
+        Number of repeats for which seeds should be generated.
+    seed : int, optional
+        Global seed to use. If None, a random global seed is generated.
+    logger : logging.Logger, optional
+        Logger for informational/debug messages. If None, logging is skipped.
+
+    Returns
+    -------
+    global_seed : int
+        The global seed used for generating run seeds.
+    run_seeds : list of int
+        List of seeds for each run (length == repeats).
+
+    Notes
+    -----
+    - If repeats == 1, the run seed list contains only the global seed.
+    - If repeats > 1, run seeds are generated deterministically from the global seed.
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    # Generate global seed if not provided
+    if seed is None:
+        global_seed = generate_seeds(num_seeds=1, seed=None)[0]
+        logger.info("No global seed provided. Generated random global seed: %d", global_seed)
+    else:
+        global_seed = seed
+        logger.info("Using provided global seed: %d", global_seed)
+
+    # Generate run seeds based on repeats
+    if repeats == 1:
+        run_seeds = [global_seed]
+        logger.debug("Single repeat: using global seed as run seed: %s", run_seeds)
+    else:
+        run_seeds = generate_seeds(num_seeds=repeats, seed=global_seed)
+        logger.debug(
+            "Multiple repeats: %d run seeds generated from global seed %d: %s",
+            repeats,
+            global_seed,
+            run_seeds
+        )
+
+    logger.info("Run seeds to be used for this workflow: %s", run_seeds)
+    return global_seed, run_seeds
+
 def generate_seeds(num_seeds: int, seed: Optional[int] = None) -> List[int]:
     """
     Generate a list of random integer seeds for reproducibility.
