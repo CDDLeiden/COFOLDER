@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 
 from boltz_lab.modules.utils import read, write
+from boltz_lab.modules.analytics import stats
 
 logger = logging.getLogger(__name__)
 
@@ -355,13 +356,18 @@ def gather_affinity_metrics(
     # --------------------------------------------------
     # Ensure output columns exist
     # --------------------------------------------------
-    if "affinity_pred_value" not in chain_df.columns:
-        chain_df["affinity_pred_value"] = None
-    if "affinity_probability_binary" not in chain_df.columns:
-        chain_df["affinity_probability_binary"] = None
+    for col in (
+        "affinity_pred_value",
+        "affinity_probability_binary",
+        "pIC50",
+        "IC50_M",
+        "pIC50_kcal_per_mol",
+    ):
+        if col not in chain_df.columns:
+            chain_df[col] = None
 
-    # --------------------------------------------------
-    # Loop structure mirrors gather_confidence_metrics
+   # --------------------------------------------------
+    # Repeat loop
     # --------------------------------------------------
     for repeat in range(1, repeats + 1):
 
@@ -394,20 +400,29 @@ def gather_affinity_metrics(
             continue
 
         # --------------------------------------------------
+        # Derived conversions
+        # --------------------------------------------------
+        pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(affinity_pred_value)
+        pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(
+            affinity_pred_value
+        )
+
+        # --------------------------------------------------
         # Assign to chain_df
         # --------------------------------------------------
         for idx, row in chain_df.iterrows():
             if row["repeat"] != repeat:
                 continue
-
             if row["CHAIN_ID"] != binder_chain_id:
                 continue
 
-            # Same values for all diffusion samples in this repeat
             chain_df.at[idx, "affinity_pred_value"] = affinity_pred_value
             chain_df.at[idx, "affinity_probability_binary"] = (
                 affinity_probability_binary
             )
+            chain_df.at[idx, "pIC50"] = pIC50
+            chain_df.at[idx, "IC50_M"] = IC50_M
+            chain_df.at[idx, "pIC50_kcal_per_mol"] = pIC50_kcal_per_mol
 
     logger.info(
         "Affinity metrics appended — chain_df: %d rows",

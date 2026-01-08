@@ -62,6 +62,47 @@ def convert_boltz_affinity_to_ic50(
         write.write_csv(df, output_path, index=False)
     return df
 
+def affinity_to_pic50_and_ic50(affinity_pred_value: float) -> tuple[float, float]:
+    """
+    Convert Boltz affinity_pred_value to pIC50 and IC50 (M).
+
+    Definitions (Boltz):
+    - pIC50 = 6 - affinity_pred_value
+    - IC50 (M) = 10 ** (-pIC50)
+
+    Parameters
+    ----------
+    affinity_pred_value : float
+        Raw affinity prediction value.
+
+    Returns
+    -------
+    tuple[float, float]
+        (pIC50, IC50_M)
+    """
+    pIC50 = 6.0 - affinity_pred_value
+    IC50_M = 10.0 ** (-pIC50)
+    return pIC50, IC50_M
+
+def affinity_to_pic50_kcal_per_mol(affinity_pred_value: float) -> float:
+    """
+    Convert Boltz affinity_pred_value to pIC50-scaled kcal/mol.
+
+    Definition (Boltz):
+    - pIC50_kcal_per_mol = (6 - affinity_pred_value) * 1.364
+
+    Parameters
+    ----------
+    affinity_pred_value : float
+        Raw affinity prediction value.
+
+    Returns
+    -------
+    float
+        pIC50-scaled kcal/mol value.
+    """
+    return (6.0 - affinity_pred_value) * 1.364
+
 def calculate_affinity_correlations(
     df: pd.DataFrame,
     pred_col: str,
