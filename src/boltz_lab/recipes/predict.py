@@ -144,4 +144,25 @@ class Predict(object):
             repeats=self.repeats,
             logger=self.logger
         )
-            
+
+        # initialize results dataframes
+        system_df, chain_df = gather.initialize_results(
+            raw_dir=self.raw_dir,
+            system_name=self.system_path.stem,
+            repeats=self.repeats,
+            diffusion_samples=self.opt.find_value(key="diffusion_samples") if self.opt.find_value(key="diffusion_samples") else 1
+        )
+        chain_df = gather.add_chain_info(chain_df, self.sys)
+
+        # gather confidence metrics
+        system_df, chain_df = gather.gather_confidence_metrics(
+            raw_dir=self.raw_dir,
+            system_df=system_df,
+            chain_df=chain_df,
+            system_name=self.system_path.stem,
+            repeats=self.repeats,
+            diffusion_samples=self.opt.find_value(key="diffusion_samples") if self.opt.find_value(key="diffusion_samples") else 1
+        )
+
+        write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
+        write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
