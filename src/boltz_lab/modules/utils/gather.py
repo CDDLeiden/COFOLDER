@@ -313,3 +313,105 @@ def gather_confidence_metrics(
     )
 
     return system_df, chain_df
+
+def gather_affinity_metrics(
+    raw_dir: Path,
+    chain_df: pd.DataFrame,
+    system_name: str,
+    sys: "System",
+    repeats: int,
+) -> pd.DataFrame:
+    """
+    Gather affinity metrics and append them to chain_df.
+
+    Rules:
+    - Affinity is enabled only if specified in system properties
+    - Affinity is repeat-specific
+    - All diffusion samples within a repeat share the same affinity values
+    - Only the binder ligand chain receives affinity values
+    """
+
+    # --------------------------------------------------
+    # Check if affinity prediction is enabled
+    # --------------------------------------------------
+    properties = sys.find_value(key="properties") or []
+    affinity_props = None
+
+    for prop in properties:
+        if isinstance(prop, dict) and "affinity" in prop:
+            affinity_props = prop["affinity"]
+            break
+
+    if affinity_props is None:
+        return chain_df
+
+    binder_chain_id = affinity_props.get("binder")
+    if binder_chain_id is None:
+        logger.warning("Affinity specified but no binder chain ID found.")
+        return chain_df
+
+    binder_chain_id = str(binder_chain_id)
+
+    # --------------------------------------------------
+    # Ensure output columns exist
+    # --------------------------------------------------
+    if "affinity_pred_value" not in chain_df.columns:
+        chain_df["affinity_pred_value"] = None
+    if "affinity_probability_binary" not in chain_df.columns:
+        chain_df["affinity_probability_binary"] = None
+
+    # --------------------------------------------------
+    # Loop structure mirrors gather_confidence_metrics
+    # --------------------------------------------------
+    for repeat in range(1, repeats + 1):
+
+        affinity_path = (
+            raw_dir
+            / f"repeat_{repeat}"
+            / f"boltz_results_{system_name}"
+            / "predictions"
+            / system_name
+            / f"affinity_{system_name}.json"
+        )
+
+        if not affinity_path.exists():
+            logger.warning("Missing affinity file: %s", affinity_path)
+            continue
+
+        affinity_data = read.read_json(affinity_path)
+        if not affinity_data:
+            continue
+
+        affinity_pred_value = affinity_data.get("affinity_pred_value")
+        affinity_probability_binary = affinity_data.get(
+            "affinity_probability_binary"
+        )
+
+        if affinity_pred_value is None or affinity_probability_binary is None:
+            logger.warning(
+                "Affinity values missing in file: %s", affinity_path
+            )
+            continue
+
+        # --------------------------------------------------
+        # Assign to chain_df
+        # --------------------------------------------------
+        for idx, row in chain_df.iterrows():
+            if row["repeat"] != repeat:
+                continue
+
+            if row["CHAIN_ID"] != binder_chain_id:
+                continue
+
+            # Same values for all diffusion samples in this repeat
+            chain_df.at[idx, "affinity_pred_value"] = affinity_pred_value
+            chain_df.at[idx, "affinity_probability_binary"] = (
+                affinity_probability_binary
+            )
+
+    logger.info(
+        "Affinity metrics appended — chain_df: %d rows",
+        len(chain_df),
+    )
+
+    return chain_df
