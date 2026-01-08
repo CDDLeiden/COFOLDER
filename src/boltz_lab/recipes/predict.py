@@ -173,5 +173,19 @@ class Predict(object):
             repeats=self.repeats,
         )
 
+        # calculate interaction fingerprints
+        chain_df = gather.gather_distance_interaction_fingerprints(
+            raw_dir=self.raw_dir,
+            chain_df=chain_df,
+            system_name=self.system_path.stem,
+            sys=self.sys,
+            cutoff=5.0,
+        )
+        #TODO: interface based IFPs.
+
+        # caluclate solvent-accesible surface area
+        #TODO: SASA calculations.
+        #TODO: normalized SASA calculations on heavy atom count.
+
         write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
         write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
