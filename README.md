@@ -15,7 +15,7 @@ cd boltz-lab; pip install -e .
 The main command is `boltz-lab`, which supports several subcommands:
 ```
 boltz-lab [-h] [-v] {predict,screen,oracle,evaluate}
-
+```
 
 ### Subcommands
 - **predict**: Co-fold a single system using Boltz.
