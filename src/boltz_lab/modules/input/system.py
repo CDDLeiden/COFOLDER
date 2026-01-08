@@ -3,12 +3,12 @@
 This module provides the System class for managing molecular system
 configurations, including proteins, ligands, and their properties.
 """
-
-import yaml
 import logging
-from boltz_lab.modules.utils import helpers
+from boltz_lab.modules.utils import read
 
-logger  = logging.getLogger('boltz-lab.helpers')
+import logging
+
+logger = logging.getLogger(__name__)
 
 class System:
     """Manage molecular system configuration for Boltz predictions.
@@ -40,16 +40,14 @@ class System:
     >>> sys = System(system_path="system.yaml")
     """
     def __init__(self, system=None, system_path=None):
-        self.logger = logging.getLogger('boltz-lab.helpers.system.System')
-
         if system and system_path:
             raise ValueError("Provide either 'system' or 'system_path', not both.")
 
         if system:
             self.system = system
         elif system_path:
-            self.logger.debug(f"Loading system YAML from {system_path}")
-            self.system = helpers.read_yaml(path=system_path)
+            logger.debug(f"Loading system YAML from {system_path}")
+            self.system = read.read_yaml(path=system_path)
         else:
             raise ValueError("Either 'system' or 'system_path' must be provided.")
     
@@ -181,9 +179,6 @@ class System:
                     return any(remove_keys(i) for i in d)
                 return False
 
-            if not remove_keys(sys_obj.system):
-                raise KeyError(f"Parent key '{parent_key}' not found in the system.")
-
     def find_value(self, key=None, path=None):
         """Retrieve a value by path or by recursively searching for a key.
 
@@ -255,21 +250,3 @@ class System:
             if len(found) > 1:
                 raise ValueError(f"Key '{key}' appears multiple times; use path instead.")
             return found[0]
-
-    def save_system_to_yaml(self, path):
-        """Save the system configuration to a YAML file.
-
-        Writes the current system dictionary to a YAML file, preserving
-        the order of keys.
-
-        Parameters
-        ----------
-        path : str
-            Output file path for the YAML file.
-
-        Notes
-        -----
-        The YAML is written with sort_keys=False to preserve insertion order.
-        """
-        with open(path, "w") as file:
-            yaml.dump(self.system, file, sort_keys=False, default_flow_style=False)

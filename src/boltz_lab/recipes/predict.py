@@ -5,7 +5,7 @@ from pathlib import Path
 from boltz_lab.modules.input import command, system
 from boltz_lab.modules.entities import ligand
 from boltz_lab.modules.runners.boltz_runner import run_boltz
-from boltz_lab.modules.utils import helpers  
+from boltz_lab.modules.utils import helpers, gather, read, write
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +72,10 @@ class Predict(object):
         })
 
         # Load YAML options and system
-        self._options = helpers.read_yaml(path=self.options_path)
+        self._options = read.read_yaml(path=self.options_path)
         self.opt = command.Command(options=self._options)
 
-        self._system = helpers.read_yaml(path=self.system_path)
+        self._system = read.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
         self.logger.debug("Predict initialization complete.")
@@ -88,7 +88,10 @@ class Predict(object):
         """
         # Ensure working directory exists
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
-        
+        self.raw_dir = self.wrk_dir / "raw"
+        self.raw_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.debug("Using raw directory for outputs: %s", self.raw_dir)
+
         # Get run seeds
         self.seed, self.run_seeds = helpers.get_seeds(
             repeats=self.repeats,
@@ -104,17 +107,16 @@ class Predict(object):
             self.resname = ligand.handle_conformers(
                 sys_obj=self.sys,
                 opt_obj=self.opt,
-                wrk_dir=self.wrk_dir,
+                wrk_dir=self.raw_dir,
                 conformers=self.conformers,
                 sdf_file=self.sdf_file,
-                global_seed=self.seed,
                 logger=self.logger,
             )
 
         # --- Save updated system to YAML ---
-        yaml_path = os.path.join(self.wrk_dir, "_" + str(self.system_path.name))
+        yaml_path = os.path.join(self.raw_dir, str(self.system_path.name))
         try:
-            self.sys.save_system_to_yaml(path=yaml_path)
+            write.write_yaml(self.sys, path=yaml_path)
             self.logger.info("Updated system saved to YAML: %s", yaml_path)
         except Exception as e:
             self.logger.error("Failed to save updated system YAML: %s", e)
@@ -125,7 +127,7 @@ class Predict(object):
             
             # Update the options
             self.opt.seed = seed
-            self.opt.out_dir = self.wrk_dir / f"repeat_{i}"
+            self.opt.out_dir = self.raw_dir / f"repeat_{i}"
             self.opt.system_path = yaml_path
 
             # Build the command for this repeat
@@ -135,4 +137,11 @@ class Predict(object):
             # Execute the command
             run_boltz(cmd)
 
-    
+        # Gather structures from all repeats
+        gather.gather_structures(
+            base_dir=self.wrk_dir,
+            system_name=self.system_path.stem,
+            repeats=self.repeats,
+            logger=self.logger
+        )
+            
