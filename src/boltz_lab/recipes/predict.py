@@ -176,14 +176,13 @@ class Predict(object):
 
         # calculate interaction fingerprints
         structure = Structure(
+            wrk_dir=self.wrk_dir,
             chain_df=chain_df,
             cif_folder=Path(self.wrk_dir / "results" / "structures"),
         )
 
-        chain_df = structure.add_ifp_distance(
-            cutoff=5.0,
-        )
-        #TODO: interface based IFPs.
+        chain_df = structure.add_ifp_distance()
+        chain_df = structure.add_ifp_prolif()
 
         # caluclate solvent-accesible surface area
         #TODO: SASA calculations.

@@ -1,10 +1,24 @@
-import gemmi
-import numpy as np
-from pathlib import Path
+# Standard library
 import json
 import logging
-import pandas as pd
+from pathlib import Path
+import tempfile
+import re
 
+# Third-party libraries
+import numpy as np
+import pandas as pd
+import gemmi
+import MDAnalysis as mda
+from MDAnalysis.lib.distances import distance_array
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+# Project-specific / external tools
+import prolif as plf
+from pdb2pqr.main import run_pdb2pqr
+
+# Logger
 logger = logging.getLogger(__name__)
 
 
@@ -15,6 +29,7 @@ class Structure:
 
     def __init__(
         self,
+        wrk_dir: Path,
         chain_df: pd.DataFrame,
         cif_folder: Path,
         chain_id: str = "CHAIN_ID",
@@ -35,6 +50,7 @@ class Structure:
         cif_file : str
             Column name for CIF file names.
         """
+        self.wrk_dir = Path(wrk_dir)
         self.chain_df = chain_df
         self.cif_folder = Path(cif_folder)
 
@@ -90,6 +106,178 @@ class Structure:
 
         return self.chain_df
 
+    def add_ifp_prolif(
+        self,
+        interactions: list[str] = None,
+        use_metadata: bool = False,
+        column_name: str = "prolif_ifp",
+        save_folder: Path = Path("results/ifp/prolif"),
+    ) -> pd.DataFrame:
+        """
+        Add ProLIF interaction fingerprints to chain_df.
+
+        - Must have exactly one protein defined in system
+        - Converts CIF -> PDB on‑the‑fly for ProLIF compatibility
+        - Saves fingerprint DataFrame per chain as CSV
+        """
+        save_folder = self.wrk_dir / save_folder
+        save_folder.mkdir(parents=True, exist_ok=True)
+
+        for idx, row in self.chain_df.iterrows():
+            if row[self.entity_type_col] != "ligand":
+                continue
+
+            cif_path = self.cif_folder / row[self.cif_file_col]
+            if not cif_path.exists():
+                logger.warning("Missing CIF file: %s", cif_path)
+                continue
+
+            # Step 1: CIF -> PDB
+            pdb_file = self.cif_to_pdb(
+                cif_file=cif_path,
+                output_folder=self.wrk_dir / "results/structures/pdb"
+            )
+
+            # Step 2: Split PDB
+            split_files = self.split_pdb(
+                pdb_file=pdb_file,
+                chain_id=row[self.chain_id_col],
+                output_folder=self.wrk_dir / "results/structures/pdb"
+            )
+
+            protein_file = split_files.get("protein")
+            ligand_file = split_files.get("ligand")
+
+            # ---- Load protein ----
+            u_protein = mda.Universe(str(protein_file))
+            u_protein = self._sanitize_protein(u_protein)
+            protein_mol = plf.Molecule.from_mda(u_protein)
+
+            logger.info(
+                "Protein loaded: %s | residues=%d | atoms=%d",
+                protein_file,
+                protein_mol.n_residues,
+                protein_mol.GetNumAtoms(),
+            )
+
+            # ---- Load ligand ----
+            u_ligand = mda.Universe(str(ligand_file))
+            ligand_mol = plf.Molecule.from_mda(u_ligand)
+
+            logger.info(
+                "Ligand loaded: %s | atoms=%d",
+                ligand_file,
+                ligand_mol.GetNumAtoms(),
+            )
+
+            self.chain_df.at[idx, "protein_pdb"] = str(split_files.get("protein"))
+            self.chain_df.at[idx, "ligand_pdb"] = str(split_files.get("ligand"))
+
+
+
+        return self.chain_df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def add_ifp_prolif_old(
+        self,
+        interactions: list[str] = None,
+        use_metadata: bool = False,
+        column_name: str = "prolif_ifp",
+        save_folder: Path = Path("results/ifp/prolif"),
+    ) -> pd.DataFrame:
+        """
+        Add ProLIF interaction fingerprints to chain_df.
+
+        - Must have exactly one protein defined in system
+        - Converts CIF -> PDB on‑the‑fly for ProLIF compatibility
+        - Saves fingerprint DataFrame per chain as CSV
+        """
+        save_folder = self.wrk_dir / save_folder
+
+        if self.receptor_chain_id is None:
+            logger.warning("Skipping ProLIF fingerprints: invalid receptor definition.")
+            self.chain_df[column_name] = None
+            return self.chain_df
+
+        # Default interaction set if none provided
+        if interactions is None:
+            interactions = prolif.Fingerprint.list_available()
+
+        if column_name not in self.chain_df.columns:
+            self.chain_df[column_name] = None
+
+        save_folder.mkdir(parents=True, exist_ok=True)
+
+        for idx, row in self.chain_df.iterrows():
+            if row[self.entity_type_col] != "ligand":
+                continue
+
+            cif_path = self.cif_folder / row[self.cif_file_col]
+            if not cif_path.exists():
+                logger.warning("Missing CIF file: %s", cif_path)
+                continue
+
+            with tempfile.NamedTemporaryFile(suffix=".pdb") as pdb_tmp:
+                # Convert CIF -> PDB
+                structure = gemmi.read_structure(str(cif_path))
+                structure.write_pdb(pdb_tmp.name)
+
+                # Load into MDAnalysis
+                universe = mda.Universe(pdb_tmp.name)
+                prot_atoms = universe.select_atoms("protein and not resname HOH")
+                lig_atoms = universe.select_atoms(f"segid {row[self.chain_id_col]} or chainID {row[self.chain_id_col]}")
+                
+                pdb_lig = Chem.MolFromPDBBlock(lig_atoms.atoms.write('pdb'), removeHs=False)
+                pdb_lig_h = Chem.AddHs(pdb_lig)
+                AllChem.EmbedMolecule(pdb_lig_h, randomSeed=42)
+                AllChem.UFFOptimizeMolecule(pdb_lig_h)
+
+                logger.debug("Ligand atoms for chain %s: %d", row[self.chain_id_col], len(lig_atoms))
+                logger.debug("Protein atoms: %d", len(prot_atoms))
+
+                # Build ProLIF Molecules
+                prot_mol = plf.Molecule.from_mda(prot_atoms, inferrer=None, force=True)
+                lig_mol = plf.Molecule.from_mda(pdb_lig_h, inferrer=None, force=True)
+
+                if len(prot_mol.GetAtoms()) == 0 or len(lig_mol.GetAtoms()) == 0:
+                    logger.warning("Skipping chain %s: no atoms in molecule", row[self.chain_id_col])
+                    continue
+
+                # Fingerprint
+                fp = plf.Fingerprint(interactions=interactions)
+                ifp = fp.generate(lig_mol, prot_mol, metadata=use_metadata)
+
+                # Convert to dataframe for debug
+                df = plf.to_dataframe({0: ifp}, fp.interactions)
+                logger.debug("IFP dataframe for chain %s:\n%s", row[self.chain_id_col], df)
+
+                # Save DataFrame
+                cif_stem = Path(row[self.cif_file_col]).stem  # remove .cif extension
+                df_file = save_folder / f"prolif_{cif_stem}_chain_{row[self.chain_id_col]}.csv"
+                df.to_csv(df_file)
+                logger.info("Saved IFP dataframe: %s", df_file)
+
+                # Store path in chain_df
+                self.chain_df.at[idx, column_name] = str(df_file)
+
+        return self.chain_df
+        
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -169,3 +357,210 @@ class Structure:
                     break
 
         return json.dumps(bitvector.tolist())
+
+    def cif_to_pdb(self, cif_file: Path, output_folder: Path) -> Path | None:
+        """
+        Convert CIF file to a PDB file with a deterministic name.
+
+        Output name:
+            <cif_filename>.pdb
+
+        Args:
+            cif_file: Path to CIF file.
+            output_folder: Folder where the PDB will be written.
+
+        Returns:
+            Path to generated PDB file.
+        """
+        if not cif_file.exists():
+            logger.error("CIF file not found: %s", cif_file)
+            return None
+
+        output_folder.mkdir(parents=True, exist_ok=True)
+
+        pdb_file = output_folder / f"{cif_file.stem}.pdb"
+
+        structure = gemmi.read_structure(str(cif_file))
+        structure.write_pdb(str(pdb_file))
+
+        logger.info("Converted CIF -> PDB: %s", pdb_file)
+
+        return pdb_file
+
+
+    def split_pdb(self, pdb_file: Path, chain_id: str, output_folder: Path) -> dict:
+        """
+        Split a PDB file into protein and ligand PDBs, ensuring hydrogens are present.
+        Hydrogens are added using RDKit if none are found.
+
+        Args:
+            pdb_file: Path to input PDB.
+            chain_id: Ligand chain ID.
+            output_folder: Folder to save split PDBs.
+
+        Returns:
+            dict with keys 'protein' and 'ligand' and their PDB paths.
+        """
+        output_folder.mkdir(parents=True, exist_ok=True)
+        universe = mda.Universe(str(pdb_file))
+
+        # ---- Protein ----
+        prot_atoms = universe.select_atoms("protein and not resname HOH")
+        protein_pdb_path = output_folder / f"{pdb_file.stem}_protein.pdb"
+        prot_atoms.write(str(protein_pdb_path))
+
+        # Add hydrogens using PDB2PQR
+        n_atoms_before = len(prot_atoms)
+        protein_pdb_path = self.add_hydrogens_with_pdb2pqr(protein_pdb_path, protein_pdb_path)
+        u_prot_h = mda.Universe(str(protein_pdb_path))
+        n_atoms_after = len(u_prot_h.atoms)
+        logger.info("Protein atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+
+        # check proper protonation
+        mol = Chem.MolFromPDBFile(str(protein_pdb_path), removeHs=False)
+        if mol is None:
+            logger.error("RDKit failed to parse protein PDB! Check hydrogens/valence.")
+        else:
+            logger.debug("Protein PDB parsed by RDKit: atoms=%d", mol.GetNumAtoms())
+
+        # ---- Ligand ----
+        lig_atoms = universe.select_atoms(f"segid {chain_id} or chainID {chain_id}")
+        ligand_pdb_path = output_folder / f"{pdb_file.stem}_ligand_chain_{chain_id}.pdb"
+        lig_atoms.write(str(ligand_pdb_path))
+        n_atoms_before = len(lig_atoms)
+
+        lig_mol = Chem.MolFromPDBFile(str(ligand_pdb_path), removeHs=False)
+        n_h = len([atom for atom in lig_mol.GetAtoms() if atom.GetAtomicNum() == 1])
+        if n_h == 0:
+            logger.warning("Ligand has no hydrogens; adding using RDKit.")
+            lig_mol_h = Chem.AddHs(lig_mol, addCoords=True)
+            AllChem.EmbedMolecule(lig_mol_h, randomSeed=42)
+            AllChem.UFFOptimizeMolecule(lig_mol_h)
+            with open(ligand_pdb_path, "w") as f:
+                f.write(Chem.MolToPDBBlock(lig_mol_h))
+            n_atoms_after = lig_mol_h.GetNumAtoms()
+        else:
+            n_atoms_after = lig_mol.GetNumAtoms()
+
+        logger.info("Ligand atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+
+        return {"protein": protein_pdb_path, "ligand": ligand_pdb_path}
+
+    def add_hydrogens_with_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.0):
+        """
+        Add hydrogens to a protein PDB using PDB2PQR (minimal options).
+
+        Args:
+            input_pdb: Input protein PDB file
+            output_pdb: Output PDB file with hydrogens added
+            ph: pH for protonation (default 7.0)
+
+        Returns:
+            Path to output PDB with hydrogens
+        """
+        args = [
+            str(input_pdb),
+            str(output_pdb),
+            "--ff", "PARSE",
+            "--with-ph", str(ph),
+            "--pdb-output", str(output_pdb),
+        ]
+        run_pdb2pqr(args)
+        return output_pdb        
+
+    def _remove_overbonding_hydrogens(self, u_protein):
+        """Remove only the HZ3 hydrogen from Lys residues."""
+
+        # Select all HZ3 hydrogens in Lys residues
+        hs_to_remove = u_protein.select_atoms("resname LYS and name HZ3")
+
+        if len(hs_to_remove) == 0:
+            logger.info("_remove_overbonding_hydrogens | No Lys HZ3 atoms to remove.")
+            return u_protein
+
+        # Log which hydrogens are being removed
+        removed_list = [f"{atom.resname}{atom.resid}-{atom.name}" for atom in hs_to_remove]
+        logger.debug("_remove_overbonding_hydrogens | Removing Lys HZ3 atoms: %s", ", ".join(removed_list))
+
+        # Remove the selected atoms
+        u_clean = u_protein.atoms[np.setdiff1d(np.arange(len(u_protein.atoms)), hs_to_remove.indices)]
+
+        logger.info("_remove_overbonding_hydrogens | Total HZ3 atoms removed: %d", len(hs_to_remove))
+        return u_clean
+
+    def _sanitize_protein(self, u_protein, max_attempts=100):
+        """
+        Iteratively remove hydrogens from overbonded atoms until
+        RDKit can create a molecule without valence errors.
+
+        If the overbonded atom itself is hydrogen, remove it.
+        Otherwise, remove an attached hydrogen.
+
+        Logs a success message and the number of attempts taken.
+        """
+        attempts = 0
+
+        while attempts < max_attempts:
+            try:
+                # Attempt conversion to check if the molecule is valid
+                _ = plf.Molecule.from_mda(u_protein)
+
+                # Success: log how many attempts it took
+                if attempts == 0:
+                    logger.info("_sanitize_protein | Protein sanitized successfully on first attempt.")
+                else:
+                    logger.info(
+                        "_sanitize_protein | Protein sanitized successfully after %d attempts.", attempts
+                    )
+
+                return u_protein  # Return the sanitized Universe
+
+            except Chem.rdchem.AtomValenceException as e:
+                    msg = str(e)
+                    # Example: "Explicit valence for atom # 65 H, 2, is greater than permitted"
+                    match = re.search(r"atom # (\d+) (\w+),", msg)
+                    if not match:
+                        logger.error("_sanitize_protein | Could not parse RDKit error: %s", msg)
+                        raise
+
+                    atom_index = int(match.group(1))  # 0-based index in RDKit
+                    atom_name = match.group(2)
+                    logger.warning(
+                        "_sanitize_protein | Atom %d (%s) overbonded, attempting to remove hydrogen.", atom_index, atom_name
+                    )
+
+                    if atom_index >= len(u_protein.atoms):
+                        logger.error("_sanitize_protein | Atom index %d out of range in Universe", atom_index)
+                        raise
+
+                    target_atom = u_protein.atoms[atom_index]
+
+                    if target_atom.name.startswith("H"):
+                        # Case 1: The overbonded atom itself is hydrogen — remove it
+                        logger.debug(
+                            "_sanitize_protein | Removing overbonded hydrogen %s (atom id %d) from residue %s%d",
+                            target_atom.name, target_atom.index, target_atom.resname, target_atom.resid
+                        )
+                        u_protein = u_protein.atoms[np.setdiff1d(np.arange(len(u_protein.atoms)), [atom_index])]
+                    else:
+                        # Case 2: Remove an attached hydrogen
+                        target_ag = u_protein.atoms[atom_index:atom_index + 1]
+                        attached_hs = u_protein.select_atoms(
+                            f"resid {target_atom.resid} and name H* and around 1.2 group target_ag",
+                            target_ag=target_ag
+                        )
+
+                        if len(attached_hs) == 0:
+                            logger.error("_sanitize_protein | No hydrogens found to remove for overbonded atom %s", atom_name)
+                            raise
+
+                        h_to_remove = attached_hs[0]
+                        logger.debug(
+                            "_sanitize_protein | Removing attached hydrogen %s (atom id %d) from atom %s%d",
+                            h_to_remove.name, h_to_remove.index, target_atom.resname, target_atom.resid
+                        )
+                        u_protein = u_protein.atoms[np.setdiff1d(np.arange(len(u_protein.atoms)), h_to_remove.indices)]
+
+                    attempts += 1
+
+        raise RuntimeError(f"_sanitize_protein | Failed to sanitize protein after {max_attempts} attempts")
