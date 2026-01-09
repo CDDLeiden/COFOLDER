@@ -6,6 +6,7 @@ from boltz_lab.modules.input import command, system
 from boltz_lab.modules.entities import ligand
 from boltz_lab.modules.runners.boltz_runner import run_boltz
 from boltz_lab.modules.utils import helpers, gather, read, write
+from boltz_lab.modules.analytics.structure import Structure
 
 logger = logging.getLogger(__name__)
 
@@ -174,11 +175,12 @@ class Predict(object):
         )
 
         # calculate interaction fingerprints
-        chain_df = gather.gather_distance_interaction_fingerprints(
-            raw_dir=self.raw_dir,
+        structure = Structure(
             chain_df=chain_df,
-            system_name=self.system_path.stem,
-            sys=self.sys,
+            cif_folder=Path(self.wrk_dir / "results" / "structures"),
+        )
+
+        chain_df = structure.add_ifp_distance(
             cutoff=5.0,
         )
         #TODO: interface based IFPs.
