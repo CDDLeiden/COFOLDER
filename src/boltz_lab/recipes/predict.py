@@ -174,17 +174,18 @@ class Predict(object):
             repeats=self.repeats,
         )
 
-        # calculate interaction fingerprints
+        # calculate structure-based metrics
         structure = Structure(
             wrk_dir=self.wrk_dir,
             chain_df=chain_df,
             cif_folder=Path(self.wrk_dir / "results" / "structures"),
         )
 
-        chain_df = structure.add_ifp_distance()
-        chain_df = structure.add_ifp_prolif()
+        #chain_df = structure.add_ifp_distance()
+        #chain_df = structure.add_ifp_prolif()
+        chain_df = structure.add_sasa(column_name="sasa", normalize=False)
+        chain_df = structure.add_sasa(column_name="sasa_norm_heavy", normalize=True)
 
-        # caluclate solvent-accesible surface area
         #TODO: SASA calculations.
         #TODO: normalized SASA calculations on heavy atom count.
 

@@ -13,6 +13,8 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 # Project-specific / external tools
+from Bio.PDB import MMCIFParser
+from Bio.PDB.SASA import ShrakeRupley
 import MDAnalysis as mda
 import prolif as plf
 from pdb2pqr.main import run_pdb2pqr
@@ -187,6 +189,140 @@ class Structure:
 
         return self.chain_df
         
+    def add_sasa(
+        self,
+        column_name: str = "sasa",
+        normalize: bool = False,
+        heavy_atoms_only: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Add solvent-accessible surface area (SASA) per chain.
+
+        - Uses Bio.PDB Shrake–Rupley algorithm
+        - Parses CIF directly via MMCIFParser
+        - Supports optional normalization by number of heavy atoms
+
+        Parameters
+        ----------
+        column_name : str
+            Output column name.
+        normalize : bool
+            If True, normalize SASA by atom count.
+        heavy_atoms_only : bool
+            If True, count only heavy atoms for normalization.
+            Ignored if normalize=False.
+        """
+        mode = "normalized" if normalize else "absolute"
+        logger.info("Starting SASA calculation (%s)", mode)
+
+        if column_name not in self.chain_df.columns:
+            self.chain_df[column_name] = None
+            logger.debug("Created new column '%s'", column_name)
+
+        parser = MMCIFParser(QUIET=True)
+        sr = ShrakeRupley()
+
+        for idx, row in self.chain_df.iterrows():
+            cif_path = self.cif_folder / row[self.cif_file_col]
+            chain_id = str(row[self.chain_id_col])
+
+            logger.debug(
+                "Processing SASA | mode=%s | CIF=%s | chain=%s | row=%d",
+                mode,
+                cif_path.name,
+                chain_id,
+                idx,
+            )
+
+            if not cif_path.exists():
+                logger.warning("Missing CIF file: %s", cif_path)
+                continue
+
+            try:
+                structure = parser.get_structure("struct", str(cif_path))
+                logger.debug("CIF parsed successfully: %s", cif_path.name)
+
+                # Atom-level SASA required for normalization
+                sr.compute(structure, level="A")
+                logger.debug("Shrake–Rupley computed at atom level")
+
+                model = structure[0]
+                if chain_id not in model:
+                    logger.warning(
+                        "Chain %s not found in CIF %s",
+                        chain_id,
+                        cif_path.name,
+                    )
+                    continue
+
+                chain = model[chain_id]
+
+                total_sasa = 0.0
+                atom_count = 0
+
+                for residue in chain:
+                    for atom in residue:
+                        if not hasattr(atom, "sasa"):
+                            continue
+
+                        total_sasa += atom.sasa
+
+                        if normalize:
+                            if heavy_atoms_only:
+                                if atom.element != "H":
+                                    atom_count += 1
+                            else:
+                                atom_count += 1
+
+                logger.debug(
+                    "Chain %s | total_sasa=%.3f | atom_count=%d",
+                    chain_id,
+                    total_sasa,
+                    atom_count,
+                )
+
+                if normalize:
+                    if atom_count == 0:
+                        logger.warning(
+                            "Normalization requested but no atoms counted | "
+                            "CIF=%s | chain=%s",
+                            cif_path.name,
+                            chain_id,
+                        )
+                        self.chain_df.at[idx, column_name] = None
+                    else:
+                        value = total_sasa / atom_count
+                        self.chain_df.at[idx, column_name] = float(round(value, 5))
+
+                        logger.info(
+                            "Normalized SASA | CIF=%s | chain=%s | "
+                            "SASA/atom=%.5f Å²",
+                            cif_path.name,
+                            chain_id,
+                            value,
+                        )
+                else:
+                    self.chain_df.at[idx, column_name] = float(round(total_sasa, 3))
+
+                    logger.info(
+                        "Absolute SASA | CIF=%s | chain=%s | SASA=%.3f Å²",
+                        cif_path.name,
+                        chain_id,
+                        total_sasa,
+                    )
+
+            except Exception:
+                logger.exception(
+                    "SASA calculation failed | CIF=%s | chain=%s",
+                    cif_path.name,
+                    chain_id,
+                )
+                self.chain_df.at[idx, column_name] = None
+
+        logger.info("Completed SASA calculation (%s)", mode)
+        return self.chain_df
+
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
