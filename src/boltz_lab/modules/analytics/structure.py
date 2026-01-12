@@ -2,19 +2,18 @@
 import json
 import logging
 from pathlib import Path
-import tempfile
+import pickle
 import re
 
 # Third-party libraries
 import numpy as np
 import pandas as pd
 import gemmi
-import MDAnalysis as mda
-from MDAnalysis.lib.distances import distance_array
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
 # Project-specific / external tools
+import MDAnalysis as mda
 import prolif as plf
 from pdb2pqr.main import run_pdb2pqr
 
@@ -108,9 +107,7 @@ class Structure:
 
     def add_ifp_prolif(
         self,
-        interactions: list[str] = None,
-        use_metadata: bool = False,
-        column_name: str = "prolif_ifp",
+        column_name: str = "ifp_prolif",
         save_folder: Path = Path("results/ifp/prolif"),
     ) -> pd.DataFrame:
         """
@@ -145,8 +142,8 @@ class Structure:
                 output_folder=self.wrk_dir / "results/structures/pdb"
             )
 
-            protein_file = split_files.get("protein")
-            ligand_file = split_files.get("ligand")
+            protein_file = Path(split_files.get("protein"))
+            ligand_file = Path(split_files.get("ligand"))
 
             # ---- Load protein ----
             u_protein = mda.Universe(str(protein_file))
@@ -165,116 +162,28 @@ class Structure:
             ligand_mol = plf.Molecule.from_mda(u_ligand)
 
             logger.info(
-                "Ligand loaded: %s | atoms=%d",
+                "Ligand loaded: %s | residues=%d | atoms=%d",
                 ligand_file,
+                ligand_mol.n_residues,
                 ligand_mol.GetNumAtoms(),
             )
 
-            self.chain_df.at[idx, "protein_pdb"] = str(split_files.get("protein"))
-            self.chain_df.at[idx, "ligand_pdb"] = str(split_files.get("ligand"))
+            # ---- Generate ProLIF fingerprints ----
+            fp = plf.Fingerprint()
+            ifp = fp.generate(ligand_mol, protein_mol, metadata=True)
+            df = plf.to_dataframe({0: ifp}, fp.interactions)
+            logger.info("ProLIF fingerprint matrix:\n%s", df.T)
 
+            # ---- Save IFP pickle ----
+            pickle_name = ligand_file.stem + "_ifp.pkl"
+            pickle_path = save_folder / pickle_name
 
+            with open(pickle_path, "wb") as f:
+                pickle.dump(ifp, f)
 
-        return self.chain_df
+            logger.info("IFP saved to %s", pickle_path)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def add_ifp_prolif_old(
-        self,
-        interactions: list[str] = None,
-        use_metadata: bool = False,
-        column_name: str = "prolif_ifp",
-        save_folder: Path = Path("results/ifp/prolif"),
-    ) -> pd.DataFrame:
-        """
-        Add ProLIF interaction fingerprints to chain_df.
-
-        - Must have exactly one protein defined in system
-        - Converts CIF -> PDB on‑the‑fly for ProLIF compatibility
-        - Saves fingerprint DataFrame per chain as CSV
-        """
-        save_folder = self.wrk_dir / save_folder
-
-        if self.receptor_chain_id is None:
-            logger.warning("Skipping ProLIF fingerprints: invalid receptor definition.")
-            self.chain_df[column_name] = None
-            return self.chain_df
-
-        # Default interaction set if none provided
-        if interactions is None:
-            interactions = prolif.Fingerprint.list_available()
-
-        if column_name not in self.chain_df.columns:
-            self.chain_df[column_name] = None
-
-        save_folder.mkdir(parents=True, exist_ok=True)
-
-        for idx, row in self.chain_df.iterrows():
-            if row[self.entity_type_col] != "ligand":
-                continue
-
-            cif_path = self.cif_folder / row[self.cif_file_col]
-            if not cif_path.exists():
-                logger.warning("Missing CIF file: %s", cif_path)
-                continue
-
-            with tempfile.NamedTemporaryFile(suffix=".pdb") as pdb_tmp:
-                # Convert CIF -> PDB
-                structure = gemmi.read_structure(str(cif_path))
-                structure.write_pdb(pdb_tmp.name)
-
-                # Load into MDAnalysis
-                universe = mda.Universe(pdb_tmp.name)
-                prot_atoms = universe.select_atoms("protein and not resname HOH")
-                lig_atoms = universe.select_atoms(f"segid {row[self.chain_id_col]} or chainID {row[self.chain_id_col]}")
-                
-                pdb_lig = Chem.MolFromPDBBlock(lig_atoms.atoms.write('pdb'), removeHs=False)
-                pdb_lig_h = Chem.AddHs(pdb_lig)
-                AllChem.EmbedMolecule(pdb_lig_h, randomSeed=42)
-                AllChem.UFFOptimizeMolecule(pdb_lig_h)
-
-                logger.debug("Ligand atoms for chain %s: %d", row[self.chain_id_col], len(lig_atoms))
-                logger.debug("Protein atoms: %d", len(prot_atoms))
-
-                # Build ProLIF Molecules
-                prot_mol = plf.Molecule.from_mda(prot_atoms, inferrer=None, force=True)
-                lig_mol = plf.Molecule.from_mda(pdb_lig_h, inferrer=None, force=True)
-
-                if len(prot_mol.GetAtoms()) == 0 or len(lig_mol.GetAtoms()) == 0:
-                    logger.warning("Skipping chain %s: no atoms in molecule", row[self.chain_id_col])
-                    continue
-
-                # Fingerprint
-                fp = plf.Fingerprint(interactions=interactions)
-                ifp = fp.generate(lig_mol, prot_mol, metadata=use_metadata)
-
-                # Convert to dataframe for debug
-                df = plf.to_dataframe({0: ifp}, fp.interactions)
-                logger.debug("IFP dataframe for chain %s:\n%s", row[self.chain_id_col], df)
-
-                # Save DataFrame
-                cif_stem = Path(row[self.cif_file_col]).stem  # remove .cif extension
-                df_file = save_folder / f"prolif_{cif_stem}_chain_{row[self.chain_id_col]}.csv"
-                df.to_csv(df_file)
-                logger.info("Saved IFP dataframe: %s", df_file)
-
-                # Store path in chain_df
-                self.chain_df.at[idx, column_name] = str(df_file)
+            self.chain_df.at[idx, column_name] = pickle_name
 
         return self.chain_df
         
@@ -424,36 +333,23 @@ class Structure:
             logger.debug("Protein PDB parsed by RDKit: atoms=%d", mol.GetNumAtoms())
 
         # ---- Ligand ----
-        lig_atoms = universe.select_atoms(f"segid {chain_id} or chainID {chain_id}")
-        ligand_pdb_path = output_folder / f"{pdb_file.stem}_ligand_chain_{chain_id}.pdb"
-        lig_atoms.write(str(ligand_pdb_path))
-        n_atoms_before = len(lig_atoms)
-
-        lig_mol = Chem.MolFromPDBFile(str(ligand_pdb_path), removeHs=False)
-        n_h = len([atom for atom in lig_mol.GetAtoms() if atom.GetAtomicNum() == 1])
-        if n_h == 0:
-            logger.warning("Ligand has no hydrogens; adding using RDKit.")
-            lig_mol_h = Chem.AddHs(lig_mol, addCoords=True)
-            AllChem.EmbedMolecule(lig_mol_h, randomSeed=42)
-            AllChem.UFFOptimizeMolecule(lig_mol_h)
-            with open(ligand_pdb_path, "w") as f:
-                f.write(Chem.MolToPDBBlock(lig_mol_h))
-            n_atoms_after = lig_mol_h.GetNumAtoms()
-        else:
-            n_atoms_after = lig_mol.GetNumAtoms()
-
-        logger.info("Ligand atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+        ligand_pdb_path = self._sanitize_ligand(
+            universe=universe,
+            chain_id=chain_id,
+            output_folder=output_folder,
+            pdb_file=pdb_file
+        )
 
         return {"protein": protein_pdb_path, "ligand": ligand_pdb_path}
 
-    def add_hydrogens_with_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.0):
+    def add_hydrogens_with_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.4):
         """
         Add hydrogens to a protein PDB using PDB2PQR (minimal options).
 
         Args:
             input_pdb: Input protein PDB file
             output_pdb: Output PDB file with hydrogens added
-            ph: pH for protonation (default 7.0)
+            ph: pH for protonation (default 7.4)
 
         Returns:
             Path to output PDB with hydrogens
@@ -564,3 +460,65 @@ class Structure:
                     attempts += 1
 
         raise RuntimeError(f"_sanitize_protein | Failed to sanitize protein after {max_attempts} attempts")
+    
+    def _sanitize_ligand(self, universe, chain_id: str, output_folder: Path, pdb_file: Path):
+        canonical_chain = chain_id
+        canonical_resid = 1
+        canonical_resname = "LIG"
+
+        # Select ligand atoms
+        lig_atoms = universe.select_atoms(f"segid {chain_id} or chainID {chain_id}")
+
+        # Update residues
+        for res in lig_atoms.residues:
+            res.resid = canonical_resid
+            res.resname = canonical_resname
+            res.segment.segid = canonical_chain
+
+        # Update atom-level chainID
+        for atom in lig_atoms:
+            atom.chainID = canonical_chain
+
+        # Write initial PDB
+        output_folder.mkdir(parents=True, exist_ok=True)
+        ligand_pdb_path = output_folder / f"{pdb_file.stem}_ligand_chain_{chain_id}.pdb"
+        lig_atoms.write(str(ligand_pdb_path))
+        n_atoms_before = len(lig_atoms)
+
+        # Load PDB with RDKit
+        lig_mol = Chem.MolFromPDBFile(str(ligand_pdb_path), removeHs=False)
+        n_h = len([atom for atom in lig_mol.GetAtoms() if atom.GetAtomicNum() == 1])
+
+        if n_h == 0:
+            logger.warning("Ligand has no hydrogens; adding using RDKit.")
+            lig_mol_h = Chem.AddHs(lig_mol, addCoords=True)
+            ff = AllChem.UFFGetMoleculeForceField(lig_mol_h)
+            heavy_idx = [atom.GetIdx() for atom in lig_mol_h.GetAtoms() if atom.GetAtomicNum() > 1]
+            for idx in heavy_idx:
+                ff.AddFixedPoint(idx)
+            ff.Minimize()
+
+            # Generate PDB block
+            pdb_block = Chem.MolToPDBBlock(lig_mol_h)
+
+            # Patch all HETATM/ATOM lines for canonical chain/resid/resname
+            pdb_lines = []
+            for line in pdb_block.splitlines():
+                if line.startswith("HETATM") or line.startswith("ATOM"):
+                    line = (
+                        line[:17] + f"{canonical_resname:<3}" +  # resname
+                        line[20:21] + canonical_chain +          # chainID
+                        f"{canonical_resid:>4}" +                # resid
+                        line[26:]
+                    )
+                pdb_lines.append(line)
+
+            with open(ligand_pdb_path, "w") as f:
+                f.write("\n".join(pdb_lines))
+
+            n_atoms_after = lig_mol_h.GetNumAtoms()
+        else:
+            n_atoms_after = lig_mol.GetNumAtoms()
+
+        logger.info("Ligand atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+        return ligand_pdb_path
