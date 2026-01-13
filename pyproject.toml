@@ -19,7 +19,10 @@ dependencies = [
     "seaborn",
     "streamlit>=1.28.0",
     "streamlit-option-menu>=0.3.6",
-    "pyyaml"
+    "pyyaml",
+    "gemmi",
+    "prolif",
+    "pdb2pqr",
 ]
 
 [project.optional-dependencies]

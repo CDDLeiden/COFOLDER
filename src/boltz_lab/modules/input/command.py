@@ -9,9 +9,12 @@ import logging
 import os
 import subprocess
 
-from boltz_lab.modules.utils import helpers
+from boltz_lab.modules.runners import boltz_runner
+from boltz_lab.modules.utils import helpers, read, write
 
-logger = logging.getLogger('boltz-lab.helpers')
+import logging
+
+logger = logging.getLogger(__name__)
 
 def download_cache(path: str):
     """Download the Boltz cache by running a minimal prediction.
@@ -36,8 +39,7 @@ def download_cache(path: str):
 
     fasta_path = os.path.join(tmp_dir, "tmp.fasta")
     # Write a single "A" residue
-    with open(fasta_path, "w") as f:
-        f.write(">A|protein|\nA\n")
+    write.write_fasta(fasta_path, sequence="A", header="A|protein|")
 
     # Build the command
     cmd = [
@@ -51,7 +53,7 @@ def download_cache(path: str):
     ]
 
     # Run the command
-    subprocess.run(cmd, check=True)
+    boltz_runner.run_boltz(cmd)
 
 class Command:
     """Manage Boltz command-line options and build prediction commands.
@@ -81,8 +83,6 @@ class Command:
     >>> cmd = Command(options_path="options.yaml")
     """
     def __init__(self, options=None, options_path=None):
-        self.logger = logging.getLogger('boltz-lab.helpers.command.Command')
-
         if options and options_path:
             raise ValueError("Provide either 'options' or 'options_path', not both.")
 
@@ -118,11 +118,18 @@ class Command:
         - Supports multiprocessing.cpu_count() for auto-detection
         - Automatically adds --use_msa_server if system has no MSA defined
         """
-        cmd = ["boltz", "predict", self.system_path, "--out_dir", self.out_dir]
+        cmd = ["boltz", 
+               "predict", 
+               str(self.system_path), 
+               "--out_dir", 
+               str(self.out_dir),
+               "--seed",
+               str(self.seed)]
 
         # Include MSA server option if not defined in the system
         if system.find_value(key="msa") is None:
             cmd.append("--use_msa_server")
+            logger.info("No MSA defined in system; adding --use_msa_server to command.")
 
         for item in self.options.get("options", []):
             for key, value in item.items():

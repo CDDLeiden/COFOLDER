@@ -3,12 +3,12 @@
 This module provides the System class for managing molecular system
 configurations, including proteins, ligands, and their properties.
 """
-
-import yaml
 import logging
-from boltz_lab.modules.utils import helpers
+from boltz_lab.modules.utils import read
 
-logger  = logging.getLogger('boltz-lab.helpers')
+import logging
+
+logger = logging.getLogger(__name__)
 
 class System:
     """Manage molecular system configuration for Boltz predictions.
@@ -40,16 +40,14 @@ class System:
     >>> sys = System(system_path="system.yaml")
     """
     def __init__(self, system=None, system_path=None):
-        self.logger = logging.getLogger('boltz-lab.helpers.system.System')
-
         if system and system_path:
             raise ValueError("Provide either 'system' or 'system_path', not both.")
 
         if system:
             self.system = system
         elif system_path:
-            self.logger.debug(f"Loading system YAML from {system_path}")
-            self.system = helpers.read_yaml(path=system_path)
+            logger.debug(f"Loading system YAML from {system_path}")
+            self.system = read.read_yaml(path=system_path)
         else:
             raise ValueError("Either 'system' or 'system_path' must be provided.")
     
@@ -120,6 +118,66 @@ class System:
 
             if not set_key(self.system):
                 raise KeyError(f"Parent key '{parent_key}' not found in the system.")
+
+    def delete_system_key(self, path=None, parent_key=None, sub_key=None, keys_to_delete=None):
+        """
+        Delete specific keys from the system configuration at a given path or key.
+
+        Parameters
+        ----------
+        path : list, optional
+            Path to the target dictionary/list as a list of keys/indices.
+            Example: ["sequences", 0, "ligand"]
+        parent_key : str, optional
+            Top-level or nested key to search for and delete keys in.
+        sub_key : str, optional
+            Sub-key within the parent_key dictionary to target.
+        keys_to_delete : list of str, optional
+            List of keys to delete from the target dictionary.
+
+        Raises
+        ------
+        ValueError
+            If path traversal fails due to type mismatch.
+        KeyError
+            If parent_key is not found in the system.
+        """
+        if keys_to_delete is None:
+            return
+
+        if path:
+            d = self.system
+            for key in path:
+                if isinstance(d, dict):
+                    d = d.setdefault(key, {})
+                elif isinstance(d, list):
+                    d = d[int(key)]
+                else:
+                    raise ValueError(f"Cannot traverse into object at {key} in path {path}")
+            if isinstance(d, dict):
+                for k in keys_to_delete:
+                    if k in d:
+                        del d[k]
+
+        elif parent_key:
+            def remove_keys(d):
+                if isinstance(d, dict):
+                    if parent_key in d:
+                        target = d[parent_key]
+                        if sub_key:
+                            target = target.get(sub_key, {})
+                            if isinstance(target, dict):
+                                for k in keys_to_delete:
+                                    target.pop(k, None)
+                        else:
+                            if isinstance(target, dict):
+                                for k in keys_to_delete:
+                                    target.pop(k, None)
+                        return True
+                    return any(remove_keys(v) for v in d.values())
+                if isinstance(d, list):
+                    return any(remove_keys(i) for i in d)
+                return False
 
     def find_value(self, key=None, path=None):
         """Retrieve a value by path or by recursively searching for a key.
@@ -192,21 +250,3 @@ class System:
             if len(found) > 1:
                 raise ValueError(f"Key '{key}' appears multiple times; use path instead.")
             return found[0]
-
-    def save_system_to_yaml(self, path):
-        """Save the system configuration to a YAML file.
-
-        Writes the current system dictionary to a YAML file, preserving
-        the order of keys.
-
-        Parameters
-        ----------
-        path : str
-            Output file path for the YAML file.
-
-        Notes
-        -----
-        The YAML is written with sort_keys=False to preserve insertion order.
-        """
-        with open(path, "w") as file:
-            yaml.dump(self.system, file, sort_keys=False)
