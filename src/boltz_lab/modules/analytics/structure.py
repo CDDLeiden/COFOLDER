@@ -191,33 +191,40 @@ class Structure:
         
     def add_sasa(
         self,
-        column_name: str = "sasa",
-        normalize: bool = False,
+        *,
+        absolute: bool = False,
+        normalized: bool = False,
         heavy_atoms_only: bool = True,
     ) -> pd.DataFrame:
         """
-        Add solvent-accessible surface area (SASA) per chain.
-
-        - Uses Bio.PDB Shrake–Rupley algorithm
-        - Parses CIF directly via MMCIFParser
-        - Supports optional normalization by number of heavy atoms
+        Add solvent-accessible surface area (SASA) metrics per chain.
 
         Parameters
         ----------
-        column_name : str
-            Output column name.
-        normalize : bool
-            If True, normalize SASA by atom count.
+        absolute : bool
+            If True, compute absolute SASA.
+        normalized : bool
+            If True, compute normalized SASA.
         heavy_atoms_only : bool
-            If True, count only heavy atoms for normalization.
-            Ignored if normalize=False.
+            If True, normalize by heavy atoms only.
+            Ignored if normalized=False.
         """
-        mode = "normalized" if normalize else "absolute"
-        logger.info("Starting SASA calculation (%s)", mode)
 
-        if column_name not in self.chain_df.columns:
-            self.chain_df[column_name] = None
-            logger.debug("Created new column '%s'", column_name)
+        if not absolute and not normalized:
+            logger.debug("No SASA metrics requested; skipping.")
+            return self.chain_df
+
+        logger.info(
+            "Starting SASA calculation | absolute=%s | normalized=%s",
+            absolute,
+            normalized,
+        )
+
+        if absolute and "sasa" not in self.chain_df.columns:
+            self.chain_df["sasa"] = None
+
+        if normalized and "sasa_norm_heavy" not in self.chain_df.columns:
+            self.chain_df["sasa_norm_heavy"] = None
 
         parser = MMCIFParser(QUIET=True)
         sr = ShrakeRupley()
@@ -226,25 +233,13 @@ class Structure:
             cif_path = self.cif_folder / row[self.cif_file_col]
             chain_id = str(row[self.chain_id_col])
 
-            logger.debug(
-                "Processing SASA | mode=%s | CIF=%s | chain=%s | row=%d",
-                mode,
-                cif_path.name,
-                chain_id,
-                idx,
-            )
-
             if not cif_path.exists():
                 logger.warning("Missing CIF file: %s", cif_path)
                 continue
 
             try:
                 structure = parser.get_structure("struct", str(cif_path))
-                logger.debug("CIF parsed successfully: %s", cif_path.name)
-
-                # Atom-level SASA required for normalization
                 sr.compute(structure, level="A")
-                logger.debug("Shrake–Rupley computed at atom level")
 
                 model = structure[0]
                 if chain_id not in model:
@@ -267,49 +262,28 @@ class Structure:
 
                         total_sasa += atom.sasa
 
-                        if normalize:
+                        if normalized:
                             if heavy_atoms_only:
                                 if atom.element != "H":
                                     atom_count += 1
                             else:
                                 atom_count += 1
 
-                logger.debug(
-                    "Chain %s | total_sasa=%.3f | atom_count=%d",
-                    chain_id,
-                    total_sasa,
-                    atom_count,
-                )
+                if absolute:
+                    self.chain_df.at[idx, "sasa"] = float(round(total_sasa, 3))
 
-                if normalize:
+                if normalized:
                     if atom_count == 0:
                         logger.warning(
-                            "Normalization requested but no atoms counted | "
+                            "Normalized SASA requested but atom count is zero | "
                             "CIF=%s | chain=%s",
                             cif_path.name,
                             chain_id,
                         )
-                        self.chain_df.at[idx, column_name] = None
+                        self.chain_df.at[idx, "sasa_norm_heavy"] = None
                     else:
                         value = total_sasa / atom_count
-                        self.chain_df.at[idx, column_name] = float(round(value, 5))
-
-                        logger.info(
-                            "Normalized SASA | CIF=%s | chain=%s | "
-                            "SASA/atom=%.5f Å²",
-                            cif_path.name,
-                            chain_id,
-                            value,
-                        )
-                else:
-                    self.chain_df.at[idx, column_name] = float(round(total_sasa, 3))
-
-                    logger.info(
-                        "Absolute SASA | CIF=%s | chain=%s | SASA=%.3f Å²",
-                        cif_path.name,
-                        chain_id,
-                        total_sasa,
-                    )
+                        self.chain_df.at[idx, "sasa_norm_heavy"] = float(round(value, 5))
 
             except Exception:
                 logger.exception(
@@ -317,9 +291,18 @@ class Structure:
                     cif_path.name,
                     chain_id,
                 )
-                self.chain_df.at[idx, column_name] = None
 
-        logger.info("Completed SASA calculation (%s)", mode)
+                if absolute:
+                    self.chain_df.at[idx, "sasa"] = None
+                if normalized:
+                    self.chain_df.at[idx, "sasa_norm_heavy"] = None
+
+        logger.info(
+            "Completed SASA calculation | absolute=%s | normalized=%s",
+            absolute,
+            normalized,
+        )
+
         return self.chain_df
 
 
@@ -461,13 +444,6 @@ class Structure:
         n_atoms_after = len(u_prot_h.atoms)
         logger.info("Protein atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
 
-        # check proper protonation
-        mol = Chem.MolFromPDBFile(str(protein_pdb_path), removeHs=False)
-        if mol is None:
-            logger.error("RDKit failed to parse protein PDB! Check hydrogens/valence.")
-        else:
-            logger.debug("Protein PDB parsed by RDKit: atoms=%d", mol.GetNumAtoms())
-
         # ---- Ligand ----
         ligand_pdb_path = self._sanitize_ligand(
             universe=universe,
@@ -499,26 +475,6 @@ class Structure:
         ]
         run_pdb2pqr(args)
         return output_pdb        
-
-    def _remove_overbonding_hydrogens(self, u_protein):
-        """Remove only the HZ3 hydrogen from Lys residues."""
-
-        # Select all HZ3 hydrogens in Lys residues
-        hs_to_remove = u_protein.select_atoms("resname LYS and name HZ3")
-
-        if len(hs_to_remove) == 0:
-            logger.info("_remove_overbonding_hydrogens | No Lys HZ3 atoms to remove.")
-            return u_protein
-
-        # Log which hydrogens are being removed
-        removed_list = [f"{atom.resname}{atom.resid}-{atom.name}" for atom in hs_to_remove]
-        logger.debug("_remove_overbonding_hydrogens | Removing Lys HZ3 atoms: %s", ", ".join(removed_list))
-
-        # Remove the selected atoms
-        u_clean = u_protein.atoms[np.setdiff1d(np.arange(len(u_protein.atoms)), hs_to_remove.indices)]
-
-        logger.info("_remove_overbonding_hydrogens | Total HZ3 atoms removed: %d", len(hs_to_remove))
-        return u_clean
 
     def _sanitize_protein(self, u_protein, max_attempts=100):
         """

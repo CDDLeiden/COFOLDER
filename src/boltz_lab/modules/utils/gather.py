@@ -321,6 +321,7 @@ def gather_affinity_metrics(
     system_name: str,
     sys: "System",
     repeats: int,
+    extended: bool = False,
 ) -> pd.DataFrame:
     """
     Gather affinity metrics and append them to chain_df.
@@ -356,15 +357,25 @@ def gather_affinity_metrics(
     # --------------------------------------------------
     # Ensure output columns exist
     # --------------------------------------------------
-    for col in (
+    base_columns = (
         "affinity_pred_value",
         "affinity_probability_binary",
+    )
+
+    extended_columns = (
         "pIC50",
         "IC50_M",
         "pIC50_kcal_per_mol",
-    ):
+    )
+
+    for col in base_columns:
         if col not in chain_df.columns:
             chain_df[col] = None
+
+    if extended:
+        for col in extended_columns:
+            if col not in chain_df.columns:
+                chain_df[col] = None
 
    # --------------------------------------------------
     # Repeat loop
@@ -400,12 +411,15 @@ def gather_affinity_metrics(
             continue
 
         # --------------------------------------------------
-        # Derived conversions
+        # Derived conversions (extended metrics only)
         # --------------------------------------------------
-        pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(affinity_pred_value)
-        pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(
-            affinity_pred_value
-        )
+        if extended:
+            pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(
+                affinity_pred_value
+            )
+            pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(
+                affinity_pred_value
+            )
 
         # --------------------------------------------------
         # Assign to chain_df
@@ -420,13 +434,16 @@ def gather_affinity_metrics(
             chain_df.at[idx, "affinity_probability_binary"] = (
                 affinity_probability_binary
             )
-            chain_df.at[idx, "pIC50"] = pIC50
-            chain_df.at[idx, "IC50_M"] = IC50_M
-            chain_df.at[idx, "pIC50_kcal_per_mol"] = pIC50_kcal_per_mol
 
-    logger.info(
-        "Affinity metrics appended — chain_df: %d rows",
-        len(chain_df),
-    )
+            if extended:
+                chain_df.at[idx, "pIC50"] = pIC50
+                chain_df.at[idx, "IC50_M"] = IC50_M
+                chain_df.at[idx, "pIC50_kcal_per_mol"] = pIC50_kcal_per_mol
+
+            logger.info(
+                "Affinity metrics appended (extended=%s) — chain_df: %d rows",
+                extended,
+                len(chain_df),
+            )
 
     return chain_df

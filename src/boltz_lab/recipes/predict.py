@@ -49,6 +49,7 @@ class Predict(object):
         options_path: str,
         repeats: int = 1,
         seed: int | None = None,
+        scoring_functions: list[str] | None = None,
         conformers: str | None = None,
         sdf_file: str | None = None
     ):
@@ -57,6 +58,7 @@ class Predict(object):
         self.options_path = Path(options_path)
         self.repeats = repeats
         self.seed = seed
+        self.scoring_functions = scoring_functions
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
 
@@ -71,6 +73,14 @@ class Predict(object):
             "conformers": self.conformers,
             "sdf_file": self.sdf_file
         })
+
+        # Define available scoring functions
+        self.scoring_functions = set(scoring_functions)
+
+        self.logger.debug(
+            "Enabled scoring functions: %s",
+            sorted(self.scoring_functions)
+        )
 
         # Load YAML options and system
         self._options = read.read_yaml(path=self.options_path)
@@ -156,38 +166,63 @@ class Predict(object):
         chain_df = gather.add_chain_info(chain_df, self.sys)
 
         # gather confidence metrics
-        system_df, chain_df = gather.gather_confidence_metrics(
-            raw_dir=self.raw_dir,
-            system_df=system_df,
-            chain_df=chain_df,
-            system_name=self.system_path.stem,
-            repeats=self.repeats,
-            diffusion_samples=self.opt.find_value(key="diffusion_samples") if self.opt.find_value(key="diffusion_samples") else 1
-        )
+        if "boltz_confidence_metrics" in self.scoring_functions:
+            system_df, chain_df = gather.gather_confidence_metrics(
+                raw_dir=self.raw_dir,
+                system_df=system_df,
+                chain_df=chain_df,
+                system_name=self.system_path.stem,
+                repeats=self.repeats,
+                diffusion_samples=(
+                    self.opt.find_value(key="diffusion_samples")
+                    if self.opt.find_value(key="diffusion_samples")
+                    else 1
+                )
+            )
 
         # gather affinity metrics
-        chain_df = gather.gather_affinity_metrics(
-            raw_dir=self.raw_dir,
-            chain_df=chain_df,
-            system_name=self.system_path.stem,
-            sys=self.sys,
-            repeats=self.repeats,
-        )
+        if {
+            "boltz_affinity_metrics",
+            "boltz_affinity_metrics_ext",
+        } & self.scoring_functions:
+            chain_df = gather.gather_affinity_metrics(
+                raw_dir=self.raw_dir,
+                chain_df=chain_df,
+                system_name=self.system_path.stem,
+                sys=self.sys,
+                repeats=self.repeats,
+                extended="boltz_affinity_metrics_ext" in self.scoring_functions,
+            )
 
-        # calculate structure-based metrics
-        structure = Structure(
-            wrk_dir=self.wrk_dir,
-            chain_df=chain_df,
-            cif_folder=Path(self.wrk_dir / "results" / "structures"),
-        )
+        # gather structure-based metrics
+        structure_metrics = {
+            "ifp_distance",
+            "ifp_prolif",
+            "sasa",
+            "sasa_normalized",
+        }
 
-        #chain_df = structure.add_ifp_distance()
-        #chain_df = structure.add_ifp_prolif()
-        chain_df = structure.add_sasa(column_name="sasa", normalize=False)
-        chain_df = structure.add_sasa(column_name="sasa_norm_heavy", normalize=True)
+        if self.scoring_functions & structure_metrics:
+            structure = Structure(
+                wrk_dir=self.wrk_dir,
+                chain_df=chain_df,
+                cif_folder=Path(self.wrk_dir / "results" / "structures"),
+            )
 
-        #TODO: SASA calculations.
-        #TODO: normalized SASA calculations on heavy atom count.
+            if "ifp_distance" in self.scoring_functions:
+                chain_df = structure.add_ifp_distance()
+
+            if "ifp_prolif" in self.scoring_functions:
+                chain_df = structure.add_ifp_prolif()
+
+        if {
+            "sasa",
+            "sasa_normalized",
+        } & self.scoring_functions:
+            chain_df = structure.add_sasa(
+                absolute="sasa" in self.scoring_functions,
+                normalized="sasa_normalized" in self.scoring_functions,
+            )
 
         write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
         write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")

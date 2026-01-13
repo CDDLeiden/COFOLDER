@@ -13,6 +13,16 @@ from boltz_lab.recipes.evaluate import Evaluate
 from boltz_lab.modules.utils import helpers
 from boltz_lab.modules.utils.log import setup_root_logger
 
+SCORING_FUNCTIONS = [
+    "boltz_confidence_metrics",
+    "boltz_affinity_metrics",
+    "boltz_affinity_metrics_ext",
+    "ifp_distance",
+    "ifp_prolif",
+    "sasa",
+    "sasa_normalized",
+]
+
 class BaseRecipe:
     LOGGER_NAME = "boltz-lab"
 
@@ -52,6 +62,17 @@ class BaseRecipe:
             type=int,
             default=None,
             help='Global seed used for predictions.'
+        )
+
+        parser.add_argument(
+            '--scoring_functions',
+            nargs='+',
+            choices=SCORING_FUNCTIONS,
+            default=SCORING_FUNCTIONS,
+            help=(
+                "Scoring functions to compute and save. "
+                "Default: all available scoring functions."
+            )
         )
 
         parser.add_argument(
@@ -98,12 +119,19 @@ class BaseRecipe:
             options_path=args.options_path,
             repeats=args.repeats,
             seed=args.seed,
+            scoring_functions=args.scoring_functions,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
         )
 
     @staticmethod
     def _validate_common_args(args):
+        # ---- scoring functions validation ----
+        if args.scoring_functions is not None:
+            invalid = set(args.scoring_functions) - set(SCORING_FUNCTIONS)
+            if invalid:
+                raise ValueError(f"Invalid --scoring_functions: {sorted(invalid)}")
+        
         # ---- path validation ----
         system_path = Path(args.system_path)
         if not system_path.exists():
