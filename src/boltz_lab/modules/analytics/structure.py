@@ -474,22 +474,16 @@ class Structure:
 
         for attempt in range(max_attempts):
             try:
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp_pdb = Path(tmpdir) / "protein.pdb"
-                    u_protein.atoms[keep_mask].write(tmp_pdb)
-
-                    _ = plf.Molecule.from_mda(
-                        mda.Universe(str(tmp_pdb))
-                    )
+                _ = plf.Molecule.from_mda(
+                    u_protein.atoms[keep_mask]
+                )
 
                 logger.info(
                     "_sanitize_protein | Protein sanitized successfully after %d attempts.",
                     attempt,
                 )
 
-                # Write sanitized structure
-                u_sanitized = mda.Merge(u_protein.atoms[keep_mask])
-                u_sanitized.atoms.write(str(sanitized_pdb))
+                u_protein.atoms[keep_mask].write(sanitized_pdb)
 
                 return 
 
