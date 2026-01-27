@@ -5,7 +5,7 @@ The `screen` command performs high-throughput virtual screening of compound libr
 ## Basic Usage
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
   -b options.yaml \
   -v "sequences,0,ligand,smiles" \
@@ -45,7 +45,7 @@ boltz-lab screen \
 ### Screen from CSV
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
   -b options.yaml \
   -v "sequences,0,ligand,smiles" \
@@ -58,7 +58,7 @@ boltz-lab screen \
 ### Screen from SDF
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
   -b options.yaml \
   -v "sequences,0,ligand,smiles" \

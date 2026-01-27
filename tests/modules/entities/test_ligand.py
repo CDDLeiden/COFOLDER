@@ -1,9 +1,9 @@
-"""Tests for boltz_lab.modules.entities.ligand module."""
+"""Tests for cofolder.modules.entities.ligand module."""
 
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from boltz_lab.modules.entities import ligand
+from cofolder.modules.entities import ligand
 
 
 class TestSanitizeMolId:

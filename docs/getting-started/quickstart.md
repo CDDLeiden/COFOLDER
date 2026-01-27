@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-This guide will walk you through your first Boltz-Lab workflow.
+This guide will walk you through your first COFOLDER workflow.
 
 ## Basic Workflow
 
@@ -36,7 +36,7 @@ diffusion_samples: 1
 Execute the prediction:
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -w ./output
+cofolder predict -s system.yaml -b options.yaml -w ./output
 ```
 
 ## Output Files
@@ -52,25 +52,25 @@ After successful execution, you'll find:
 ### Predict a Single System
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml
+cofolder predict -s system.yaml -b options.yaml
 ```
 
 ### Screen a Library
 
 ```bash
-boltz-lab screen -s system.yaml -b options.yaml -v "sequences,0,ligand,smiles" -c compounds.csv --col_variable smiles --col_id compound_id
+cofolder screen -s system.yaml -b options.yaml -v "sequences,0,ligand,smiles" -c compounds.csv --col_variable smiles --col_id compound_id
 ```
 
 ### Evaluate with Reference
 
 ```bash
-boltz-lab evaluate -s system.yaml -b options.yaml -i reference.pdb --repeats 3
+cofolder evaluate -s system.yaml -b options.yaml -i reference.pdb --repeats 3
 ```
 
 ### Use as Oracle
 
 ```bash
-boltz-lab oracle -s system.yaml -b options.yaml
+cofolder oracle -s system.yaml -b options.yaml
 ```
 
 ## Getting Help
@@ -78,10 +78,10 @@ boltz-lab oracle -s system.yaml -b options.yaml
 For detailed information about any command:
 
 ```bash
-boltz-lab predict --help
-boltz-lab screen --help
-boltz-lab oracle --help
-boltz-lab evaluate --help
+cofolder predict --help
+cofolder screen --help
+cofolder oracle --help
+cofolder evaluate --help
 ```
 
 ## Next Steps

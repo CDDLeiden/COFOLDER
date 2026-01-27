@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.modules.input.command module."""
+"""Tests for cofolder.modules.input.command module."""
 import pytest
 
-from boltz_lab.modules.input.command import Command
-from boltz_lab.modules.input.system import System
+from cofolder.modules.input.command import Command
+from cofolder.modules.input.system import System
 
 
 class TestCommandInit:

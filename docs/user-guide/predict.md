@@ -5,7 +5,7 @@ The `predict` command performs co-folding of a single protein-ligand system.
 ## Basic Usage
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml
+cofolder predict -s system.yaml -b options.yaml
 ```
 
 ## Arguments
@@ -26,7 +26,7 @@ boltz-lab predict -s system.yaml -b options.yaml
 ### Basic Prediction
 
 ```bash
-boltz-lab predict \
+cofolder predict \
   -s examples/system.yaml \
   -b examples/options.yaml \
   -w ./output
@@ -35,7 +35,7 @@ boltz-lab predict \
 ### With 3D Conformer Generation
 
 ```bash
-boltz-lab predict \
+cofolder predict \
   -s system.yaml \
   -b options.yaml \
   --generate_conformers 3D
@@ -44,7 +44,7 @@ boltz-lab predict \
 ### With Debug Logging
 
 ```bash
-boltz-lab predict \
+cofolder predict \
   -s system.yaml \
   -b options.yaml \
   -d

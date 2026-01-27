@@ -1,6 +1,6 @@
 # Predict Recipe
 
-::: boltz_lab.recipes.predict
+::: cofolder.recipes.predict
     options:
       show_root_heading: true
       show_source: true

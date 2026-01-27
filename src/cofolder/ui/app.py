@@ -1,5 +1,5 @@
 """
-Streamlit UI for Boltz-Lab - A professional interface for running Boltz co-folding workflows.
+Streamlit UI for COFOLDER - A professional interface for running Boltz co-folding workflows.
 """
 import os
 import sys
@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Boltz-Lab UI",
+    page_title="COFOLDER UI",
     page_icon="🧬",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -25,7 +25,7 @@ st.set_page_config(
 
 # Configure logger
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("boltz-lab-ui")
+logger = logging.getLogger("cofolder-ui")
 
 # Default Boltz options
 DEFAULT_OPTIONS = {
@@ -199,7 +199,7 @@ def render_header():
     """Render the main header."""
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.markdown('<div class="main-header">🧬 Boltz-Lab UI</div>', unsafe_allow_html=True)
+        st.markdown('<div class="main-header">🧬 COFOLDER UI</div>', unsafe_allow_html=True)
         st.caption("Professional interface for Boltz protein co-folding workflows")
     with col2:
         st.markdown(f"""
@@ -684,7 +684,7 @@ def run_predict(wrk_dir: str, system_path: str, options_path: str, debug: bool):
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_lab', 'predict',
+            'python', '-m', 'cofolder', 'predict',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -746,7 +746,7 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_lab', 'screen',
+            'python', '-m', 'cofolder', 'screen',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -810,7 +810,7 @@ def run_oracle(wrk_dir: str, system_path: str, options_path: str, debug: bool):
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_lab', 'oracle',
+            'python', '-m', 'cofolder', 'oracle',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -865,7 +865,7 @@ def run_evaluate(wrk_dir: str, system_path: str, options_path: str, repeats: int
 
         # Build command
         cmd = [
-            'python', '-m', 'boltz_lab', 'evaluate',
+            'python', '-m', 'cofolder', 'evaluate',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,

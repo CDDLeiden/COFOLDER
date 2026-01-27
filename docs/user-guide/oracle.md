@@ -5,7 +5,7 @@ The `oracle` command uses Boltz as a scoring function for molecular design workf
 ## Basic Usage
 
 ```bash
-boltz-lab oracle -s system.yaml -b options.yaml
+cofolder oracle -s system.yaml -b options.yaml
 ```
 
 ## Arguments
@@ -27,7 +27,8 @@ boltz-lab oracle -s system.yaml -b options.yaml
 Use Boltz as a fitness function in optimization:
 
 ```python
-from boltz_lab.recipes.oracle import Oracle
+from cofolder.recipes.oracle import Oracle
+
 
 def score_molecule(smiles: str) -> float:
     # Update system with SMILES

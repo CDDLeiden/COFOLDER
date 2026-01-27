@@ -1,6 +1,6 @@
 # Advanced Features
 
-Explore advanced capabilities and customization options in Boltz-Lab.
+Explore advanced capabilities and customization options in COFOLDER.
 
 ## Multi-Chain Systems
 
@@ -97,8 +97,9 @@ sequences:
 ### Implement Custom Oracle
 
 ```python
-from boltz_lab.recipes.oracle import Oracle
+from cofolder.recipes.oracle import Oracle
 import numpy as np
+
 
 class CustomOracle(Oracle):
     def score(self, prediction):
@@ -168,7 +169,7 @@ stats = combined.groupby('compound_id').agg({
 ### Extract Interaction Fingerprints
 
 ```python
-from boltz_lab.modules.analytics import calculate_ifp
+from cofolder.modules.analytics import calculate_ifp
 
 predictions = load_predictions("output/")
 reference = load_reference("reference.pdb")

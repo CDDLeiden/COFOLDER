@@ -1,6 +1,6 @@
 # Virtual Screening Tutorial
 
-Learn how to screen compound libraries with Boltz-Lab.
+Learn how to screen compound libraries with COFOLDER.
 
 ## Overview
 
@@ -57,7 +57,7 @@ diffusion_samples: 1
 ## Step 4: Run Screening
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system_template.yaml \
   -b screening_options.yaml \
   -v "sequences,1,ligand,smiles" \
@@ -115,12 +115,12 @@ Split library and run parallel jobs:
 
 ```bash
 # GPU 0
-boltz-lab screen -s system.yaml -b options.yaml \
+cofolder screen -s system.yaml -b options.yaml \
   -c library_part1.csv --col_variable smiles --col_id compound_id \
   -v "sequences,1,ligand,smiles"
 
 # GPU 1 (in parallel)
-boltz-lab screen -s system.yaml -b options.yaml \
+cofolder screen -s system.yaml -b options.yaml \
   -c library_part2.csv --col_variable smiles --col_id compound_id \
   -v "sequences,1,ligand,smiles"
 ```
@@ -130,7 +130,7 @@ boltz-lab screen -s system.yaml -b options.yaml \
 Screen from SDF file:
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
   -b options.yaml \
   -v "sequences,1,ligand,smiles" \
@@ -144,7 +144,7 @@ boltz-lab screen \
 Generate 3D conformers for better accuracy:
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
   -b options.yaml \
   -v "sequences,1,ligand,smiles" \

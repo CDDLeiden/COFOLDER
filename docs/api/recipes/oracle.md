@@ -1,6 +1,6 @@
 # Oracle Recipe
 
-::: boltz_lab.recipes.oracle
+::: cofolder.recipes.oracle
     options:
       show_root_heading: true
       show_source: true

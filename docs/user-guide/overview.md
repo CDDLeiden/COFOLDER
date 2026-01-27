@@ -1,6 +1,6 @@
 # User Guide Overview
 
-Boltz-Lab provides four main commands for different co-folding workflows.
+COFOLDER provides four main commands for different co-folding workflows.
 
 ## Commands
 
@@ -81,7 +81,7 @@ output/
 
 ### Error Handling
 
-Boltz-Lab provides informative error messages. Common issues:
+COFOLDER provides informative error messages. Common issues:
 
 - Invalid SMILES strings
 - Missing CCD entries
@@ -107,7 +107,7 @@ For screening large libraries:
 ### Reproducibility
 
 - Use fixed random seeds with `--seeds`
-- Document Boltz-Lab version
+- Document COFOLDER version
 - Save all configuration files
 
 ## Next Steps

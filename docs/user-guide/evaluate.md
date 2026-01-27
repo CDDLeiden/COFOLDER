@@ -5,7 +5,7 @@ The `evaluate` command performs comprehensive validation of predictions against 
 ## Basic Usage
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   -i reference.pdb \
@@ -35,7 +35,7 @@ boltz-lab evaluate \
 ### Basic Evaluation
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   -i reference.pdb \
@@ -45,7 +45,7 @@ boltz-lab evaluate \
 ### With Fixed Seeds
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   -i reference.pdb \
@@ -56,7 +56,7 @@ boltz-lab evaluate \
 ### With Interaction Fingerprints
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   -i reference.pdb \
@@ -66,7 +66,7 @@ boltz-lab evaluate \
 ### Manual IFP Specification
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   --ifp '{"A:123":"ARG", "B:45":"TYR"}'
@@ -125,7 +125,7 @@ Creates comprehensive results including:
 For reproducible results:
 
 ```bash
-boltz-lab evaluate \
+cofolder evaluate \
   -s system.yaml \
   -b options.yaml \
   --repeats 10 \

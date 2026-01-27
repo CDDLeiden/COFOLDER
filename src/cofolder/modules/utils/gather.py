@@ -4,8 +4,8 @@ from typing import Tuple
 import logging
 import pandas as pd
 
-from boltz_lab.modules.utils import read, write
-from boltz_lab.modules.analytics import stats, structure
+from cofolder.modules.utils import read, write
+from cofolder.modules.analytics import stats, structure
 
 logger = logging.getLogger(__name__)
 

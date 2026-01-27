@@ -1,10 +1,10 @@
-# Boltz-Lab Documentation
+# COFOLDER Documentation
 
-Welcome to the official documentation for **Boltz-Lab**, a comprehensive collection of command-line tools designed for performing various co-folding tasks using Boltz.
+Welcome to the official documentation for **COFOLDER**, a comprehensive collection of command-line tools designed for performing various co-folding tasks using Boltz.
 
 ## Overview
 
-Boltz-Lab provides a suite of utilities that streamline protein-ligand co-folding workflows, including:
+COFOLDER provides a suite of utilities that streamline protein-ligand co-folding workflows, including:
 
 - **Single System Predictions**: Co-fold individual protein-ligand systems
 - **Virtual Screening**: High-throughput screening of ligand libraries
@@ -22,13 +22,13 @@ Boltz-Lab provides a suite of utilities that streamline protein-ligand co-foldin
 ## Quick Start
 
 ```bash
-# Install boltz-lab
-git clone https://github.com/CDDLeiden/boltz-lab.git
-cd boltz-lab
+# Install cofolder
+git clone https://github.com/CDDLeiden/cofolder.git
+cd cofolder
 pip install -e .
 
 # Run a simple prediction
-boltz-lab predict -s system.yaml -b options.yaml
+cofolder predict -s system.yaml -b options.yaml
 ```
 
 ## Navigation
@@ -40,8 +40,8 @@ boltz-lab predict -s system.yaml -b options.yaml
 
 ## Support
 
-For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/CDDLeiden/boltz-lab).
+For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/CDDLeiden/cofolder).
 
 ## Citation
 
-If you use Boltz-Lab in your research, please cite the Boltz paper and this repository.
+If you use COFOLDER in your research, please cite the Boltz paper and this repository.

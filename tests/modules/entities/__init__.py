@@ -1,1 +1,1 @@
-"""Tests for boltz_lab.modules.entities."""
+"""Tests for cofolder.modules.entities."""

@@ -16,9 +16,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
 from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
 
-from boltz_lab.modules.input import command
-from boltz_lab.modules.entities import ligand
-from boltz_lab.modules.utils import read, write
+from cofolder.modules.input import command
+from cofolder.modules.entities import ligand
+from cofolder.modules.utils import read, write
 
 import logging
 
@@ -429,7 +429,7 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     Examples
     --------
     >>> from rdkit import Chem
-    >>> from boltz_lab.modules.entities.ligand import mol_to_ccd
+    >>> from cofolder.modules.entities.ligand import mol_to_ccd
     >>> smiles = "CCO"
     >>> mol = Chem.MolFromSmiles(smiles)
     >>> mol_to_ccd("ETH", mol)
