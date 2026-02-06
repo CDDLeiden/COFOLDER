@@ -23,6 +23,10 @@ SCORING_FUNCTIONS = [
     "sasa_normalized",
 ]
 
+DEFAULT_SCORING_FUNCTIONS = [
+    f for f in SCORING_FUNCTIONS if f != "ifp_prolif"
+]
+
 class BaseRecipe:
     LOGGER_NAME = "cofolder"
 
@@ -68,11 +72,12 @@ class BaseRecipe:
             '--scoring_functions',
             nargs='+',
             choices=SCORING_FUNCTIONS,
-            default=SCORING_FUNCTIONS,
+            metavar="SCORING_FUNCTION",
+            default=DEFAULT_SCORING_FUNCTIONS,
             help=(
-                "Scoring functions to compute and save. "
-                "Default: all available scoring functions."
-            )
+                "Scoring functions to compute. "
+                f"Choices: {', '.join(SCORING_FUNCTIONS)}"
+            ),
         )
 
         parser.add_argument(
