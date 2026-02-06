@@ -4,8 +4,8 @@ from typing import Optional
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error
 
-from boltz_lab.modules.analytics import dataset
-from boltz_lab.modules.utils import write, helpers
+from cofolder.modules.analytics import dataset
+from cofolder.modules.utils import write, helpers
 
 import logging
 

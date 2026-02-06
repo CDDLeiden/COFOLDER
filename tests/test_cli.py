@@ -1,16 +1,16 @@
-"""Tests for boltz_lab.cli module."""
+"""Tests for cofolder.cli module."""
 from unittest.mock import patch
 
 import pytest
 
-from boltz_lab import cli
+from cofolder import cli
 
 
 class TestCLIMain:
     """Tests for CLI main function."""
 
-    @patch('boltz_lab.recipes.predict.Predict.run')
-    @patch('boltz_lab.modules.utils.helpers.create_dir')
+    @patch('cofolder.recipes.predict.Predict.run')
+    @patch('cofolder.modules.utils.helpers.create_dir')
     def test_predict_command(self, mock_create_dir, mock_run, sample_system_yaml, sample_options_yaml):
         """Test predict command execution."""
         args = [

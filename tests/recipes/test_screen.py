@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.recipes.screen module."""
+"""Tests for cofolder.recipes.screen module."""
 from unittest.mock import patch
 
 
-from boltz_lab.recipes.screen import Screen
+from cofolder.recipes.screen import Screen
 
 
 class TestScreenInit:

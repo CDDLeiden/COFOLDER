@@ -1,10 +1,10 @@
 # Basic Usage Tutorial
 
-This tutorial walks through basic Boltz-Lab usage for protein-ligand co-folding.
+This tutorial walks through basic COFOLDER usage for protein-ligand co-folding.
 
 ## Prerequisites
 
-- Boltz-Lab installed
+- COFOLDER installed
 - CUDA-compatible GPU
 - Basic understanding of protein-ligand systems
 
@@ -42,7 +42,7 @@ diffusion_samples: 1
 ## Step 3: Run Prediction
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -w ./tutorial_output
+cofolder predict -s system.yaml -b options.yaml -w ./tutorial_output
 ```
 
 ## Step 4: Examine Output
@@ -97,7 +97,7 @@ num_models: 5
 ### Add 3D Conformer Generation
 
 ```bash
-boltz-lab predict \
+cofolder predict \
   -s system.yaml \
   -b options.yaml \
   --generate_conformers 3D
@@ -106,7 +106,7 @@ boltz-lab predict \
 ### Enable Debug Logging
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -d
+cofolder predict -s system.yaml -b options.yaml -d
 ```
 
 ## Troubleshooting

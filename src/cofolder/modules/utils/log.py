@@ -1,7 +1,7 @@
-"""Logging configuration utilities for boltz-lab.
+"""Logging configuration utilities for cofolder.
 
 This module provides utilities for setting up consistent logging across
-the boltz-lab package, including formatters and handlers for both console
+the cofolder package, including formatters and handlers for both console
 and file output.
 """
 
@@ -17,13 +17,13 @@ DEFAULT_FORMAT = (
     "%(funcName)s | "
     "%(message)s"
 )
-"""str: Default log format for all boltz-lab loggers.
+"""str: Default log format for all cofolder loggers.
 
 Format includes timestamp, log level, logger name, file location,
 function name, and the actual message, separated by pipes for readability.
 
 Example output:
-    2025-01-15 10:30:45,123 | INFO     | boltz-lab.predict | predict.py:42 | run | Starting prediction
+    2025-01-15 10:30:45,123 | INFO     | cofolder.predict | predict.py:42 | run | Starting prediction
 """
 
 def setup_root_logger(

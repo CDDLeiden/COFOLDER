@@ -4,7 +4,7 @@ This module contains entity-related functionality for handling ligands and molec
 
 ## Ligand Utilities
 
-::: boltz_lab.modules.entities.ligand
+::: cofolder.modules.entities.ligand
     options:
       show_root_heading: true
       show_source: true

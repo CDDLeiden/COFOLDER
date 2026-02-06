@@ -1,9 +1,9 @@
-"""Tests for boltz_lab.recipes.evaluate module."""
+"""Tests for cofolder.recipes.evaluate module."""
 from unittest.mock import Mock
 
 import pytest
 
-from boltz_lab.recipes.evaluate import Evaluate
+from cofolder.recipes.evaluate import Evaluate
 
 
 class TestEvaluateInit:

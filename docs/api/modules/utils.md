@@ -4,7 +4,7 @@ Utility functions and helpers.
 
 ## Helpers
 
-::: boltz_lab.modules.utils.helpers
+::: cofolder.modules.utils.helpers
     options:
       show_root_heading: true
       show_source: true
@@ -12,7 +12,7 @@ Utility functions and helpers.
 
 ## Logging
 
-::: boltz_lab.modules.utils.log
+::: cofolder.modules.utils.log
     options:
       show_root_heading: true
       show_source: true

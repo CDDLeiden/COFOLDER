@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start the Boltz-Lab Streamlit UI
+# Start the COFOLDER Streamlit UI
 
 cd "$(dirname "$0")" || exit
 
@@ -10,8 +10,8 @@ if ! command -v streamlit &> /dev/null; then
 fi
 
 # Run the Streamlit app
-echo "Starting Boltz-Lab UI..."
+echo "Starting COFOLDER UI..."
 echo "Access the UI at: http://localhost:8501"
 echo ""
 
-streamlit run src/boltz_lab/ui/app.py
+streamlit run src/cofolder/ui/app.py

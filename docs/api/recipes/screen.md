@@ -1,6 +1,6 @@
 # Screen Recipe
 
-::: boltz_lab.recipes.screen
+::: cofolder.recipes.screen
     options:
       show_root_heading: true
       show_source: true

@@ -3,15 +3,15 @@ import os
 import logging
 from pathlib import Path
 
-from boltz_lab import __version__
+from cofolder import __version__
 
-from boltz_lab.recipes.predict import Predict
-from boltz_lab.recipes.screen import Screen
-from boltz_lab.recipes.oracle import Oracle
-from boltz_lab.recipes.evaluate import Evaluate
+from cofolder.recipes.predict import Predict
+from cofolder.recipes.screen import Screen
+from cofolder.recipes.oracle import Oracle
+from cofolder.recipes.evaluate import Evaluate
 
-from boltz_lab.modules.utils import helpers
-from boltz_lab.modules.utils.log import setup_root_logger
+from cofolder.modules.utils import helpers
+from cofolder.modules.utils.log import setup_root_logger
 
 SCORING_FUNCTIONS = [
     "boltz_confidence_metrics",
@@ -24,7 +24,7 @@ SCORING_FUNCTIONS = [
 ]
 
 class BaseRecipe:
-    LOGGER_NAME = "boltz-lab"
+    LOGGER_NAME = "cofolder"
 
     @staticmethod
     def add_common_arguments(parser):
@@ -180,7 +180,7 @@ class BaseRecipe:
         return logger
 
 class PredictRecipe(BaseRecipe):
-    LOGGER_NAME = "boltz-lab.predict"
+    LOGGER_NAME = "cofolder.predict"
 
     @staticmethod
     def add_arguments(parser):
@@ -190,7 +190,7 @@ class PredictRecipe(BaseRecipe):
     @staticmethod
     def main(args):
         logger = PredictRecipe.setup(args)
-        logger.info("Starting Boltz-lab prediction pipeline.")
+        logger.info("Starting COFOLDER prediction pipeline.")
 
         predictor = Predict(
             **BaseRecipe.common_kwargs(args)
@@ -201,7 +201,7 @@ class PredictRecipe(BaseRecipe):
 
 
 class EvaluateRecipe(BaseRecipe):
-    LOGGER_NAME = "boltz-lab.evaluate"
+    LOGGER_NAME = "cofolder.evaluate"
 
     @staticmethod
     def add_arguments(parser):
@@ -231,7 +231,7 @@ class EvaluateRecipe(BaseRecipe):
     @staticmethod
     def main(args):
         logger = EvaluateRecipe.setup(args)
-        logger.info("Starting Boltz-lab evaluation pipeline.")
+        logger.info("Starting COFOLDER evaluation pipeline.")
 
         evaluator = Evaluate(
             **BaseRecipe.common_kwargs(args),
@@ -245,7 +245,7 @@ class EvaluateRecipe(BaseRecipe):
 
 
 class ScreenRecipe(BaseRecipe):
-    LOGGER_NAME = "boltz-lab.screen"
+    LOGGER_NAME = "cofolder.screen"
 
     @staticmethod
     def add_arguments(parser):
@@ -276,7 +276,7 @@ class ScreenRecipe(BaseRecipe):
     @staticmethod
     def main(args):
         logger = ScreenRecipe.setup(args)
-        logger.info("Starting Boltz-lab screening pipeline.")
+        logger.info("Starting COFOLDER screening pipeline.")
 
         screener = Screen(
             wrk_dir=args.wrk_dir,
@@ -297,7 +297,7 @@ class ScreenRecipe(BaseRecipe):
 
 
 class OracleRecipe(BaseRecipe):
-    LOGGER_NAME = "boltz-lab.oracle"
+    LOGGER_NAME = "cofolder.oracle"
 
     @staticmethod
     def add_arguments(parser):
@@ -307,7 +307,7 @@ class OracleRecipe(BaseRecipe):
     @staticmethod
     def main(args):
         logger = OracleRecipe.setup(args)
-        logger.info("Starting Boltz-lab oracle pipeline.")
+        logger.info("Starting COFOLDER oracle pipeline.")
 
         oracle = Oracle(
             wrk_dir=args.wrk_dir,
@@ -330,7 +330,7 @@ RECIPES = [
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        prog='boltz-lab',
+        prog='cofolder',
         description='Collection of helpful tools for performing various co-folding tasks using Boltz.'
     )
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')

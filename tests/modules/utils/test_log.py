@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.modules.utils.log module."""
+"""Tests for cofolder.modules.utils.log module."""
 import logging
 
 
-from boltz_lab.modules.utils.log import setup_root_logger
+from cofolder.modules.utils.log import setup_root_logger
 
 
 class TestSetupRootLogger:

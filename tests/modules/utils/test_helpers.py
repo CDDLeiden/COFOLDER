@@ -1,10 +1,10 @@
-"""Tests for boltz_lab.modules.utils.helpers module."""
+"""Tests for cofolder.modules.utils.helpers module."""
 
 import pytest
 import pandas as pd
 from rdkit import Chem
 
-from boltz_lab.modules.utils import helpers
+from cofolder.modules.utils import helpers
 
 
 class TestCreateDir:

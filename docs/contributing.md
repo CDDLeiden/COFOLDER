@@ -1,14 +1,14 @@
-# Contributing to Boltz-Lab
+# Contributing to COFOLDER
 
-Thank you for your interest in contributing to Boltz-Lab! This guide will help you get started.
+Thank you for your interest in contributing to COFOLDER! This guide will help you get started.
 
 ## Getting Started
 
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/CDDLeiden/boltz-lab.git
-   cd boltz-lab
+   git clone https://github.com/CDDLeiden/cofolder.git
+   cd cofolder
    ```
 3. Create a feature branch:
    ```bash
@@ -135,7 +135,7 @@ Good pull requests include:
 
 When reporting issues, include:
 
-- Boltz-Lab version
+- COFOLDER version
 - Python version
 - Operating system
 - Complete error message

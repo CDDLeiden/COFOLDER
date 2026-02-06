@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.recipes.predict module."""
+"""Tests for cofolder.recipes.predict module."""
 from unittest.mock import patch
 
 
-from boltz_lab.recipes.predict import Predict
+from cofolder.recipes.predict import Predict
 
 
 class TestPredictInit:
@@ -37,7 +37,7 @@ class TestPredictInit:
 class TestPredictRun:
     """Tests for Predict.run method."""
 
-    @patch('boltz_lab.recipes.predict.subprocess.run')
+    @patch('cofolder.recipes.predict.subprocess.run')
     def test_run_executes_command(self, mock_run, sample_system_yaml, sample_options_yaml, temp_dir):
         """Test that run method executes Boltz command."""
         predictor = Predict(
@@ -54,7 +54,7 @@ class TestPredictRun:
         assert "boltz" in call_args
         assert "predict" in call_args
 
-    @patch('boltz_lab.recipes.predict.subprocess.run')
+    @patch('cofolder.recipes.predict.subprocess.run')
     def test_run_sets_output_directory(self, mock_run, sample_system_yaml, sample_options_yaml, temp_dir):
         """Test that run method sets output directory."""
         predictor = Predict(

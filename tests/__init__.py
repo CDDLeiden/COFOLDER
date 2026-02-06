@@ -1,1 +1,1 @@
-"""Test suite for boltz-lab."""
+"""Test suite for cofolder."""

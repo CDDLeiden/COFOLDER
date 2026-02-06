@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.recipes.oracle module."""
+"""Tests for cofolder.recipes.oracle module."""
 import logging
 
 
-from boltz_lab.recipes.oracle import Oracle
+from cofolder.recipes.oracle import Oracle
 
 
 class TestOracleInit:

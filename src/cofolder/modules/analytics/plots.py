@@ -4,8 +4,8 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from boltz_lab.modules.analytics import dataset, stats
-from boltz_lab.modules.utils import helpers, write
+from cofolder.modules.analytics import dataset, stats
+from cofolder.modules.utils import helpers, write
 
 import logging
 

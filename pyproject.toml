@@ -3,9 +3,9 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "boltz-lab"
+name = "cofolder"
 version = "0.0.0-dev"
-description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
+description = "Collection of helpful tools for performing various co-folding tasks using cofolding models (e.g. Boltz.)"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
@@ -46,8 +46,8 @@ ui = [
 ]
 
 [project.scripts]
-boltz-lab = "boltz_lab.cli:main"
+cofolder = "cofolder.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["boltz_lab*"]
+include = ["cofolder*"]

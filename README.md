@@ -1,20 +1,20 @@
-# Boltz-Lab
+# COFOLDER
 
 ## Introduction
-Boltz-Lab is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and evaluating system configurations.
+COFOLDER is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and evaluating system configurations.
 
 
 ## Installation
 Install directly from GitHub for newest updates:
 ```
-git clone https://github.com/CDDLeiden/boltz-lab.git
-cd boltz-lab; pip install -e .
+git clone https://github.com/CDDLeiden/cofolder.git
+cd cofolder; pip install -e .
 ```
 
 ## Usage
-The main command is `boltz-lab`, which supports several subcommands:
+The main command is `cofolder`, which supports several subcommands:
 ```
-boltz-lab [-h] [-v] {predict,screen,oracle,evaluate}
+cofolder [-h] [-v] {predict,screen,oracle,evaluate}
 ```
 
 ### Subcommands
@@ -25,15 +25,15 @@ boltz-lab [-h] [-v] {predict,screen,oracle,evaluate}
 
 Use the -h flag with any command to see detailed usage:
 ```
-boltz-lab -h
-boltz-lab screen -h
+cofolder -h
+cofolder screen -h
 ```
 
 ## Package Structure
 ```
 examples/
 src/
-└── boltz_lab/
+└── cofolder/
     ├── __init__.py
     ├── __main__.py
     ├── cli.py

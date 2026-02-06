@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Test suite for Boltz-Lab UI
+Test suite for COFOLDER UI
 Validates that all UI components work correctly
 """
 import sys

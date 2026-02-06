@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Boltz-Lab requires:
+COFOLDER requires:
 
 - Python 3.10, 3.11, or 3.12
 - CUDA-compatible GPU (for Boltz)
@@ -14,14 +14,14 @@ The recommended method is to install directly from GitHub:
 
 ```bash
 # Clone the repository
-git clone https://github.com/CDDLeiden/boltz-lab.git
-cd boltz-lab
+git clone https://github.com/CDDLeiden/cofolder.git
+cd cofolder
 
 # Install in editable mode
 pip install -e .
 ```
 
-This will install Boltz-Lab along with all required dependencies, including:
+This will install COFOLDER along with all required dependencies, including:
 
 - `boltz[cuda]` - The core Boltz package with CUDA support
 - `rdkit` - For molecular structure handling
@@ -30,10 +30,10 @@ This will install Boltz-Lab along with all required dependencies, including:
 
 ## Verify Installation
 
-After installation, verify that Boltz-Lab is correctly installed:
+After installation, verify that COFOLDER is correctly installed:
 
 ```bash
-boltz-lab --version
+cofolder --version
 ```
 
 You should see output showing the version number.
@@ -81,4 +81,4 @@ conda install -c conda-forge rdkit
 
 ## Next Steps
 
-Once installed, proceed to the [Quick Start Guide](quickstart.md) to begin using Boltz-Lab.
+Once installed, proceed to the [Quick Start Guide](quickstart.md) to begin using COFOLDER.

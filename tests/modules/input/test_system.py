@@ -1,8 +1,8 @@
-"""Tests for boltz_lab.modules.input.system module."""
+"""Tests for cofolder.modules.input.system module."""
 import pytest
 import yaml
 
-from boltz_lab.modules.input.system import System
+from cofolder.modules.input.system import System
 
 
 class TestSystemInit:
