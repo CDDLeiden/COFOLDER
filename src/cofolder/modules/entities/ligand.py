@@ -116,10 +116,11 @@ def handle_conformers(
         resname = str(resname)[:5]
 
         # CCD conversion
-        boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz/'
+        boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz'
+        boltz_path = Path(boltz_cache).expanduser()
         try:
-            ligand.mol_to_ccd(resname, mol, boltz_path=boltz_cache)
-            logger.info("Saved CCD for %s to %s/mols/", resname, boltz_cache)
+            ligand.mol_to_ccd(resname, mol, boltz_path=boltz_path)
+            logger.info("Saved CCD for %s to %s/mols/", resname, boltz_path)
         except Exception as e:
             logger.error("Failed to convert molecule '%s' to CCD: %s", resname, e)
 
