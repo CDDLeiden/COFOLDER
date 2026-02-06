@@ -13,6 +13,8 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 # Project-specific / external tools
+from Bio.PDB import MMCIFParser
+from Bio.PDB.SASA import ShrakeRupley
 import MDAnalysis as mda
 import prolif as plf
 from pdb2pqr.main import run_pdb2pqr
@@ -63,6 +65,140 @@ class Structure:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+        
+    def add_sasa(
+        self,
+        *,
+        absolute: bool = False,
+        normalized: bool = False,
+        heavy_atoms_only: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Add solvent-accessible surface area (SASA) metrics per chain.
+
+        Parameters
+        ----------
+        absolute : bool
+            If True, compute absolute SASA.
+        normalized : bool
+            If True, compute normalized SASA.
+        heavy_atoms_only : bool
+            If True, normalize by heavy atoms only.
+            Ignored if normalized=False.
+        """
+
+        if not absolute and not normalized:
+            logger.debug("No SASA metrics requested; skipping.")
+            return self.chain_df
+
+        logger.info(
+            "Starting SASA calculation | absolute=%s | normalized=%s",
+            absolute,
+            normalized,
+        )
+
+        if absolute and "sasa" not in self.chain_df.columns:
+            self.chain_df["sasa"] = None
+
+        if normalized and "sasa_norm_heavy" not in self.chain_df.columns:
+            self.chain_df["sasa_norm_heavy"] = None
+
+        parser = MMCIFParser(QUIET=True)
+        sr = ShrakeRupley()
+
+        for idx, row in self.chain_df.iterrows():
+            cif_path = self.cif_folder / row[self.cif_file_col]
+            chain_id = str(row[self.chain_id_col])
+
+
+            if not cif_path.exists():
+                logger.warning("Missing CIF file: %s", cif_path)
+                continue
+
+            try:
+                structure = parser.get_structure("struct", str(cif_path))
+                sr.compute(structure, level="A")
+
+                model = structure[0]
+                if chain_id not in model:
+                    logger.warning(
+                        "Chain %s not found in CIF %s",
+                        chain_id,
+                        cif_path.name,
+                    )
+                    continue
+
+                chain = model[chain_id]
+
+
+
+
+
+                total_sasa = 0.0
+                atom_count = 0
+
+
+
+
+                for residue in chain:
+                    for atom in residue:
+                        if not hasattr(atom, "sasa"):
+                            continue
+
+
+
+                        total_sasa += atom.sasa
+
+
+                        if normalized:
+                            if heavy_atoms_only:
+                                if atom.element != "H":
+                                    atom_count += 1
+                            else:
+                                atom_count += 1
+
+                if absolute:
+                    self.chain_df.at[idx, "sasa"] = float(round(total_sasa, 3))
+
+
+
+
+
+                if normalized:
+                    if atom_count == 0:
+                        logger.warning(
+                            "Normalized SASA requested but atom count is zero | "
+                            "CIF=%s | chain=%s",
+                            cif_path.name,
+                            chain_id,
+                        )
+                        self.chain_df.at[idx, "sasa_norm_heavy"] = None
+                    else:
+                        value = total_sasa / atom_count
+                        self.chain_df.at[idx, "sasa_norm_heavy"] = float(round(value, 5))
+
+            except Exception:
+                logger.exception(
+                    "SASA calculation failed | CIF=%s | chain=%s",
+                    cif_path.name,
+                    chain_id,
+                )
+
+                if absolute:
+                    self.chain_df.at[idx, "sasa"] = None
+                if normalized:
+                    self.chain_df.at[idx, "sasa_norm_heavy"] = None
+
+
+
+        logger.info(
+            "Completed SASA calculation | absolute=%s | normalized=%s",
+            absolute,
+            normalized,
+        )
+
+        return self.chain_df
+    
     def add_ifp_distance(
         self,
         cutoff: float = 5.0,
