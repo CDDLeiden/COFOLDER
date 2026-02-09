@@ -81,6 +81,14 @@ class BaseRecipe:
         )
 
         parser.add_argument(
+            '--assess_robustness',
+            dest='assess_robustness',
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help='Assess robustness across repeats and diffusion samples (default: True).'
+        )
+
+        parser.add_argument(
             '--conformers',
             choices=['2D', '3D', 'sdf'],
             default=None,
@@ -125,6 +133,7 @@ class BaseRecipe:
             repeats=args.repeats,
             seed=args.seed,
             scoring_functions=args.scoring_functions,
+            assess_robustness=args.assess_robustness,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
         )

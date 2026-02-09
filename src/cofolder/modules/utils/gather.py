@@ -1,8 +1,8 @@
 import shutil
 from pathlib import Path
-from typing import Tuple
 import logging
 import pandas as pd
+import numpy as np
 
 from cofolder.modules.utils import read, write
 from cofolder.modules.analytics import stats, structure
@@ -147,7 +147,8 @@ def initialize_results(
 
 def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
     """
-    Populate CHAIN_ID and ENTITY_TYPE in chain_df based on system sequences.
+    Populate CHAIN_ID, ENTITY_TYPE, and ligand_molecule_id in chain_df
+    based on system sequences.
 
     Mapping is done by POSITION:
     conf_chain_id (0,1,2,...) → ordered system chain IDs.
@@ -159,10 +160,11 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
         return chain_df
 
     # --------------------------------------------------
-    # Build ordered chain list from system
+    # Build ordered chain list and metadata from system
     # --------------------------------------------------
     ordered_chain_ids: list[str] = []
     chain_to_entity: dict[str, str] = {}
+    chain_to_molecule_id: dict[str, str] = {}
 
     for seq_entry in sequences:
         if not isinstance(seq_entry, dict):
@@ -178,16 +180,34 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
         if not isinstance(chain_ids, list):
             chain_ids = [chain_ids]
 
+        # ----------------------------------------------
+        # Resolve molecule identifier
+        # ----------------------------------------------
+        if entity_type == "ligand":
+            molecule_id = (
+                entity_data.get("ccd")
+                or entity_data.get("smiles")
+                or "UNKNOWN_LIGAND"
+            )
+        else:
+            molecule_id = None  # handled per-chain below
+
         for cid in chain_ids:
             cid = str(cid)
             ordered_chain_ids.append(cid)
             chain_to_entity[cid] = entity_type
 
+            if entity_type == "ligand":
+                chain_to_molecule_id[cid] = molecule_id
+            else:
+                chain_to_molecule_id[cid] = f"{entity_type}_{cid}"
+
     # --------------------------------------------------
-    # Assign CHAIN_ID + ENTITY_TYPE by conf_chain_id
+    # Assign CHAIN_ID, ENTITY_TYPE, ligand_molecule_id
     # --------------------------------------------------
     chain_df["CHAIN_ID"] = None
     chain_df["ENTITY_TYPE"] = None
+    chain_df["ligand_molecule_id"] = None
 
     for idx, row in chain_df.iterrows():
         conf_id = int(row["conf_chain_id"])
@@ -201,24 +221,26 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
             continue
 
         chain_id = ordered_chain_ids[conf_id]
+        entity_type = chain_to_entity[chain_id]
+
         chain_df.at[idx, "CHAIN_ID"] = chain_id
-        chain_df.at[idx, "ENTITY_TYPE"] = chain_to_entity[chain_id]
+        chain_df.at[idx, "ENTITY_TYPE"] = entity_type
+        chain_df.at[idx, "ligand_molecule_id"] = chain_to_molecule_id[chain_id]
 
     # --------------------------------------------------
-    # Reorder columns: CHAIN_ID, ENTITY_TYPE together
+    # Reorder columns
     # --------------------------------------------------
     cols = chain_df.columns.tolist()
-    for col in ("CHAIN_ID", "ENTITY_TYPE"):
+    for col in ("CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"):
         if col in cols:
             cols.remove(col)
 
     insert_at = cols.index("conf_chain_id")
-    cols.insert(insert_at, "CHAIN_ID")
-    cols.insert(insert_at + 1, "ENTITY_TYPE")
+    cols.insert(insert_at + 1, "CHAIN_ID")
+    cols.insert(insert_at + 2, "ENTITY_TYPE")
+    cols.insert(insert_at + 3, "ligand_molecule_id")
 
-    chain_df = chain_df[cols]
-
-    return chain_df
+    return chain_df[cols]
 
 def gather_confidence_metrics(
     raw_dir: Path,
@@ -447,3 +469,393 @@ def gather_affinity_metrics(
             )
 
     return chain_df
+
+def assess_numeric_variance(
+    values: list[float],
+    prefix: str,
+) -> dict[str, float | None]:
+    """
+    Assess robustness of numeric values across repeats / diffusion samples.
+
+    Parameters
+    ----------
+    values : list[float]
+        Numeric values across runs (NaN/None allowed).
+    prefix : str
+        Prefix for output metric names.
+
+    Returns
+    -------
+    dict
+        Robustness statistics (mean, std).
+    """
+    s = pd.Series(values, dtype="float64").dropna()
+
+    # No data
+    if len(s) == 0:
+        return {
+            f"{prefix}_mean": None,
+            f"{prefix}_std": None,
+        }
+
+    # Single value → no variance
+    if len(s) == 1:
+        val = float(s.iloc[0])
+        return {
+            f"{prefix}_mean": val,
+            f"{prefix}_std": 0.0,
+        }
+
+    mean = float(s.mean())
+    std = float(s.std(ddof=1))
+    var = std ** 2
+
+    return {
+        f"{prefix}_mean": mean,
+        f"{prefix}_std": std,
+    }
+
+def assess_bitstring_similarity(
+    bitstrings: list,
+    prefix: str,
+) -> dict[str, float | None]:
+    """
+    Assess robustness of binary fingerprints (e.g. IFPs) across runs
+    using pairwise Tanimoto similarity.
+
+    Parameters
+    ----------
+    bitstrings : list
+        One fingerprint per run.
+    prefix : str
+        Prefix for output metric names.
+
+    Returns
+    -------
+    dict
+        Mean, std, min, max pairwise similarity.
+    """
+
+    def to_set(x):
+        if x is None:
+            return None
+        if isinstance(x, set):
+            return x
+        if isinstance(x, str):
+            return {i for i, v in enumerate(x) if v == "1"}
+        # assume iterable of bool/int
+        return {i for i, v in enumerate(x) if bool(v)}
+
+    sets = [to_set(x) for x in bitstrings if x is not None]
+
+    if len(sets) < 2:
+        return {
+            f"{prefix}_mean": None,
+            f"{prefix}_std": None,
+        }
+
+    sims = []
+
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            a, b = sets[i], sets[j]
+
+            # both empty → identical
+            if not a and not b:
+                sims.append(1.0)
+            else:
+                sims.append(len(a & b) / len(a | b))
+
+    s = pd.Series(sims, dtype="float64")
+
+    return {
+        f"{prefix}_mean": float(s.mean()),
+        f"{prefix}_std": float(s.std(ddof=1)),
+    }
+
+def assess_rmsd_robustness_placeholder(
+    wrk_dir,
+    entity_type: str,
+    entity_id: str,
+) -> dict[str, float | None]:
+    """
+    Placeholder for RMSD robustness assessment across runs.
+
+    Parameters
+    ----------
+    wrk_dir : Path
+        Working directory containing CIF files.
+    entity_type : str
+        'system', 'protein', or 'ligand'
+    entity_id : str
+        Chain ID or 'system'
+
+    Returns
+    -------
+    dict
+        RMSD robustness metrics (currently empty).
+    """
+    # TODO:
+    # - collect CIFs across repeats / diffusion samples
+    # - align structures
+    # - compute pairwise RMSDs
+    # - feed RMSDs into assess_numeric_variance
+    return {
+        "rmsd_mean": None,
+        "rmsd_std": None,
+    }
+
+def gather_robustness_results(
+    system_df: pd.DataFrame,
+    chain_df: pd.DataFrame,
+    wrk_dir,
+) -> pd.DataFrame:
+    """
+    Aggregate robustness metrics across repeats and diffusion samples.
+
+    Robustness is computed for *all calculated metrics* present in the
+    system_df and chain_df, excluding metadata columns.
+
+    Ligands are aggregated by ligand_molecule_id.
+    Polymers (protein / RNA / DNA) are aggregated per chain.
+    """
+
+    rows: list[dict] = []
+
+    logger.debug(
+        "[ROBUSTNESS] Starting robustness aggregation "
+        "(system_df columns=%d, chain_df columns=%d)",
+        len(system_df.columns),
+        len(chain_df.columns),
+    )
+
+    # ==============================================================
+    # SYSTEM-LEVEL ROBUSTNESS
+    # ==============================================================
+    system_row = {
+        "ENTITY_TYPE": "system",
+        "ENTITY_ID": "system",
+    }
+
+    for col in system_df.columns:
+        logger.debug("[ROBUSTNESS][SYSTEM] Evaluating column '%s'", col)
+
+        if is_metadata_column(col):
+            continue
+
+        series = system_df[col]
+
+        if is_numeric_metric(series):
+            logger.debug(
+                "[ROBUSTNESS][SYSTEM] Numeric variance assessment for '%s'",
+                col,
+            )
+            stats = assess_numeric_variance(
+                series.tolist(),
+                prefix=col,
+            )
+            system_row.update(stats)
+        else:
+            logger.debug(
+                "[ROBUSTNESS][SYSTEM] Column '%s' skipped (non-numeric)",
+                col,
+            )
+
+    # RMSD placeholder (system)
+    system_row.update(
+        assess_rmsd_robustness_placeholder(
+            wrk_dir=wrk_dir,
+            entity_type="system",
+            entity_id="system",
+        )
+    )
+
+    rows.append(system_row)
+
+    # ==============================================================
+    # CHAIN-LEVEL ROBUSTNESS
+    # ==============================================================
+    ligand_df = chain_df[chain_df["ENTITY_TYPE"] == "ligand"]
+    non_ligand_df = chain_df[chain_df["ENTITY_TYPE"] != "ligand"]
+
+    # --------------------------------------------------------------
+    # NON-LIGAND CHAINS (protein / RNA / DNA)
+    # --------------------------------------------------------------
+    for (chain_id, entity_type), group in non_ligand_df.groupby(
+        ["CHAIN_ID", "ENTITY_TYPE"]
+    ):
+        logger.debug(
+            "[ROBUSTNESS][CHAIN] Processing chain '%s' (%s)",
+            chain_id,
+            entity_type,
+        )
+
+        chain_row = {
+            "ENTITY_TYPE": entity_type,
+            "ENTITY_ID": chain_id,
+        }
+
+        for col in group.columns:
+            logger.debug(
+                "[ROBUSTNESS][CHAIN %s] Evaluating column '%s'",
+                chain_id,
+                col,
+            )
+
+            if is_metadata_column(col):
+                continue
+
+            series = group[col]
+
+            if is_numeric_metric(series):
+                stats = assess_numeric_variance(
+                    series.tolist(),
+                    prefix=col,
+                )
+                chain_row.update(stats)
+
+            elif is_ifp_metric(col):
+                stats = assess_bitstring_similarity(
+                    series.tolist(),
+                    prefix=col,
+                )
+                chain_row.update(stats)
+
+        # RMSD placeholder (chain)
+        chain_row.update(
+            assess_rmsd_robustness_placeholder(
+                wrk_dir=wrk_dir,
+                entity_type=entity_type,
+                entity_id=chain_id,
+            )
+        )
+
+        rows.append(chain_row)
+
+    # --------------------------------------------------------------
+    # LIGANDS — AGGREGATE BY ligand_molecule_id
+    # --------------------------------------------------------------
+    for ligand_molecule_id, group in ligand_df.groupby("ligand_molecule_id"):
+        logger.debug(
+            "[ROBUSTNESS][LIGAND] Processing molecule '%s'",
+            ligand_molecule_id,
+        )
+
+        ligand_row = {
+            "ENTITY_TYPE": "ligand",
+            "ENTITY_ID": ligand_molecule_id,
+        }
+
+        for col in group.columns:
+            logger.debug(
+                "[ROBUSTNESS][LIGAND %s] Evaluating column '%s'",
+                ligand_molecule_id,
+                col,
+            )
+
+            if is_metadata_column(col):
+                continue
+
+            series = group[col]
+
+            if is_numeric_metric(series):
+                stats = assess_numeric_variance(
+                    series.tolist(),
+                    prefix=col,
+                )
+                ligand_row.update(stats)
+
+            elif is_ifp_metric(col):
+                stats = assess_bitstring_similarity(
+                    series.tolist(),
+                    prefix=col,
+                )
+                ligand_row.update(stats)
+
+        # RMSD placeholder (ligand molecule)
+        ligand_row.update(
+            assess_rmsd_robustness_placeholder(
+                wrk_dir=wrk_dir,
+                entity_type="ligand",
+                entity_id=ligand_molecule_id,
+            )
+        )
+
+        rows.append(ligand_row)
+
+    results_df = pd.DataFrame(rows)
+
+    logger.debug(
+        "[ROBUSTNESS] Finished robustness aggregation "
+        "(rows=%d, columns=%d)",
+        results_df.shape[0],
+        results_df.shape[1],
+    )
+
+    return results_df
+
+def is_metadata_column(column_name: str) -> bool:
+    """
+    Columns that should never be treated as metrics.
+    """
+    metadata_cols = {
+        "idx",
+        "model_name",
+        "repeat",
+        "diffusion_sample",
+        "cif_file",
+        "CHAIN_ID",
+        "ENTITY_TYPE",
+        "conf_chain_id",
+    }
+
+    result = column_name in metadata_cols
+
+    if result:
+        logger.debug(
+            "[ROBUSTNESS] Skipping metadata column '%s'",
+            column_name,
+        )
+
+    return result
+
+def is_numeric_metric(series: pd.Series) -> bool:
+    """
+    Determine whether a Series represents numeric values, even if stored as strings.
+
+    A series is considered numeric if at least one non-null value can be
+    safely converted to float, and all non-null values are convertible.
+    """
+    if series.empty:
+        return False
+
+    # Drop NaNs and empty strings
+    s = series.dropna()
+    s = s[s.astype(str).str.strip() != ""]
+
+    if len(s) == 0:
+        return False
+
+    try:
+        # Try vectorized conversion
+        converted = pd.to_numeric(s, errors="raise")
+    except Exception:
+        return False
+
+    # At least one real numeric value must exist
+    return np.isfinite(converted).any()
+
+def is_ifp_metric(column_name: str) -> bool:
+    """
+    Determine whether a column represents a binary interaction fingerprint.
+    """
+    name = column_name.lower()
+    result = name.startswith("ifp") or "fingerprint" in name
+
+    logger.debug(
+        "[ROBUSTNESS] Metric '%s' classified as IFP: %s",
+        column_name,
+        result,
+    )
+
+    return result

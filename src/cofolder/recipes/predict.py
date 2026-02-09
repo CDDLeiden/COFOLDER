@@ -50,6 +50,7 @@ class Predict(object):
         repeats: int = 1,
         seed: int | None = None,
         scoring_functions: list[str] | None = None,
+        assess_robustness: bool = True,
         conformers: str | None = None,
         sdf_file: str | None = None
     ):
@@ -59,6 +60,7 @@ class Predict(object):
         self.repeats = repeats
         self.seed = seed
         self.scoring_functions = scoring_functions
+        self.assess_robustness = assess_robustness
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
 
@@ -226,3 +228,14 @@ class Predict(object):
 
         write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
         write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
+
+        if self.assess_robustness and \
+            (self.repeats > 1 or \
+             self.opt.find_value("diffusion_samples", 1) > 1):
+            results_df = gather.gather_robustness_results(
+                system_df=system_df,
+                chain_df=chain_df,
+                wrk_dir=self.wrk_dir,
+            )
+
+            write.write_csv(results_df, output_path=self.wrk_dir / "results" / "robustness_metrics.csv")
