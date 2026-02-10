@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 from cofolder.modules.utils import read, write
-from cofolder.modules.analytics import stats, structure
+from cofolder.modules.analytics import stats, structure, align
 
 logger = logging.getLogger(__name__)
 
@@ -613,11 +613,9 @@ def gather_robustness_results(
     """
     Aggregate robustness metrics across repeats and diffusion samples.
 
-    Robustness is computed for *all calculated metrics* present in the
-    system_df and chain_df, excluding metadata columns.
-
-    Ligands are aggregated by ligand_molecule_id.
-    Polymers (protein / RNA / DNA) are aggregated per chain.
+    Adds structural robustness:
+        - polymer chain RMSD (aligned on protein CA)
+        - ligand pose RMSD (after global alignment)
     """
 
     rows: list[dict] = []
@@ -630,6 +628,23 @@ def gather_robustness_results(
     )
 
     # ==============================================================
+    # STRUCTURAL ALIGNMENT + RMSD PRECOMPUTE
+    # ==============================================================
+
+    cif_folder = Path(wrk_dir) / "results" / "structures"
+    aligned_folder = Path(wrk_dir) / "results" / "structures_aligned"
+
+    unique_cifs = chain_df["cif_file"].unique()
+    cif_paths = [cif_folder / f for f in unique_cifs]
+
+    structures = align._load_structures(cif_paths)
+    aligned_structs, ref_struct, ref_name = align._align_structures_on_protein_ca(structures, save_dir=aligned_folder)
+
+    chain_rmsd_map = align._compute_chain_rmsd(chain_df, aligned_structs, ref_struct, ref_name)
+    ligand_rmsd_map = align._compute_ligand_rmsd(chain_df, aligned_structs, ref_struct, ref_name)
+
+
+    # ==============================================================
     # SYSTEM-LEVEL ROBUSTNESS
     # ==============================================================
     system_row = {
@@ -638,57 +653,24 @@ def gather_robustness_results(
     }
 
     for col in system_df.columns:
-        logger.debug("[ROBUSTNESS][SYSTEM] Evaluating column '%s'", col)
-
         if is_metadata_column(col):
             continue
 
         series = system_df[col]
 
         if is_numeric_metric(series):
-            logger.debug(
-                "[ROBUSTNESS][SYSTEM] Numeric variance assessment for '%s'",
-                col,
-            )
-            stats = assess_numeric_variance(
-                series.tolist(),
-                prefix=col,
-            )
+            stats = assess_numeric_variance(series.tolist(), prefix=col)
             system_row.update(stats)
-        else:
-            logger.debug(
-                "[ROBUSTNESS][SYSTEM] Column '%s' skipped (non-numeric)",
-                col,
-            )
-
-    # RMSD placeholder (system)
-    system_row.update(
-        assess_rmsd_robustness_placeholder(
-            wrk_dir=wrk_dir,
-            entity_type="system",
-            entity_id="system",
-        )
-    )
 
     rows.append(system_row)
 
     # ==============================================================
-    # CHAIN-LEVEL ROBUSTNESS
+    # CHAIN-LEVEL ROBUSTNESS (POLYMERS)
     # ==============================================================
-    ligand_df = chain_df[chain_df["ENTITY_TYPE"] == "ligand"]
+
     non_ligand_df = chain_df[chain_df["ENTITY_TYPE"] != "ligand"]
 
-    # --------------------------------------------------------------
-    # NON-LIGAND CHAINS (protein / RNA / DNA)
-    # --------------------------------------------------------------
-    for (chain_id, entity_type), group in non_ligand_df.groupby(
-        ["CHAIN_ID", "ENTITY_TYPE"]
-    ):
-        logger.debug(
-            "[ROBUSTNESS][CHAIN] Processing chain '%s' (%s)",
-            chain_id,
-            entity_type,
-        )
+    for (chain_id, entity_type), group in non_ligand_df.groupby(["CHAIN_ID", "ENTITY_TYPE"]):
 
         chain_row = {
             "ENTITY_TYPE": entity_type,
@@ -696,50 +678,34 @@ def gather_robustness_results(
         }
 
         for col in group.columns:
-            logger.debug(
-                "[ROBUSTNESS][CHAIN %s] Evaluating column '%s'",
-                chain_id,
-                col,
-            )
-
             if is_metadata_column(col):
                 continue
 
             series = group[col]
 
             if is_numeric_metric(series):
-                stats = assess_numeric_variance(
-                    series.tolist(),
-                    prefix=col,
-                )
+                stats = assess_numeric_variance(series.tolist(), prefix=col)
                 chain_row.update(stats)
 
             elif is_ifp_metric(col):
-                stats = assess_bitstring_similarity(
-                    series.tolist(),
-                    prefix=col,
-                )
+                stats = assess_bitstring_similarity(series.tolist(), prefix=col)
                 chain_row.update(stats)
 
-        # RMSD placeholder (chain)
-        chain_row.update(
-            assess_rmsd_robustness_placeholder(
-                wrk_dir=wrk_dir,
-                entity_type=entity_type,
-                entity_id=chain_id,
-            )
-        )
+        # --- structural RMSD metric ---
+        rmsd_vals = chain_rmsd_map.get((chain_id, entity_type))
+        if rmsd_vals:
+            stats = assess_numeric_variance(rmsd_vals, prefix="struct_rmsd")
+            chain_row.update(stats)
 
         rows.append(chain_row)
 
     # --------------------------------------------------------------
     # LIGANDS — AGGREGATE BY ligand_molecule_id
     # --------------------------------------------------------------
+
+    ligand_df = chain_df[chain_df["ENTITY_TYPE"] == "ligand"]
+
     for ligand_molecule_id, group in ligand_df.groupby("ligand_molecule_id"):
-        logger.debug(
-            "[ROBUSTNESS][LIGAND] Processing molecule '%s'",
-            ligand_molecule_id,
-        )
 
         ligand_row = {
             "ENTITY_TYPE": "ligand",
@@ -747,39 +713,24 @@ def gather_robustness_results(
         }
 
         for col in group.columns:
-            logger.debug(
-                "[ROBUSTNESS][LIGAND %s] Evaluating column '%s'",
-                ligand_molecule_id,
-                col,
-            )
-
             if is_metadata_column(col):
                 continue
 
             series = group[col]
 
             if is_numeric_metric(series):
-                stats = assess_numeric_variance(
-                    series.tolist(),
-                    prefix=col,
-                )
+                stats = assess_numeric_variance(series.tolist(), prefix=col)
                 ligand_row.update(stats)
 
             elif is_ifp_metric(col):
-                stats = assess_bitstring_similarity(
-                    series.tolist(),
-                    prefix=col,
-                )
+                stats = assess_bitstring_similarity(series.tolist(), prefix=col)
                 ligand_row.update(stats)
 
-        # RMSD placeholder (ligand molecule)
-        ligand_row.update(
-            assess_rmsd_robustness_placeholder(
-                wrk_dir=wrk_dir,
-                entity_type="ligand",
-                entity_id=ligand_molecule_id,
-            )
-        )
+        # --- structural RMSD metric ---
+        rmsd_vals = ligand_rmsd_map.get(ligand_molecule_id)
+        if rmsd_vals:
+            stats = assess_numeric_variance(rmsd_vals, prefix="struct_rmsd")
+            ligand_row.update(stats)
 
         rows.append(ligand_row)
 
