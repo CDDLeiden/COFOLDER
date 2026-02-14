@@ -10,6 +10,15 @@ from cofolder.modules.analytics.structure import Structure
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SCORING_FUNCTIONS = {
+    "boltz_confidence_metrics",
+    "boltz_affinity_metrics",
+    "boltz_affinity_metrics_ext",
+    "ifp_distance",
+    "sasa",
+    "sasa_normalized",
+}
+
 class Validate(object):
     """High-level orchestrator for validation workflow.
 
@@ -76,8 +85,12 @@ class Validate(object):
             "sdf_file": self.sdf_file
         })
 
-        # Define available scoring functions
-        self.scoring_functions = set(scoring_functions)
+        # Allow direct class usage without explicitly passing scoring functions.
+        self.scoring_functions = (
+            set(scoring_functions)
+            if scoring_functions is not None
+            else set(DEFAULT_SCORING_FUNCTIONS)
+        )
 
         self.logger.debug(
             "Enabled scoring functions: %s",
