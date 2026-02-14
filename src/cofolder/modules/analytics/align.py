@@ -109,77 +109,118 @@ def _rmsd(coords_a, coords_b):
 # RMSD COMPUTATION
 # ==============================================================
 
-def _compute_chain_rmsd(chain_df, aligned_structs, ref_struct, ref_name):
+def _compute_chain_rmsd(chain_df, aligned_structs, wrk_dir):
     """
     Returns:
         dict[(CHAIN_ID, ENTITY_TYPE)] -> list[RMSD]
+
+    Computes all-against-all RMSD for each chain.
+    Saves full NxN RMSD matrices to Path(wrk_dir)/results/matrices/rmsd_matrix_{CHAINID}.csv
     """
     rmsd_map = defaultdict(list)
+    matrices_dir = Path(wrk_dir) / "results" / "matrices"
+    matrices_dir.mkdir(parents=True, exist_ok=True)
 
     non_ligand_df = chain_df[chain_df["ENTITY_TYPE"] != "ligand"]
 
     for (chain_id, entity_type), group in non_ligand_df.groupby(["CHAIN_ID", "ENTITY_TYPE"]):
-        ref_atoms = _collect_chain_atoms(ref_struct, chain_id)
-        if not ref_atoms:
+        # Collect all poses and their coordinates
+        pose_names = []
+        coords_list = []
+
+        for idx, row in group.iterrows():
+            cif_name = row["cif_file"]
+            struct = aligned_structs.get(cif_name)
+            if struct is None:
+                continue
+
+            atoms = _collect_chain_atoms(struct, chain_id)
+            if not atoms:
+                continue
+
+            pose_names.append(cif_name)
+            coords_list.append(np.array([a.coord for a in atoms]))
+
+        n = len(coords_list)
+        if n < 2:
             continue
 
-        ref_coords = np.array([a.coord for a in ref_atoms])
+        # Compute NxN RMSD matrix
+        mat = np.zeros((n, n), dtype=float)
+        for i in range(n):
+            for j in range(i, n):
+                a = coords_list[i]
+                b = coords_list[j]
+                m = min(len(a), len(b))
+                val = _rmsd(a[:m], b[:m])
+                mat[i, j] = val
+                mat[j, i] = val
 
-        for cif_name, struct in aligned_structs.items():
-            if cif_name == ref_name:
-                continue
+        # --- save full NxN RMSD matrix ---
+        df = pd.DataFrame(mat, index=pose_names, columns=pose_names)
+        df.to_csv(matrices_dir / f"rmsd_matrix_chain_{entity_type}_{chain_id}.csv")
 
-            mob_atoms = _collect_chain_atoms(struct, chain_id)
-            if not mob_atoms:
-                continue
-
-            n = min(len(ref_coords), len(mob_atoms))
-            mob_coords = np.array([a.coord for a in mob_atoms[:n]])
-
-            val = _rmsd(ref_coords[:n], mob_coords)
-            rmsd_map[(chain_id, entity_type)].append(val)
+        # Flatten off-diagonal values to list for existing pipeline
+        off_diag = mat[np.triu_indices(n, k=1)]
+        rmsd_map[(chain_id, entity_type)] = off_diag.tolist()
 
     return rmsd_map
 
 
-def _compute_ligand_rmsd(chain_df, aligned_structs, ref_struct, ref_name):
+def _compute_ligand_rmsd(chain_df, aligned_structs, wrk_dir):
     """
     Returns:
         dict[ligand_molecule_id] -> list[RMSD]
+
+    Computes all-against-all RMSD for each ligand.
+    Saves full NxN RMSD matrices to Path(wrk_dir)/results/matrices/rmsd_matrix_{ligand_id}.csv
     """
     rmsd_map = defaultdict(list)
+    matrices_dir = Path(wrk_dir) / "results" / "matrices"
+    matrices_dir.mkdir(parents=True, exist_ok=True)
+
     ligand_df = chain_df[chain_df["ENTITY_TYPE"] == "ligand"]
 
     for ligand_id, group in ligand_df.groupby("ligand_molecule_id"):
-        # determine reference chain_id for this ligand
-        ref_row = group[group["cif_file"] == ref_name]
-        if ref_row.empty:
-            ref_row = group.iloc[[0]]
+        # Collect all poses and their coordinates
+        pose_names = []
+        coords_list = []
 
-        ref_chain_id = ref_row.iloc[0]["CHAIN_ID"]
-        ref_atoms = _collect_chain_atoms(ref_struct, ref_chain_id)
-        if not ref_atoms:
+        for idx, row in group.iterrows():
+            cif_name = row["cif_file"]
+            chain_id = row["CHAIN_ID"]
+            struct = aligned_structs.get(cif_name)
+            if struct is None:
+                continue
+
+            atoms = _collect_chain_atoms(struct, chain_id)
+            if not atoms:
+                continue
+
+            pose_names.append(cif_name)
+            coords_list.append(np.array([a.coord for a in atoms]))
+
+        n = len(coords_list)
+        if n < 2:
             continue
 
-        ref_coords = np.array([a.coord for a in ref_atoms])
+        # Compute NxN RMSD matrix
+        mat = np.zeros((n, n), dtype=float)
+        for i in range(n):
+            for j in range(i, n):
+                a = coords_list[i]
+                b = coords_list[j]
+                m = min(len(a), len(b))
+                val = _rmsd(a[:m], b[:m])
+                mat[i, j] = val
+                mat[j, i] = val
 
-        for cif_name, struct in aligned_structs.items():
-            if cif_name == ref_name:
-                continue
+        # --- save full NxN RMSD matrix ---
+        df = pd.DataFrame(mat, index=pose_names, columns=pose_names)
+        df.to_csv(matrices_dir / f"rmsd_matrix_ligand_{ligand_id}.csv")
 
-            row = group[group["cif_file"] == cif_name]
-            if row.empty:
-                continue
-
-            chain_id = row.iloc[0]["CHAIN_ID"]
-            mob_atoms = _collect_chain_atoms(struct, chain_id)
-            if not mob_atoms:
-                continue
-
-            n = min(len(ref_coords), len(mob_atoms))
-            mob_coords = np.array([a.coord for a in mob_atoms[:n]])
-
-            val = _rmsd(ref_coords[:n], mob_coords)
-            rmsd_map[ligand_id].append(val)
+        # Flatten off-diagonal values to list for existing pipeline
+        off_diag = mat[np.triu_indices(n, k=1)]
+        rmsd_map[ligand_id] = off_diag.tolist()
 
     return rmsd_map

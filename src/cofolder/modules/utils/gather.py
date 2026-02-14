@@ -518,10 +518,15 @@ def assess_numeric_variance(
 def assess_bitstring_similarity(
     bitstrings: list,
     prefix: str,
+    id: str,
+    wrk_dir: Path | str,
 ) -> dict[str, float | None]:
     """
     Assess robustness of binary fingerprints (e.g. IFPs) across runs
     using pairwise Tanimoto similarity.
+
+    Saves a full NxN similarity matrix to
+    Path(wrk_dir)/results/matrices/similarity_matrix_{prefix}.csv
 
     Parameters
     ----------
@@ -529,16 +534,18 @@ def assess_bitstring_similarity(
         One fingerprint per run.
     prefix : str
         Prefix for output metric names.
+    wrk_dir : Path or str
+        Root working directory to save the matrix.
 
     Returns
     -------
     dict
-        Mean, std, min, max pairwise similarity.
+        Mean and std of pairwise similarities (flattened off-diagonal).
     """
 
     def to_set(x):
         if x is None:
-            return None
+            return set()
         if isinstance(x, set):
             return x
         if isinstance(x, str):
@@ -546,63 +553,41 @@ def assess_bitstring_similarity(
         # assume iterable of bool/int
         return {i for i, v in enumerate(x) if bool(v)}
 
-    sets = [to_set(x) for x in bitstrings if x is not None]
+    sets = [to_set(x) for x in bitstrings]
 
-    if len(sets) < 2:
+    n = len(sets)
+    if n < 2:
         return {
             f"{prefix}_mean": None,
             f"{prefix}_std": None,
         }
 
-    sims = []
-
-    for i in range(len(sets)):
-        for j in range(i + 1, len(sets)):
+    # Compute NxN similarity matrix
+    mat = np.zeros((n, n), dtype=float)
+    for i in range(n):
+        for j in range(i, n):
             a, b = sets[i], sets[j]
 
             # both empty → identical
             if not a and not b:
-                sims.append(1.0)
+                val = 1.0
             else:
-                sims.append(len(a & b) / len(a | b))
+                val = len(a & b) / len(a | b)
+            mat[i, j] = val
+            mat[j, i] = val
 
-    s = pd.Series(sims, dtype="float64")
+    # --- save full NxN similarity matrix ---
+    matrices_dir = Path(wrk_dir) / "results" / "matrices"
+    matrices_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(mat, index=[f"run_{i}" for i in range(n)],
+                      columns=[f"run_{i}" for i in range(n)])
+    df.to_csv(matrices_dir / f"similarity_matrix_{prefix}_{id}.csv")
 
+    # Flatten off-diagonal for summary statistics
+    off_diag = mat[np.triu_indices(n, k=1)]
     return {
-        f"{prefix}_mean": float(s.mean()),
-        f"{prefix}_std": float(s.std(ddof=1)),
-    }
-
-def assess_rmsd_robustness_placeholder(
-    wrk_dir,
-    entity_type: str,
-    entity_id: str,
-) -> dict[str, float | None]:
-    """
-    Placeholder for RMSD robustness assessment across runs.
-
-    Parameters
-    ----------
-    wrk_dir : Path
-        Working directory containing CIF files.
-    entity_type : str
-        'system', 'protein', or 'ligand'
-    entity_id : str
-        Chain ID or 'system'
-
-    Returns
-    -------
-    dict
-        RMSD robustness metrics (currently empty).
-    """
-    # TODO:
-    # - collect CIFs across repeats / diffusion samples
-    # - align structures
-    # - compute pairwise RMSDs
-    # - feed RMSDs into assess_numeric_variance
-    return {
-        "rmsd_mean": None,
-        "rmsd_std": None,
+        f"{prefix}_mean": float(off_diag.mean()),
+        f"{prefix}_std": float(off_diag.std(ddof=1)),
     }
 
 def gather_robustness_results(
@@ -640,8 +625,8 @@ def gather_robustness_results(
     structures = align._load_structures(cif_paths)
     aligned_structs, ref_struct, ref_name = align._align_structures_on_protein_ca(structures, save_dir=aligned_folder)
 
-    chain_rmsd_map = align._compute_chain_rmsd(chain_df, aligned_structs, ref_struct, ref_name)
-    ligand_rmsd_map = align._compute_ligand_rmsd(chain_df, aligned_structs, ref_struct, ref_name)
+    chain_rmsd_map = align._compute_chain_rmsd(chain_df, aligned_structs, wrk_dir)
+    ligand_rmsd_map = align._compute_ligand_rmsd(chain_df, aligned_structs, wrk_dir)
 
 
     # ==============================================================
@@ -687,10 +672,6 @@ def gather_robustness_results(
                 stats = assess_numeric_variance(series.tolist(), prefix=col)
                 chain_row.update(stats)
 
-            elif is_ifp_metric(col):
-                stats = assess_bitstring_similarity(series.tolist(), prefix=col)
-                chain_row.update(stats)
-
         # --- structural RMSD metric ---
         rmsd_vals = chain_rmsd_map.get((chain_id, entity_type))
         if rmsd_vals:
@@ -722,8 +703,8 @@ def gather_robustness_results(
                 stats = assess_numeric_variance(series.tolist(), prefix=col)
                 ligand_row.update(stats)
 
-            elif is_ifp_metric(col):
-                stats = assess_bitstring_similarity(series.tolist(), prefix=col)
+            elif is_ifp_metric(col, series=series):
+                stats = assess_bitstring_similarity(series.tolist(), prefix=col, id=ligand_molecule_id, wrk_dir=wrk_dir)
                 ligand_row.update(stats)
 
         # --- structural RMSD metric ---
@@ -796,12 +777,19 @@ def is_numeric_metric(series: pd.Series) -> bool:
     # At least one real numeric value must exist
     return np.isfinite(converted).any()
 
-def is_ifp_metric(column_name: str) -> bool:
+def is_ifp_metric(column_name: str, series: pd.Series | None = None) -> bool:
     """
-    Determine whether a column represents a binary interaction fingerprint.
+    Determine whether a column represents a binary interaction fingerprint (IFP).
+
+    Returns True only if the column name suggests an IFP **and** the column has any non-empty values.
     """
     name = column_name.lower()
     result = name.startswith("ifp") or "fingerprint" in name
+
+    # If a series is provided, check it is not all empty/NaN
+    if series is not None and result:
+        if series.dropna().empty:
+            result = False
 
     logger.debug(
         "[ROBUSTNESS] Metric '%s' classified as IFP: %s",

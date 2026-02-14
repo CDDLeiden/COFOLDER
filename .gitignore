@@ -123,6 +123,7 @@ cython_debug/
 
 # Local configuration files
 *.local
+AGENTS.md
 
 # Distribution files
 *.egg-info/
