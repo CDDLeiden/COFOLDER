@@ -58,10 +58,12 @@ class TestValidateRecipe:
         args = validate_parser.parse_args([
             "-s", "system.yaml",
             "-b", "options.yaml",
+            "--reference_path", "reference.pdb",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
+        assert args.reference_path == "reference.pdb"
 
 
 class TestScreenRecipe:

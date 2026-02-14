@@ -198,6 +198,12 @@ class ValidateRecipe(BaseRecipe):
     @staticmethod
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
+        parser.add_argument(
+            '--reference_path',
+            type=str,
+            default=None,
+            help='Path to reference structure (PDB/CIF) used for model reproduction metrics.'
+        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
@@ -206,7 +212,8 @@ class ValidateRecipe(BaseRecipe):
         logger.info("Starting COFOLDER validation pipeline.")
 
         validator = Validate(
-            **BaseRecipe.common_kwargs(args)
+            **BaseRecipe.common_kwargs(args),
+            reference_path=args.reference_path,
         )
 
         validator.run()
@@ -312,4 +319,3 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     args.func(args)
-

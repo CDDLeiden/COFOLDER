@@ -7,6 +7,7 @@ from cofolder.modules.entities import ligand
 from cofolder.modules.runners.boltz_runner import run_boltz
 from cofolder.modules.utils import helpers, gather, read, write
 from cofolder.modules.analytics.structure import Structure
+from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class Validate(object):
         '2D', '3D', or 'sdf' conformer generation.
     sdf_file : str or None
         Path to existing SDF file if conformers='sdf' or save location if conformers='2D' or '3D'.
+    reference_path : str or None
+        Optional path to reference PDB/CIF for model reproduction metrics.
 
     Examples
     --------
@@ -61,7 +64,8 @@ class Validate(object):
         scoring_functions: list[str] | None = None,
         assess_robustness: bool = True,
         conformers: str | None = None,
-        sdf_file: str | None = None
+        sdf_file: str | None = None,
+        reference_path: str | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -72,6 +76,13 @@ class Validate(object):
         self.assess_robustness = assess_robustness
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
+        self.reference_path = Path(reference_path) if reference_path else None
+
+        if self.reference_path is not None:
+            if not self.reference_path.exists():
+                raise ValueError(f"reference_path does not exist: {self.reference_path}")
+            if not self.reference_path.is_file():
+                raise ValueError(f"reference_path is not a file: {self.reference_path}")
 
         # Setup logger
         self.logger = logging.getLogger(__name__)
@@ -82,7 +93,8 @@ class Validate(object):
             "repeats": self.repeats,
             "seed": self.seed,
             "conformers": self.conformers,
-            "sdf_file": self.sdf_file
+            "sdf_file": self.sdf_file,
+            "reference_path": self.reference_path,
         })
 
         # Allow direct class usage without explicitly passing scoring functions.
@@ -238,6 +250,14 @@ class Validate(object):
                 absolute="sasa" in self.scoring_functions,
                 normalized="sasa_normalized" in self.scoring_functions,
             )
+
+        # Scaffold model reproduction and bias schema.
+        system_df, chain_df = scaffold_reproduction_metrics(
+            system_df=system_df,
+            chain_df=chain_df,
+            reference_path=self.reference_path,
+            logger=self.logger,
+        )
 
         write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
         write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
