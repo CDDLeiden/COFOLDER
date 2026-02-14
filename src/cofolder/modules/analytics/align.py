@@ -2,7 +2,7 @@ from pathlib import Path
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-from Bio.PDB import MMCIFParser, Superimposer, MMCIFIO
+from Bio.PDB import MMCIFParser, PDBParser, Superimposer, MMCIFIO
 
 
 # ==============================================================
@@ -30,9 +30,16 @@ def _save_aligned_structures(aligned_structs, out_dir):
 
 
 def _load_structures(cif_paths):
-    parser = MMCIFParser(QUIET=True)
     structures = []
     for p in cif_paths:
+        suffix = p.suffix.lower()
+        if suffix in {".cif", ".mmcif"}:
+            parser = MMCIFParser(QUIET=True)
+        elif suffix == ".pdb":
+            parser = PDBParser(QUIET=True)
+        else:
+            raise ValueError(f"Unsupported structure format: {p}")
+
         s = parser.get_structure(p.stem, str(p))
         structures.append((p.name, s))
     return structures
@@ -49,6 +56,39 @@ def _get_ca_atoms(structure):
                 if "CA" in res:
                     cas.append(res["CA"])
     return cas
+
+
+def _get_matched_ca_atoms(ref_struct, mob_struct):
+    """Collect matched CA atoms by chain ID and residue ID."""
+    ref_atoms = []
+    mob_atoms = []
+
+    ref_model = next(iter(ref_struct))
+    mob_model = next(iter(mob_struct))
+
+    common_chains = sorted(set(c.id for c in ref_model) & set(c.id for c in mob_model))
+
+    for chain_id in common_chains:
+        ref_chain = ref_model[chain_id]
+        mob_chain = mob_model[chain_id]
+
+        ref_res = {
+            res.id: res
+            for res in ref_chain
+            if res.id[0] == " " and "CA" in res
+        }
+        mob_res = {
+            res.id: res
+            for res in mob_chain
+            if res.id[0] == " " and "CA" in res
+        }
+
+        common_res = sorted(set(ref_res.keys()) & set(mob_res.keys()))
+        for rid in common_res:
+            ref_atoms.append(ref_res[rid]["CA"])
+            mob_atoms.append(mob_res[rid]["CA"])
+
+    return ref_atoms, mob_atoms
 
 
 def _collect_chain_atoms(structure, chain_id):
@@ -84,12 +124,23 @@ def _align_structures_on_protein_ca(structures, save_dir=None):
     sup = Superimposer()
 
     for name, struct in structures[1:]:
-        mob_ca = _get_ca_atoms(struct)
-        n = min(len(ref_ca), len(mob_ca))
+        matched_ref_ca, matched_mob_ca = _get_matched_ca_atoms(ref_struct, struct)
+
+        if matched_ref_ca and matched_mob_ca:
+            align_ref = matched_ref_ca
+            align_mob = matched_mob_ca
+        else:
+            # Fallback for edge cases where residue IDs do not overlap.
+            mob_ca = _get_ca_atoms(struct)
+            n = min(len(ref_ca), len(mob_ca))
+            align_ref = ref_ca[:n]
+            align_mob = mob_ca[:n]
+
+        n = min(len(align_ref), len(align_mob))
         if n == 0:
             continue
 
-        sup.set_atoms(ref_ca[:n], mob_ca[:n])
+        sup.set_atoms(align_ref[:n], align_mob[:n])
         sup.apply(struct.get_atoms())
         aligned[name] = struct
 

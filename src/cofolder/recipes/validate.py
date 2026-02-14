@@ -256,6 +256,7 @@ class Validate(object):
             system_df=system_df,
             chain_df=chain_df,
             reference_path=self.reference_path,
+            wrk_dir=self.wrk_dir,
             logger=self.logger,
         )
 
@@ -264,11 +265,12 @@ class Validate(object):
 
         if self.assess_robustness and \
             (self.repeats > 1 or \
-             self.opt.find_value("diffusion_samples", 1) > 1):
+             (self.opt.find_value(key="diffusion_samples") or 1) > 1):
             results_df = gather.gather_robustness_results(
                 system_df=system_df,
                 chain_df=chain_df,
                 wrk_dir=self.wrk_dir,
+                reference_path=self.reference_path,
             )
 
             write.write_csv(results_df, output_path=self.wrk_dir / "results" / "robustness_metrics.csv")

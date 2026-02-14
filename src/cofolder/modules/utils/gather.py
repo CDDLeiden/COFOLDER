@@ -594,6 +594,7 @@ def gather_robustness_results(
     system_df: pd.DataFrame,
     chain_df: pd.DataFrame,
     wrk_dir,
+    reference_path: Path | str | None = None,
 ) -> pd.DataFrame:
     """
     Aggregate robustness metrics across repeats and diffusion samples.
@@ -601,6 +602,9 @@ def gather_robustness_results(
     Adds structural robustness:
         - polymer chain RMSD (aligned on protein CA)
         - ligand pose RMSD (after global alignment)
+
+    If reference_path is provided, all predicted structures are aligned to
+    that reference structure before RMSD calculations.
     """
 
     rows: list[dict] = []
@@ -621,6 +625,8 @@ def gather_robustness_results(
 
     unique_cifs = chain_df["cif_file"].unique()
     cif_paths = [cif_folder / f for f in unique_cifs]
+    if reference_path is not None:
+        cif_paths = [Path(reference_path)] + cif_paths
 
     structures = align._load_structures(cif_paths)
     aligned_structs, ref_struct, ref_name = align._align_structures_on_protein_ca(structures, save_dir=aligned_folder)
