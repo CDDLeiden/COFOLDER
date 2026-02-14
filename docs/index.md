@@ -9,7 +9,6 @@ COFOLDER provides a suite of utilities that streamline protein-ligand co-folding
 - **Single System Predictions**: Co-fold individual protein-ligand systems
 - **Virtual Screening**: High-throughput screening of ligand libraries
 - **Oracle Functions**: Use Boltz as a scoring function for molecular design
-- **Evaluation Tools**: Assess and validate co-folding results with detailed metrics
 
 ## Key Features
 
@@ -28,7 +27,7 @@ cd cofolder
 pip install -e .
 
 # Run a simple prediction
-cofolder predict -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -b options.yaml
 ```
 
 ## Navigation
@@ -36,7 +35,7 @@ cofolder predict -s system.yaml -b options.yaml
 - **[Getting Started](getting-started/installation.md)**: Installation and basic setup
 - **[User Guide](user-guide/overview.md)**: Detailed guides for each command
 - **[Tutorials](tutorials/basic.md)**: Step-by-step tutorials and examples
-- **[API Reference](api/recipes/predict.md)**: Complete API documentation
+- **[API Reference](api/recipes/validate.md)**: Complete API documentation
 
 ## Support
 

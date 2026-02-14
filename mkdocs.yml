@@ -76,10 +76,9 @@ nav:
       - Configuration: getting-started/configuration.md
   - User Guide:
       - Overview: user-guide/overview.md
-      - Predict: user-guide/predict.md
+      - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
-      - Evaluate: user-guide/evaluate.md
   - Tutorials:
       - Basic Usage: tutorials/basic.md
       - Virtual Screening: tutorials/screening.md
@@ -87,10 +86,9 @@ nav:
       - Advanced Features: tutorials/advanced.md
   - API Reference:
       - Recipes:
-          - Predict: api/recipes/predict.md
+          - Validate: api/recipes/validate.md
           - Screen: api/recipes/screen.md
           - Oracle: api/recipes/oracle.md
-          - Evaluate: api/recipes/evaluate.md
       - Modules:
           - Input: api/modules/input.md
           - Entities: api/modules/entities.md

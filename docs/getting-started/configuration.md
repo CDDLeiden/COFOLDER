@@ -121,13 +121,13 @@ Generate conformers for SMILES input:
 --col_id compound_id
 ```
 
-### Evaluate-Specific Options
+### Validate-Specific Options
 
 ```bash
---repeats 5                    # Number of prediction repeats
---seeds "42,123,456,789,101"   # Specific random seeds
--i, --input_pdb reference.pdb  # Reference structure for RMSD
---ifp "true"                   # Calculate interaction fingerprints
+--repeats 5                    # Number of validation repeats
+--seed 42                      # Base seed for reproducibility
+--conformers {2D,3D,sdf}       # Optional conformer handling
+--sdf_file ligands.sdf         # SDF input when using --conformers sdf
 ```
 
 ## Environment Variables

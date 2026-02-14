@@ -42,7 +42,7 @@ diffusion_samples: 1
 ## Step 3: Run Prediction
 
 ```bash
-cofolder predict -s system.yaml -b options.yaml -w ./tutorial_output
+cofolder validate -s system.yaml -b options.yaml -w ./tutorial_output
 ```
 
 ## Step 4: Examine Output
@@ -97,7 +97,7 @@ num_models: 5
 ### Add 3D Conformer Generation
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s system.yaml \
   -b options.yaml \
   --generate_conformers 3D
@@ -106,7 +106,7 @@ cofolder predict \
 ### Enable Debug Logging
 
 ```bash
-cofolder predict -s system.yaml -b options.yaml -d
+cofolder validate -s system.yaml -b options.yaml -d
 ```
 
 ## Troubleshooting
@@ -130,6 +130,6 @@ cofolder predict -s system.yaml -b options.yaml -d
 
 ## Further Reading
 
-- [Predict Command Guide](../user-guide/predict.md)
+- [Validate Command Guide](../user-guide/validate.md)
 - [Configuration Reference](../getting-started/configuration.md)
 - [Virtual Screening Tutorial](screening.md)

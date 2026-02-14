@@ -1,7 +1,7 @@
 # COFOLDER
 
 ## Introduction
-COFOLDER is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for predicting single systems, screening ligand/protein libraries, using Boltz as an oracle, and evaluating system configurations.
+COFOLDER is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for validating single systems, screening ligand/protein libraries, and using Boltz as an oracle.
 
 
 ## Installation
@@ -14,14 +14,13 @@ cd cofolder; pip install -e .
 ## Usage
 The main command is `cofolder`, which supports several subcommands:
 ```
-cofolder [-h] [-v] {predict,screen,oracle,evaluate}
+cofolder [-h] [-v] {validate,screen,oracle}
 ```
 
 ### Subcommands
-- **predict**: Co-fold a single system using Boltz.
+- **validate**: Co-fold and validate a single system using Boltz.
 - **screen**: Co-fold a library using Boltz for virtual screening.
 - **oracle**: Use Boltz as an oracle function for single SMILES predictions.
-- **evaluate**: Evaluate Boltz system configuration.
 
 Use the -h flag with any command to see detailed usage:
 ```
@@ -39,8 +38,7 @@ src/
     ├── cli.py
     ├── recipes/
     │   ├── __init__.py
-    │   ├── predict.py
-    │   ├── evaluate.py
+    │   ├── validate.py
     │   ├── screen.py
     │   └── oracle.py
     └── modules/

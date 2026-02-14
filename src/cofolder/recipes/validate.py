@@ -10,10 +10,10 @@ from cofolder.modules.analytics.structure import Structure
 
 logger = logging.getLogger(__name__)
 
-class Predict(object):
-    """High-level orchestrator for prediction workflow.
+class Validate(object):
+    """High-level orchestrator for validation workflow.
 
-    This class coordinates the prediction of protein-ligand co-folding
+    This class coordinates the validation of protein-ligand co-folding
     for a single system using Boltz.
 
     Parameters
@@ -35,12 +35,12 @@ class Predict(object):
 
     Examples
     --------
-    >>> predictor = Predict(
+    >>> validator = Validate(
     ...     wrk_dir="./output",
     ...     system_path="system.yaml",
     ...     options_path="options.yaml"
     ... )
-    >>> predictor.run()
+    >>> validator.run()
     """
     def __init__(
         self,
@@ -66,7 +66,7 @@ class Predict(object):
 
         # Setup logger
         self.logger = logging.getLogger(__name__)
-        self.logger.debug("Initializing Predict with parameters: %s", {
+        self.logger.debug("Initializing Validate with parameters: %s", {
             "wrk_dir": self.wrk_dir,
             "system_path": self.system_path,
             "options_path": self.options_path,
@@ -91,12 +91,12 @@ class Predict(object):
         self._system = read.read_yaml(path=self.system_path)
         self.sys = system.System(system=self._system)
 
-        self.logger.debug("Predict initialization complete.")
+        self.logger.debug("Validate initialization complete.")
 
     def run(self):
-        """Execute the prediction workflow.
+        """Execute the validation workflow.
 
-        Runs Boltz prediction on the configured system and saves
+        Runs Boltz on the configured system and saves
         results to the working directory.
         """
         # Ensure working directory exists

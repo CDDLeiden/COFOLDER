@@ -5,10 +5,9 @@ from pathlib import Path
 
 from cofolder import __version__
 
-from cofolder.recipes.predict import Predict
+from cofolder.recipes.validate import Validate
 from cofolder.recipes.screen import Screen
 from cofolder.recipes.oracle import Oracle
-from cofolder.recipes.evaluate import Evaluate
 
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
@@ -193,8 +192,8 @@ class BaseRecipe:
 
         return logger
 
-class PredictRecipe(BaseRecipe):
-    LOGGER_NAME = "cofolder.predict"
+class ValidateRecipe(BaseRecipe):
+    LOGGER_NAME = "cofolder.validate"
 
     @staticmethod
     def add_arguments(parser):
@@ -203,59 +202,15 @@ class PredictRecipe(BaseRecipe):
 
     @staticmethod
     def main(args):
-        logger = PredictRecipe.setup(args)
-        logger.info("Starting COFOLDER prediction pipeline.")
+        logger = ValidateRecipe.setup(args)
+        logger.info("Starting COFOLDER validation pipeline.")
 
-        predictor = Predict(
+        validator = Validate(
             **BaseRecipe.common_kwargs(args)
         )
 
-        predictor.run()
-        logger.info("Prediction pipeline completed.")
-
-
-class EvaluateRecipe(BaseRecipe):
-    LOGGER_NAME = "cofolder.evaluate"
-
-    @staticmethod
-    def add_arguments(parser):
-        BaseRecipe.add_common_arguments(parser)
-
-        parser.add_argument(
-            '-i', '--input_pdb',
-            type=str,
-            help='Reference CIF/PDB for RMSD calculations.'
-        )
-
-        parser.add_argument(
-            '--ifp',
-            type=str,
-            help='Interaction fingerprint specification.'
-        )
-
-        parser.add_argument(
-            '--training_data_dir',
-            type=str,
-            required=True,
-            help='Path to directory containing training data used for evaluation.'
-        )
-
-        BaseRecipe.add_final_arguments(parser)
-
-    @staticmethod
-    def main(args):
-        logger = EvaluateRecipe.setup(args)
-        logger.info("Starting COFOLDER evaluation pipeline.")
-
-        evaluator = Evaluate(
-            **BaseRecipe.common_kwargs(args),
-            input_pdb=args.input_pdb,
-            ifp=args.ifp,
-            training_data_dir=args.training_data_dir,
-        )
-
-        evaluator.run()
-        logger.info("Evaluation pipeline completed.")
+        validator.run()
+        logger.info("Validation pipeline completed.")
 
 
 class ScreenRecipe(BaseRecipe):
@@ -335,10 +290,9 @@ class OracleRecipe(BaseRecipe):
 
 
 RECIPES = [
-    ("predict", PredictRecipe, "Basic protocol for co-folding a single system using Boltz."),
+    ("validate", ValidateRecipe, "Basic protocol for co-folding and validating a single system using Boltz."),
     ("screen", ScreenRecipe, "Co-fold a library using Boltz for virtual screening."),
     ("oracle", OracleRecipe, "Use Boltz as an oracle function for single SMILES predictions."),
-    ("evaluate", EvaluateRecipe, "Evaluate Boltz system configuration."),
 ]
 
 
@@ -358,5 +312,4 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     args.func(args)
-
 
