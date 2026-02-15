@@ -19,6 +19,12 @@ DEFAULT_SCORING_FUNCTIONS = {
     "sasa",
     "sasa_normalized",
 }
+DEFAULT_REPRODUCTION_METRICS = {
+    "protein_rmsd",
+    "ligand_rmsd",
+    "sucos",
+    "pocket_coverage",
+}
 
 class Validate(object):
     """High-level orchestrator for validation workflow.
@@ -66,6 +72,7 @@ class Validate(object):
         conformers: str | None = None,
         sdf_file: str | None = None,
         reference_path: str | None = None,
+        reproduction_metrics: list[str] | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -77,6 +84,7 @@ class Validate(object):
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
         self.reference_path = Path(reference_path) if reference_path else None
+        self.reproduction_metrics = set(reproduction_metrics or DEFAULT_REPRODUCTION_METRICS)
 
         if self.reference_path is not None:
             if not self.reference_path.exists():
@@ -95,6 +103,7 @@ class Validate(object):
             "conformers": self.conformers,
             "sdf_file": self.sdf_file,
             "reference_path": self.reference_path,
+            "reproduction_metrics": sorted(self.reproduction_metrics),
         })
 
         # Allow direct class usage without explicitly passing scoring functions.
@@ -257,6 +266,7 @@ class Validate(object):
             chain_df=chain_df,
             reference_path=self.reference_path,
             wrk_dir=self.wrk_dir,
+            reproduction_metrics=sorted(self.reproduction_metrics),
             logger=self.logger,
         )
 

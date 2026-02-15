@@ -2,6 +2,7 @@
 
 ## Introduction
 COFOLDER is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for validating single systems, screening ligand/protein libraries, and using Boltz as an oracle.
+Third-party license attributions for vendored code are listed in `THIRD_PARTY_LICENSES.md`.
 
 
 ## Installation

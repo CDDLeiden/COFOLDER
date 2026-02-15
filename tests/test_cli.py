@@ -59,11 +59,13 @@ class TestValidateRecipe:
             "-s", "system.yaml",
             "-b", "options.yaml",
             "--reference_path", "reference.pdb",
+            "--reproduction_metrics", "sucos",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
         assert args.reference_path == "reference.pdb"
+        assert args.reproduction_metrics == ["sucos"]
 
 
 class TestScreenRecipe:

@@ -22,6 +22,12 @@ class TestValidateInit:
         assert validator.opt is not None
         assert validator.scoring_functions == set()
         assert validator.reference_path is None
+        assert validator.reproduction_metrics == {
+            "protein_rmsd",
+            "ligand_rmsd",
+            "sucos",
+            "pocket_coverage",
+        }
 
     def test_init_with_reference_path(self, sample_system_yaml, sample_options_yaml, temp_dir):
         """Test initialization with a valid reference structure path."""
@@ -34,6 +40,8 @@ class TestValidateInit:
             options_path=str(sample_options_yaml),
             scoring_functions=[],
             reference_path=str(reference_path),
+            reproduction_metrics=["sucos"],
         )
 
         assert str(validator.reference_path) == str(reference_path)
+        assert validator.reproduction_metrics == {"sucos"}
