@@ -50,6 +50,8 @@ class Validate(object):
         Path to existing SDF file if conformers='sdf' or save location if conformers='2D' or '3D'.
     reference_path : str or None
         Optional path to reference PDB/CIF for model reproduction metrics.
+    pocket_coverage_reference : str or None
+        Optional custom pocket-coverage reference ('2 8 10', 'A2 S8 T10', or '0100000101').
 
     Examples
     --------
@@ -72,6 +74,7 @@ class Validate(object):
         conformers: str | None = None,
         sdf_file: str | None = None,
         reference_path: str | None = None,
+        pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
@@ -84,6 +87,7 @@ class Validate(object):
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
         self.reference_path = Path(reference_path) if reference_path else None
+        self.pocket_coverage_reference = pocket_coverage_reference
         self.reproduction_metrics = set(reproduction_metrics or DEFAULT_REPRODUCTION_METRICS)
 
         if self.reference_path is not None:
@@ -91,7 +95,6 @@ class Validate(object):
                 raise ValueError(f"reference_path does not exist: {self.reference_path}")
             if not self.reference_path.is_file():
                 raise ValueError(f"reference_path is not a file: {self.reference_path}")
-
         # Setup logger
         self.logger = logging.getLogger(__name__)
         self.logger.debug("Initializing Validate with parameters: %s", {
@@ -103,6 +106,7 @@ class Validate(object):
             "conformers": self.conformers,
             "sdf_file": self.sdf_file,
             "reference_path": self.reference_path,
+            "pocket_coverage_reference": self.pocket_coverage_reference,
             "reproduction_metrics": sorted(self.reproduction_metrics),
         })
 
@@ -266,6 +270,7 @@ class Validate(object):
             chain_df=chain_df,
             reference_path=self.reference_path,
             wrk_dir=self.wrk_dir,
+            pocket_coverage_reference=self.pocket_coverage_reference,
             reproduction_metrics=sorted(self.reproduction_metrics),
             logger=self.logger,
         )

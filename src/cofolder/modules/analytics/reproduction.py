@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 import logging
+import re
 import numpy as np
 
 from Bio.PDB import MMCIFParser, PDBParser
@@ -19,9 +20,10 @@ from cofolder.modules.analytics.sucos import compute_sucos
 SYSTEM_REPRODUCTION_COLUMNS = (
     "ligand_rmsd_ref_mean",
     "protein_rmsd_ref_mean",
-    "ifp_similarity_ref_mean",
     "pocket_coverage_ref",
     "pocket_coverage_ref_mean",
+    "pocket_coverage_custom",
+    "pocket_coverage_custom_mean",
     "ligand_pose_overlap_ref",
     "sucos_ref_mean",
     "protein_sequence_identity_train_max",
@@ -31,8 +33,8 @@ SYSTEM_REPRODUCTION_COLUMNS = (
 CHAIN_REPRODUCTION_COLUMNS = (
     "ligand_rmsd_ref",
     "protein_rmsd_ref",
-    "ifp_similarity_ref",
     "pocket_coverage_ref",
+    "pocket_coverage_custom",
     "ligand_pose_overlap_ref",
     "sucos_ref",
     "sucos_shape_ref",
@@ -147,7 +149,7 @@ def _collect_predicted_ligand_chain_heavy_atoms(structure, chain_id):
     if not atoms:
         return None, None
 
-    return np.array([a.coord for a in atoms], dtype=float), tuple(sorted(elements))
+    return np.array([a.coord for a in atoms], dtype=float), tuple(elements)
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +194,7 @@ def _find_exact_ligand_match(pred_coords, pred_signature, reference_ligands):
     return best, best_rmsd
 
 
-def _to_rdkit_mol(elements: tuple[str, ...], coords: np.ndarray):
+def _to_rdkit_mol_with_proximity_bonds(elements: tuple[str, ...], coords: np.ndarray):
     if len(elements) != len(coords):
         return None
 
@@ -227,6 +229,98 @@ def _to_rdkit_mol(elements: tuple[str, ...], coords: np.ndarray):
             except Exception:
                 return None
     return mol
+
+
+def _linear_sum_assignment(cost: np.ndarray):
+    try:
+        from scipy.optimize import linear_sum_assignment as _lsa
+        return _lsa(cost)
+    except Exception:
+        # Deterministic fallback if scipy is unavailable.
+        # Greedy is suboptimal but keeps one-to-one assignments deterministic.
+        c = cost.copy()
+        n = c.shape[0]
+        rows = []
+        cols = []
+        for _ in range(n):
+            i, j = np.unravel_index(np.argmin(c), c.shape)
+            rows.append(i)
+            cols.append(j)
+            c[i, :] = np.inf
+            c[:, j] = np.inf
+        return np.asarray(rows), np.asarray(cols)
+
+
+def _elementwise_atom_mapping(
+    source_elements: tuple[str, ...],
+    source_coords: np.ndarray,
+    target_elements: tuple[str, ...],
+    target_coords: np.ndarray,
+):
+    """Map source atoms to target atoms by exact element and minimum distance."""
+    if len(source_elements) != len(target_elements):
+        return None, "atom_count_mismatch"
+    if tuple(sorted(source_elements)) != tuple(sorted(target_elements)):
+        return None, "element_signature_mismatch"
+
+    source_by_element = {}
+    target_by_element = {}
+    for i, e in enumerate(source_elements):
+        source_by_element.setdefault(e, []).append(i)
+    for i, e in enumerate(target_elements):
+        target_by_element.setdefault(e, []).append(i)
+
+    mapping = {}
+    for element, src_idxs in source_by_element.items():
+        tgt_idxs = target_by_element.get(element, [])
+        if len(src_idxs) != len(tgt_idxs):
+            return None, f"element_multiplicity_mismatch:{element}"
+
+        if len(src_idxs) == 1:
+            mapping[tgt_idxs[0]] = src_idxs[0]
+            continue
+
+        src_coords = source_coords[np.asarray(src_idxs)]
+        tgt_coords = target_coords[np.asarray(tgt_idxs)]
+        d2 = ((src_coords[:, None, :] - tgt_coords[None, :, :]) ** 2).sum(axis=2)
+        row_ind, col_ind = _linear_sum_assignment(d2)
+
+        for r, c in zip(row_ind, col_ind):
+            mapping[tgt_idxs[int(c)]] = src_idxs[int(r)]
+
+    if len(mapping) != len(target_elements):
+        return None, "incomplete_mapping"
+    return mapping, None
+
+
+def _build_mol_from_template_coords(
+    template_mol: Chem.Mol,
+    template_elements: tuple[str, ...],
+    template_coords: np.ndarray,
+    query_elements: tuple[str, ...],
+    query_coords: np.ndarray,
+):
+    """Build a query molecule by reusing template topology and assigning query coords."""
+    mapping, reason = _elementwise_atom_mapping(
+        source_elements=query_elements,
+        source_coords=query_coords,
+        target_elements=template_elements,
+        target_coords=template_coords,
+    )
+    if mapping is None:
+        return None, reason
+
+    mol = Chem.Mol(template_mol)
+    n = mol.GetNumAtoms()
+    conf = Chem.Conformer(n)
+    for tgt_idx in range(n):
+        src_idx = mapping[tgt_idx]
+        x, y, z = query_coords[src_idx]
+        conf.SetAtomPosition(tgt_idx, (float(x), float(y), float(z)))
+
+    mol.RemoveAllConformers()
+    mol.AddConformer(conf, assignId=True)
+    return mol, None
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +384,111 @@ def _parse_ifp_vector(value):
     return None
 
 
+def _parse_custom_pocket_reference(reference_value: str | None):
+    """Parse custom pocket reference in one of three formats:
+    - bitstring: 0100000101
+    - residue indices: 2 8 10
+    - residue tokens: A2 S8 T10
+    """
+    if reference_value is None:
+        return None
+
+    raw = str(reference_value).strip()
+    if not raw:
+        return None
+
+    path = Path(raw)
+    if path.exists() and path.is_file():
+        raw = path.read_text(encoding="utf-8").strip()
+        if not raw:
+            raise ValueError(f"Custom pocket reference file is empty: {path}")
+
+    compact = raw.replace(" ", "")
+    if re.fullmatch(r"[01]+", compact):
+        return {"kind": "bits", "bits": [int(ch) for ch in compact]}
+
+    tokens = re.split(r"[,\s]+", raw)
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        raise ValueError("Custom pocket reference is empty after tokenization.")
+
+    residue_numbers = set()
+    residue_expected_codes = {}
+    for token in tokens:
+        m = re.fullmatch(r"([A-Za-z]+)?(-?\d+)", token)
+        if m is None:
+            raise ValueError(
+                "Invalid custom pocket reference token "
+                f"'{token}'. Expected residue numbers like '2 8 10', "
+                "'A2 S8 T10', or bitstring '0100000101'."
+            )
+        letters = m.group(1)
+        number = int(m.group(2))
+        residue_numbers.add(number)
+        if letters:
+            residue_expected_codes.setdefault(number, set()).add(letters[0].upper())
+
+    if not residue_numbers:
+        raise ValueError("No residue numbers parsed from custom pocket reference.")
+
+    return {
+        "kind": "residues",
+        "residue_numbers": residue_numbers,
+        "expected_codes": residue_expected_codes,
+    }
+
+
+def _resname_to_one_letter(resname: str):
+    aa3_to1 = {
+        "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C",
+        "GLN": "Q", "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I",
+        "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
+        "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
+    }
+    if not resname:
+        return None
+    return aa3_to1.get(str(resname).strip().upper())
+
+
+def _build_reference_ifp_from_custom(reference_spec, residue_order, residue_names=None, logger=None, warn_key=None):
+    if reference_spec is None:
+        return None
+    if reference_spec["kind"] == "bits":
+        return list(reference_spec["bits"])
+    if reference_spec["kind"] == "residues":
+        ref_resseq = reference_spec["residue_numbers"]
+        expected = reference_spec.get("expected_codes", {})
+        if expected and residue_names is not None and logger is not None and warn_key is not None:
+            for rid in residue_order:
+                resseq = int(rid[1])
+                if resseq not in expected:
+                    continue
+                expected_set = expected[resseq]
+                actual = _resname_to_one_letter(residue_names.get(rid))
+                if actual is None:
+                    continue
+                if actual not in expected_set:
+                    logger.warning(
+                        "Custom pocket reference residue label mismatch (%s): expected %s%d but chain has %s%d.",
+                        warn_key,
+                        "/".join(sorted(expected_set)),
+                        resseq,
+                        actual,
+                        resseq,
+                    )
+        return [1 if int(rid[1]) in ref_resseq else 0 for rid in residue_order]
+    return None
+
+
+def _compute_pocket_coverage(pred_ifp, ref_ifp):
+    n = min(len(pred_ifp), len(ref_ifp))
+    pred_on = {i for i, v in enumerate(pred_ifp[:n]) if int(v) == 1}
+    ref_on = {i for i, v in enumerate(ref_ifp[:n]) if int(v) == 1}
+    if len(ref_on) == 0:
+        return None, n, len(pred_ifp), len(ref_ifp)
+    return float(len(pred_on & ref_on) / len(ref_on)), n, len(pred_ifp), len(ref_ifp)
+
+
 def _compute_reference_ifp_vector(reference_structure, receptor_chain_id, reference_ligand_coords, residue_order, cutoff=5.0):
     ref_model = next(iter(reference_structure))
     if receptor_chain_id not in ref_model:
@@ -324,6 +523,8 @@ def _compute_chain_reference_metrics(
     aligned_predicted,
     reference_structure,
     reproduction_metrics,
+    custom_pocket_reference=None,
+    pocket_coverage_col: str = "pocket_coverage_ref",
     logger=None,
 ):
     """Compute per-row reproduction metrics against a reference structure."""
@@ -332,6 +533,7 @@ def _compute_chain_reference_metrics(
     rmsd_cache = {}
     warned_missing_ligand_match = set()
     warned_ifp_mismatch = set()
+    warned_custom_residue_label_mismatch = set()
 
     for idx, row in chain_df.iterrows():
         cif_name = row["cif_file"]
@@ -357,11 +559,13 @@ def _compute_chain_reference_metrics(
             "sucos_ref": None,
             "ligand_pose_overlap_ref": None,
             "pocket_coverage_ref": None,
+            "pocket_coverage_custom": None,
         }
 
         if entity_type == "ligand":
-            pred_coords, pred_signature = _collect_predicted_ligand_chain_heavy_atoms(pred, chain_id)
+            pred_coords, pred_elements = _collect_predicted_ligand_chain_heavy_atoms(pred, chain_id)
             if pred_coords is not None:
+                pred_signature = tuple(sorted(pred_elements))
                 match, ligand_rmsd = _find_exact_ligand_match(
                     pred_coords=pred_coords,
                     pred_signature=pred_signature,
@@ -384,8 +588,31 @@ def _compute_chain_reference_metrics(
                             )
                 else:
                     if "sucos" in reproduction_metrics:
-                        pred_mol = _to_rdkit_mol(match["elements"], pred_coords)
-                        ref_mol = _to_rdkit_mol(match["elements"], match["coords"])
+                        ref_mol = _to_rdkit_mol_with_proximity_bonds(
+                            match["elements"],
+                            match["coords"],
+                        )
+                        pred_mol = None
+                        reason = None
+
+                        if ref_mol is not None:
+                            pred_mol, reason = _build_mol_from_template_coords(
+                                template_mol=ref_mol,
+                                template_elements=match["elements"],
+                                template_coords=match["coords"],
+                                query_elements=pred_elements,
+                                query_coords=pred_coords,
+                            )
+
+                        if pred_mol is None:
+                            # Fallback path if template transfer fails.
+                            pred_mol = _to_rdkit_mol_with_proximity_bonds(
+                                match["elements"],
+                                pred_coords,
+                            )
+                            if pred_mol is None:
+                                reason = reason or "proximity_bond_fallback_failed"
+
                         if pred_mol is not None and ref_mol is not None:
                             sucos = compute_sucos(ref_mol=ref_mol, query_mol=pred_mol)
                             metrics["sucos_shape_ref"] = sucos.shape
@@ -395,69 +622,92 @@ def _compute_chain_reference_metrics(
                         elif logger is not None:
                             logger.warning(
                                 "Could not build RDKit ligand molecules for SuCOS "
-                                "(cif=%s, chain=%s).",
+                                "(cif=%s, chain=%s, reason=%s).",
                                 cif_name,
                                 chain_id,
+                                reason or "unknown",
                             )
 
-                    if "pocket_coverage" in reproduction_metrics:
-                        pred_ifp = _parse_ifp_vector(row.get("ifp_distance"))
-                        receptor_chain_id = _infer_receptor_chain_id(chain_df, cif_name)
+                if "pocket_coverage" in reproduction_metrics:
+                    pred_ifp = _parse_ifp_vector(row.get("ifp_distance"))
+                    receptor_chain_id = _infer_receptor_chain_id(chain_df, cif_name)
+                    ref_ifp = None
+                    residue_order = None
 
-                        if pred_ifp is not None and receptor_chain_id is not None:
-                            pred_model = next(iter(pred))
-                            if receptor_chain_id in pred_model:
-                                residue_order = [
-                                    res.id
-                                    for res in pred_model[receptor_chain_id]
-                                    if res.id[0] == " "
-                                ]
-                                ref_ifp = _compute_reference_ifp_vector(
-                                    reference_structure=reference_structure,
-                                    receptor_chain_id=receptor_chain_id,
-                                    reference_ligand_coords=match["coords"],
-                                    residue_order=residue_order,
-                                    cutoff=5.0,
+                    if pred_ifp is not None and receptor_chain_id is not None:
+                        pred_model = next(iter(pred))
+                        if receptor_chain_id in pred_model:
+                            rec_chain = pred_model[receptor_chain_id]
+                            residue_names = {
+                                res.id: str(res.get_resname())
+                                for res in rec_chain
+                                if res.id[0] == " "
+                            }
+                            residue_order = [
+                                res.id for res in rec_chain if res.id[0] == " "
+                            ]
+                        else:
+                            residue_names = None
+                    else:
+                        residue_names = None
+
+                    if residue_order is not None:
+                        warn_key = (cif_name, chain_id, "custom_label")
+                        ref_ifp = _build_reference_ifp_from_custom(
+                            custom_pocket_reference,
+                            residue_order=residue_order,
+                            residue_names=residue_names,
+                            logger=logger if warn_key not in warned_custom_residue_label_mismatch else None,
+                            warn_key=f"cif={cif_name},chain={chain_id}",
+                        )
+                        warned_custom_residue_label_mismatch.add(warn_key)
+
+                    if ref_ifp is None and match is not None and residue_order is not None:
+                        ref_ifp = _compute_reference_ifp_vector(
+                            reference_structure=reference_structure,
+                            receptor_chain_id=receptor_chain_id,
+                            reference_ligand_coords=match["coords"],
+                            residue_order=residue_order,
+                            cutoff=5.0,
+                        )
+
+                    if pred_ifp is not None and ref_ifp is not None:
+                        coverage, n, pred_len, ref_len = _compute_pocket_coverage(
+                            pred_ifp=pred_ifp,
+                            ref_ifp=ref_ifp,
+                        )
+                        if pred_len != ref_len and logger is not None:
+                            warn_key = (cif_name, chain_id, "ifp_len")
+                            if warn_key not in warned_ifp_mismatch:
+                                warned_ifp_mismatch.add(warn_key)
+                                logger.warning(
+                                    "IFP length mismatch for pocket coverage "
+                                    "(cif=%s, chain=%s): pred=%d ref=%d; using min=%d.",
+                                    cif_name,
+                                    chain_id,
+                                    pred_len,
+                                    ref_len,
+                                    n,
                                 )
-                                if ref_ifp is not None:
-                                    n = min(len(pred_ifp), len(ref_ifp))
-                                    if len(pred_ifp) != len(ref_ifp) and logger is not None:
-                                        warn_key = (cif_name, chain_id, "ifp_len")
-                                        if warn_key not in warned_ifp_mismatch:
-                                            warned_ifp_mismatch.add(warn_key)
-                                            logger.warning(
-                                                "IFP length mismatch for pocket coverage "
-                                                "(cif=%s, chain=%s): pred=%d ref=%d; using min=%d.",
-                                                cif_name,
-                                                chain_id,
-                                                len(pred_ifp),
-                                                len(ref_ifp),
-                                                n,
-                                            )
-
-                                    pred_on = {i for i, v in enumerate(pred_ifp[:n]) if int(v) == 1}
-                                    ref_on = {i for i, v in enumerate(ref_ifp[:n]) if int(v) == 1}
-
-                                    if len(ref_on) == 0:
-                                        if logger is not None:
-                                            logger.warning(
-                                                "Reference IFP has no active bits for pocket coverage "
-                                                "(cif=%s, chain=%s).",
-                                                cif_name,
-                                                chain_id,
-                                            )
-                                        metrics["pocket_coverage_ref"] = None
-                                    else:
-                                        metrics["pocket_coverage_ref"] = float(
-                                            len(pred_on & ref_on) / len(ref_on)
-                                        )
-                        elif logger is not None:
-                            logger.warning(
-                                "Skipping pocket coverage (missing ifp_distance or receptor chain) "
-                                "for (cif=%s, chain=%s).",
-                                cif_name,
-                                chain_id,
-                            )
+                        if coverage is None:
+                            if logger is not None:
+                                logger.warning(
+                                    "Reference IFP has no active bits for pocket coverage "
+                                    "(cif=%s, chain=%s).",
+                                    cif_name,
+                                    chain_id,
+                                )
+                            metrics["pocket_coverage_ref"] = None
+                            metrics["pocket_coverage_custom"] = None
+                        else:
+                            metrics[pocket_coverage_col] = coverage
+                    elif logger is not None:
+                        logger.warning(
+                            "Skipping pocket coverage (missing ifp_distance or reference IFP) "
+                            "for (cif=%s, chain=%s).",
+                            cif_name,
+                            chain_id,
+                        )
 
         else:
             ref_coords, pred_coords = _collect_matched_backbone_coords(
@@ -480,7 +730,11 @@ def _compute_chain_reference_metrics(
     return chain_df
 
 
-def _aggregate_system_reference_metrics(system_df, chain_df):
+def _aggregate_system_reference_metrics(
+    system_df,
+    chain_df,
+    pocket_coverage_col: str = "pocket_coverage_ref",
+):
     for idx, row in system_df.iterrows():
         model_rows = chain_df[
             (chain_df["repeat"] == row["repeat"]) &
@@ -498,7 +752,7 @@ def _aggregate_system_reference_metrics(system_df, chain_df):
             model_rows["ENTITY_TYPE"] == "ligand", "sucos_ref"
         ].dropna()
         pocket_vals = model_rows.loc[
-            model_rows["ENTITY_TYPE"] == "ligand", "pocket_coverage_ref"
+            model_rows["ENTITY_TYPE"] == "ligand", pocket_coverage_col
         ].dropna()
 
         if len(ligand_rmsd_vals) > 0:
@@ -513,8 +767,12 @@ def _aggregate_system_reference_metrics(system_df, chain_df):
 
         if len(pocket_vals) > 0:
             mean_pocket = float(pocket_vals.astype(float).mean())
-            system_df.at[idx, "pocket_coverage_ref_mean"] = mean_pocket
-            system_df.at[idx, "pocket_coverage_ref"] = mean_pocket
+            if pocket_coverage_col == "pocket_coverage_custom":
+                system_df.at[idx, "pocket_coverage_custom_mean"] = mean_pocket
+                system_df.at[idx, "pocket_coverage_custom"] = mean_pocket
+            else:
+                system_df.at[idx, "pocket_coverage_ref_mean"] = mean_pocket
+                system_df.at[idx, "pocket_coverage_ref"] = mean_pocket
 
     return system_df
 
@@ -529,6 +787,7 @@ def scaffold_reproduction_metrics(
     chain_df,
     reference_path: Path | None,
     wrk_dir: Path | str,
+    pocket_coverage_reference: str | None = None,
     reproduction_metrics: list[str] | None = None,
     logger: logging.Logger | None = None,
 ):
@@ -536,8 +795,80 @@ def scaffold_reproduction_metrics(
     system_df, chain_df = _ensure_schema(system_df=system_df, chain_df=chain_df)
 
     enabled_metrics = set(reproduction_metrics or DEFAULT_REPRODUCTION_METRICS)
+    custom_pocket_reference = _parse_custom_pocket_reference(pocket_coverage_reference)
+    pocket_coverage_col = (
+        "pocket_coverage_custom" if custom_pocket_reference is not None else "pocket_coverage_ref"
+    )
 
     if reference_path is None:
+        if custom_pocket_reference is not None and "pocket_coverage" in enabled_metrics:
+            structures_dir = Path(wrk_dir) / "results" / "structures"
+            structure_cache = {}
+            for idx, row in chain_df.iterrows():
+                if row.get("ENTITY_TYPE") != "ligand":
+                    continue
+                cif_name = row.get("cif_file")
+                chain_id = str(row.get("CHAIN_ID"))
+                pred_ifp = _parse_ifp_vector(row.get("ifp_distance"))
+                if pred_ifp is None:
+                    continue
+
+                if custom_pocket_reference["kind"] == "bits":
+                    ref_ifp = _build_reference_ifp_from_custom(
+                        custom_pocket_reference,
+                        residue_order=[],
+                    )
+                else:
+                    if cif_name not in structure_cache:
+                        cif_path = structures_dir / str(cif_name)
+                        if not cif_path.exists():
+                            structure_cache[cif_name] = None
+                        else:
+                            structure_cache[cif_name] = _load_structure(cif_path)
+
+                    pred_struct = structure_cache.get(cif_name)
+                    if pred_struct is None:
+                        continue
+
+                    receptor_chain_id = _infer_receptor_chain_id(chain_df, str(cif_name))
+                    if receptor_chain_id is None:
+                        continue
+                    pred_model = next(iter(pred_struct))
+                    if receptor_chain_id not in pred_model:
+                        continue
+                    rec_chain = pred_model[receptor_chain_id]
+                    residue_names = {
+                        res.id: str(res.get_resname())
+                        for res in rec_chain
+                        if res.id[0] == " "
+                    }
+                    residue_order = [
+                        res.id for res in rec_chain if res.id[0] == " "
+                    ]
+                    ref_ifp = _build_reference_ifp_from_custom(
+                        custom_pocket_reference,
+                        residue_order=residue_order,
+                        residue_names=residue_names,
+                        logger=logger,
+                        warn_key=f"cif={cif_name},chain={chain_id}",
+                    )
+                if ref_ifp is None:
+                    continue
+
+                coverage, _, _, _ = _compute_pocket_coverage(pred_ifp=pred_ifp, ref_ifp=ref_ifp)
+                chain_df.at[idx, pocket_coverage_col] = coverage
+
+            system_df = _aggregate_system_reference_metrics(
+                system_df=system_df,
+                chain_df=chain_df,
+                pocket_coverage_col=pocket_coverage_col,
+            )
+            if logger is not None:
+                logger.info(
+                    "Computed custom-reference pocket coverage without reference structure."
+                )
+            return system_df, chain_df
+
         if logger is not None:
             logger.info(
                 "Reproduction schema initialized without reference structure. "
@@ -559,9 +890,15 @@ def scaffold_reproduction_metrics(
         aligned_predicted=aligned_predicted,
         reference_structure=reference_structure,
         reproduction_metrics=enabled_metrics,
+        custom_pocket_reference=custom_pocket_reference,
+        pocket_coverage_col=pocket_coverage_col,
         logger=logger,
     )
-    system_df = _aggregate_system_reference_metrics(system_df=system_df, chain_df=chain_df)
+    system_df = _aggregate_system_reference_metrics(
+        system_df=system_df,
+        chain_df=chain_df,
+        pocket_coverage_col=pocket_coverage_col,
+    )
 
     if logger is not None:
         logger.info(

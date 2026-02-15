@@ -45,3 +45,21 @@ class TestValidateInit:
 
         assert str(validator.reference_path) == str(reference_path)
         assert validator.reproduction_metrics == {"sucos"}
+
+    def test_init_with_pocket_coverage_reference(
+        self,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            pocket_coverage_reference="A2 S8 T10",
+            reproduction_metrics=["pocket_coverage"],
+        )
+
+        assert validator.pocket_coverage_reference == "A2 S8 T10"
+        assert validator.reproduction_metrics == {"pocket_coverage"}

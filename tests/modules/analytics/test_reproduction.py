@@ -137,10 +137,12 @@ def test_scaffold_reproduction_metrics_adds_schema_and_metrics(temp_dir):
     )
 
     assert "pocket_coverage_ref" in out_chain_df.columns
+    assert "pocket_coverage_custom" in out_chain_df.columns
     assert "sucos_ref" in out_chain_df.columns
     assert "sucos_shape_ref" in out_chain_df.columns
     assert "sucos_feature_ref" in out_chain_df.columns
     assert "pocket_coverage_ref_mean" in out_system_df.columns
+    assert "pocket_coverage_custom_mean" in out_system_df.columns
     assert "sucos_ref_mean" in out_system_df.columns
 
     lig_row = out_chain_df[out_chain_df["ENTITY_TYPE"] == "ligand"].iloc[0]
@@ -163,6 +165,80 @@ def test_reference_dependent_metrics_remain_nan_without_reference(temp_dir):
     assert pd.isna(lig_row["sucos_ref"])
     assert pd.isna(out_system_df["pocket_coverage_ref_mean"].iloc[0])
     assert pd.isna(out_system_df["sucos_ref_mean"].iloc[0])
+
+
+def test_pocket_coverage_can_be_computed_from_custom_reference_without_reference(temp_dir):
+    wrk_dir = temp_dir
+
+    out_system_df, out_chain_df = scaffold_reproduction_metrics(
+        system_df=_make_system_df("1_demo_model_0.pdb"),
+        chain_df=_make_chain_df("1_demo_model_0.pdb", ifp_vector=[1, 1]),
+        reference_path=None,
+        wrk_dir=wrk_dir,
+        pocket_coverage_reference="0100000000",
+        reproduction_metrics=["pocket_coverage"],
+    )
+
+    lig_row = out_chain_df[out_chain_df["ENTITY_TYPE"] == "ligand"].iloc[0]
+    assert float(lig_row["pocket_coverage_custom"]) == 1.0
+    assert pd.isna(lig_row["pocket_coverage_ref"])
+    assert pd.isna(lig_row["sucos_ref"])
+    assert float(out_system_df["pocket_coverage_custom_mean"].iloc[0]) == 1.0
+    assert pd.isna(out_system_df["pocket_coverage_ref_mean"].iloc[0])
+
+
+def test_custom_reference_residue_formats_with_reference(temp_dir):
+    wrk_dir = temp_dir
+    structures_dir = wrk_dir / "results" / "structures"
+    structures_dir.mkdir(parents=True, exist_ok=True)
+
+    reference_path = wrk_dir / "reference.pdb"
+    predicted_path = structures_dir / "1_demo_model_0.pdb"
+    _write_reference_pdb(reference_path)
+    _write_predicted_pdb(predicted_path, ligand_coords=((1.3, 1.2, 0.0), (2.7, 1.2, 0.0)))
+
+    # residue order for protein chain A is [1, 2]; choose residue 1 as reference pocket
+    for custom_ref in ["1", "A1", "A1 S1"]:
+        _, out_chain_df = scaffold_reproduction_metrics(
+            system_df=_make_system_df("1_demo_model_0.pdb"),
+            chain_df=_make_chain_df("1_demo_model_0.pdb", ifp_vector=[1, 0]),
+            reference_path=reference_path,
+            wrk_dir=wrk_dir,
+            pocket_coverage_reference=custom_ref,
+            reproduction_metrics=["pocket_coverage"],
+        )
+        value = float(
+            out_chain_df[out_chain_df["ENTITY_TYPE"] == "ligand"]["pocket_coverage_custom"].iloc[0]
+        )
+        assert value == 1.0
+
+
+def test_custom_reference_residue_label_mismatch_warns(temp_dir, caplog):
+    wrk_dir = temp_dir
+    structures_dir = wrk_dir / "results" / "structures"
+    structures_dir.mkdir(parents=True, exist_ok=True)
+
+    reference_path = wrk_dir / "reference.pdb"
+    predicted_path = structures_dir / "1_demo_model_0.pdb"
+    _write_reference_pdb(reference_path)
+    _write_predicted_pdb(predicted_path, ligand_coords=((1.3, 1.2, 0.0), (2.7, 1.2, 0.0)))
+
+    caplog.set_level(logging.WARNING)
+    _, out_chain_df = scaffold_reproduction_metrics(
+        system_df=_make_system_df("1_demo_model_0.pdb"),
+        chain_df=_make_chain_df("1_demo_model_0.pdb", ifp_vector=[0, 1]),
+        reference_path=reference_path,
+        wrk_dir=wrk_dir,
+        pocket_coverage_reference="A2",  # residue 2 is GLY in this fixture
+        reproduction_metrics=["pocket_coverage"],
+        logger=logging.getLogger("test_reproduction"),
+    )
+
+    value = float(
+        out_chain_df[out_chain_df["ENTITY_TYPE"] == "ligand"]["pocket_coverage_custom"].iloc[0]
+    )
+    assert value == 1.0
+    assert "Custom pocket reference residue label mismatch" in caplog.text
 
 
 def test_pocket_coverage_exact_overlap_is_one(temp_dir):

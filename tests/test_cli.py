@@ -59,12 +59,14 @@ class TestValidateRecipe:
             "-s", "system.yaml",
             "-b", "options.yaml",
             "--reference_path", "reference.pdb",
+            "--pocket_coverage_reference", "A2 S8 T10",
             "--reproduction_metrics", "sucos",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
         assert args.reference_path == "reference.pdb"
+        assert args.pocket_coverage_reference == "A2 S8 T10"
         assert args.reproduction_metrics == ["sucos"]
 
 

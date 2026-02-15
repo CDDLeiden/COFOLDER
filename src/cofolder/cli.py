@@ -115,6 +115,33 @@ class BaseRecipe:
             )
         )
 
+        parser.add_argument(
+            '--reference_path',
+            type=str,
+            default=None,
+            help='Path to reference structure (PDB/CIF) used for model reproduction metrics.'
+        )
+        parser.add_argument(
+            "--pocket_coverage_reference",
+            type=str,
+            default=None,
+            help=(
+                "Custom pocket-coverage reference (residue list or bitstring). "
+                "Examples: '2 8 10', 'A2 S8 T10', '0100000101'. "
+                "You may also provide a text file path containing one of these formats."
+            ),
+        )
+        parser.add_argument(
+            "--reproduction_metrics",
+            nargs="+",
+            choices=REPRODUCTION_METRICS,
+            default=REPRODUCTION_METRICS,
+            help=(
+                "Reference-based reproduction metrics to compute when --reference_path is set. "
+                f"Choices: {', '.join(REPRODUCTION_METRICS)}"
+            ),
+        )
+
     @staticmethod
     def add_final_arguments(parser):
         parser.add_argument(
@@ -142,6 +169,9 @@ class BaseRecipe:
             assess_robustness=args.assess_robustness,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
+            reference_path=args.reference_path,
+            pocket_coverage_reference=args.pocket_coverage_reference,
+            reproduction_metrics=args.reproduction_metrics,
         )
 
     @staticmethod
@@ -205,22 +235,6 @@ class ValidateRecipe(BaseRecipe):
     @staticmethod
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
-        parser.add_argument(
-            '--reference_path',
-            type=str,
-            default=None,
-            help='Path to reference structure (PDB/CIF) used for model reproduction metrics.'
-        )
-        parser.add_argument(
-            "--reproduction_metrics",
-            nargs="+",
-            choices=REPRODUCTION_METRICS,
-            default=REPRODUCTION_METRICS,
-            help=(
-                "Reference-based reproduction metrics to compute when --reference_path is set. "
-                f"Choices: {', '.join(REPRODUCTION_METRICS)}"
-            ),
-        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
@@ -228,11 +242,7 @@ class ValidateRecipe(BaseRecipe):
         logger = ValidateRecipe.setup(args)
         logger.info("Starting COFOLDER validation pipeline.")
 
-        validator = Validate(
-            **BaseRecipe.common_kwargs(args),
-            reference_path=args.reference_path,
-            reproduction_metrics=args.reproduction_metrics,
-        )
+        validator = Validate(**BaseRecipe.common_kwargs(args))
 
         validator.run()
         logger.info("Validation pipeline completed.")
