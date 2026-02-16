@@ -132,7 +132,13 @@ class TestOracleRecipe:
         args = oracle_parser.parse_args([
             "-s", "system.yaml",
             "-b", "options.yaml",
+            "--input_smiles", "CCO",
+            "--output_metric", "affinity_pred_value",
+            "--aggregate", "first",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
+        assert args.input_smiles == "CCO"
+        assert args.output_metric == "affinity_pred_value"
+        assert args.aggregate == "first"

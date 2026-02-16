@@ -1,110 +1,53 @@
 # Oracle Command
 
-The `oracle` command uses Boltz as a scoring function for molecular design workflows.
+The `oracle` command runs `validate` once for a **single input ligand**
+and returns **one scalar value** selected from validate outputs.
 
 ## Basic Usage
 
 ```bash
-cofolder oracle -s system.yaml -b options.yaml
+cofolder oracle \
+  -s system.yaml \
+  -b options.yaml \
+  --input_smiles "CCO" \
+  --output_metric affinity_pred_value \
+  --aggregate first
 ```
 
-## Arguments
-
-### Required Arguments
+## Required Arguments
 
 - `-s, --system_path`: Path to system YAML file
 - `-b, --boltz_options_path`: Path to Boltz options YAML file
+- exactly one input:
+  - `--input_smiles <smiles>`
+  - `--input_mol_file <path>`
+- `--output_metric <column_name>`: metric to extract (e.g. `affinity_pred_value`)
 
-### Optional Arguments
+## Optional Arguments
 
+- `--aggregate {first,mean,max,min,median}`: how to reduce multiple metric rows
+- all common validate arguments are supported and forwarded
 - `-w, --wrk_dir`: Working directory
 - `-d, --debug`: Enable debug logging
 
-## Use Cases
+## Scoring Function Checks
 
-### Molecular Optimization
+Oracle validates that your requested `--output_metric` is compatible
+with enabled `--scoring_functions` before running.
 
-Use Boltz as a fitness function in optimization:
+Examples:
 
-```python
-from cofolder.recipes.oracle import Oracle
-
-
-def score_molecule(smiles: str) -> float:
-    # Update system with SMILES
-    # Run oracle
-    oracle = Oracle(
-        wrk_dir="./tmp",
-        system_path="system.yaml",
-        options_path="options.yaml"
-    )
-    result = oracle.run()
-    return result.score
-```
-
-### Design-Make-Test Cycles
-
-Integrate with design workflows:
-
-1. Design: Generate candidate molecules
-2. Score: Use oracle to predict binding
-3. Select: Choose top candidates
-4. Make: Synthesize selected compounds
-5. Test: Validate experimentally
-
-### Active Learning
-
-Use in active learning loops:
-
-- Score unlabeled molecules
-- Select informative samples
-- Update model with new data
-- Repeat
-
-## Integration Examples
-
-### With RDKit
-
-```python
-from rdkit import Chem
-from rdkit.Chem import AllChem
-
-# Generate analogs
-mol = Chem.MolFromSmiles("CC(C)Cc1ccc(cc1)C(C)C(=O)O")
-analogs = generate_analogs(mol)
-
-# Score with oracle
-scores = []
-for analog in analogs:
-    smiles = Chem.MolToSmiles(analog)
-    score = oracle_score(smiles)
-    scores.append(score)
-```
-
-### With Optimization Algorithms
-
-```python
-from scipy.optimize import differential_evolution
-
-def objective(params):
-    smiles = params_to_smiles(params)
-    return -oracle_score(smiles)  # Minimize negative score
-
-result = differential_evolution(objective, bounds)
-```
+- `ifp_distance` requires `ifp_distance`
+- `sasa_norm_heavy` requires `sasa_normalized`
+- `affinity_pred_value` requires affinity metrics
+- `bias_*` requires `--assess_bias`
 
 ## Output
 
-Returns prediction results that can be used as scores in optimization workflows.
-
-## Tips
-
-- Cache results to avoid redundant calculations
-- Use batch processing for efficiency
-- Consider uncertainty estimates
-- Validate oracle scores experimentally
+- Scalar return value from `Oracle.run()`
+- CSV file: `<wrk_dir>/oracle_result.csv`
 
 ## Related
 
 - [Oracle API Reference](../api/recipes/oracle.md)
-- [Oracle Tutorial](../tutorials/basic.md)
+- [Validate Command](validate.md)

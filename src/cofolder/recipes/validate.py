@@ -1,6 +1,8 @@
 import logging
 import os
+from contextlib import contextmanager
 from pathlib import Path
+from time import perf_counter
 
 from cofolder.modules.input import command, system
 from cofolder.modules.entities import ligand
@@ -168,6 +170,34 @@ class Validate(object):
         self.sys = system.System(system=self._system)
 
         self.logger.debug("Validate initialization complete.")
+        self._timing_entries: list[tuple[str, float]] = []
+
+    @contextmanager
+    def _debug_timer(self, label: str):
+        """Debug-only timer context manager."""
+        start = perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = perf_counter() - start
+            self._timing_entries.append((label, elapsed))
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.logger.debug("TIMER | %s | %.3fs", label, elapsed)
+
+    def _log_timing_summary(self) -> None:
+        if not self.logger.isEnabledFor(logging.DEBUG):
+            return
+        if not self._timing_entries:
+            self.logger.debug("TIMER SUMMARY | no timing entries recorded")
+            return
+        total = sum(sec for _, sec in self._timing_entries)
+        self.logger.debug(
+            "TIMER SUMMARY | entries=%d | total=%.3fs",
+            len(self._timing_entries),
+            total,
+        )
+        for label, sec in self._timing_entries:
+            self.logger.debug("TIMER SUMMARY | %s | %.3fs", label, sec)
 
     def run(self):
         """Execute the validation workflow.
@@ -175,281 +205,302 @@ class Validate(object):
         Runs Boltz on the configured system and saves
         results to the working directory.
         """
-        # Ensure working directory exists
-        self.wrk_dir.mkdir(parents=True, exist_ok=True)
-        self.raw_dir = self.wrk_dir / "raw"
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-        self.logger.debug("Using raw directory for outputs: %s", self.raw_dir)
+        with self._debug_timer("validate.total"):
+            # Ensure working directory exists
+            self.wrk_dir.mkdir(parents=True, exist_ok=True)
+            self.raw_dir = self.wrk_dir / "raw"
+            self.raw_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.debug("Using raw directory for outputs: %s", self.raw_dir)
 
-        # Get run seeds
-        self.seed, self.run_seeds = helpers.get_seeds(
-            repeats=self.repeats,
-            seed=self.seed,
-            logger=self.logger
-        )
-
-        # Generate conformers and store in cache
-        if not self.conformers:
-            self.resname = None
-            logger.debug("No conformer generation requested. Using SMILES.")
-        else:
-            self.resname = ligand.handle_conformers(
-                sys_obj=self.sys,
-                opt_obj=self.opt,
-                wrk_dir=self.raw_dir,
-                conformers=self.conformers,
-                sdf_file=self.sdf_file,
-                logger=self.logger,
-            )
-
-        # --- Save updated system to YAML ---
-        yaml_path = os.path.join(self.raw_dir, str(self.system_path.name))
-        try:
-            write.write_yaml(self.sys, path=yaml_path)
-            self.logger.info("Updated system saved to YAML: %s", yaml_path)
-        except Exception as e:
-            self.logger.error("Failed to save updated system YAML: %s", e)
-
-        # Set and run command
-        for i, seed in enumerate(self.run_seeds, 1):
-            logger.info("Running repeat %d/%d with seed %d", i, self.repeats, seed)
-            
-            # Update the options
-            self.opt.seed = seed
-            self.opt.out_dir = self.raw_dir / f"repeat_{i}"
-            self.opt.system_path = yaml_path
-
-            # Build the command for this repeat
-            cmd = self.opt.set_command(system=self.sys)
-            logger.info("Running: %s", " ".join(map(str, cmd)))
-
-            # Execute the command
-            run_boltz(cmd)
-
-        # Gather structures from all repeats
-        gather.gather_structures(
-            base_dir=self.wrk_dir,
-            system_name=self.system_path.stem,
-            repeats=self.repeats,
-            logger=self.logger
-        )
-
-        # initialize results dataframes
-        system_df, chain_df = gather.initialize_results(
-            raw_dir=self.raw_dir,
-            system_name=self.system_path.stem,
-            repeats=self.repeats,
-            diffusion_samples=self.opt.find_value(key="diffusion_samples") if self.opt.find_value(key="diffusion_samples") else 1
-        )
-        chain_df = gather.add_chain_info(chain_df, self.sys)
-
-        # gather confidence metrics
-        if "boltz_confidence_metrics" in self.scoring_functions:
-            system_df, chain_df = gather.gather_confidence_metrics(
-                raw_dir=self.raw_dir,
-                system_df=system_df,
-                chain_df=chain_df,
-                system_name=self.system_path.stem,
-                repeats=self.repeats,
-                diffusion_samples=(
-                    self.opt.find_value(key="diffusion_samples")
-                    if self.opt.find_value(key="diffusion_samples")
-                    else 1
+            # Get run seeds
+            with self._debug_timer("seeds.resolve"):
+                self.seed, self.run_seeds = helpers.get_seeds(
+                    repeats=self.repeats,
+                    seed=self.seed,
+                    logger=self.logger
                 )
-            )
 
-        # gather affinity metrics
-        if {
-            "boltz_affinity_metrics",
-            "boltz_affinity_metrics_ext",
-        } & self.scoring_functions:
-            chain_df = gather.gather_affinity_metrics(
-                raw_dir=self.raw_dir,
-                chain_df=chain_df,
-                system_name=self.system_path.stem,
-                sys=self.sys,
-                repeats=self.repeats,
-                extended="boltz_affinity_metrics_ext" in self.scoring_functions,
-            )
-
-        # gather structure-based metrics
-        structure_metrics = {
-            "ifp_distance",
-            "ifp_prolif",
-            "sasa",
-            "sasa_normalized",
-        }
-
-        if self.scoring_functions & structure_metrics:
-            structure = Structure(
-                wrk_dir=self.wrk_dir,
-                chain_df=chain_df,
-                cif_folder=Path(self.wrk_dir / "results" / "structures"),
-            )
-
-            if "ifp_distance" in self.scoring_functions:
-                chain_df = structure.add_ifp_distance()
-
-            if "ifp_prolif" in self.scoring_functions:
-                chain_df = structure.add_ifp_prolif()
-
-        if {
-            "sasa",
-            "sasa_normalized",
-        } & self.scoring_functions:
-            chain_df = structure.add_sasa(
-                absolute="sasa" in self.scoring_functions,
-                normalized="sasa_normalized" in self.scoring_functions,
-            )
-
-        # Scaffold model reproduction and bias schema.
-        system_df, chain_df = scaffold_reproduction_metrics(
-            system_df=system_df,
-            chain_df=chain_df,
-            reference_path=self.reference_path,
-            wrk_dir=self.wrk_dir,
-            pocket_coverage_reference=self.pocket_coverage_reference,
-            reproduction_metrics=sorted(self.reproduction_metrics),
-            logger=self.logger,
-        )
-
-        if self.assess_bias:
-            if self.build_bias_training_data:
-                if self.protein_training_data_path is None or self.ligand_training_data_path is None:
-                    raise ValueError(
-                        "--build_bias_training_data requires both "
-                        "--protein_training_data_path and --ligand_training_data_path."
+            # Generate conformers and store in cache
+            if not self.conformers:
+                self.resname = None
+                logger.debug("No conformer generation requested. Using SMILES.")
+            else:
+                with self._debug_timer("conformers.handle"):
+                    self.resname = ligand.handle_conformers(
+                        sys_obj=self.sys,
+                        opt_obj=self.opt,
+                        wrk_dir=self.raw_dir,
+                        conformers=self.conformers,
+                        sdf_file=self.sdf_file,
+                        logger=self.logger,
                     )
-                components_cif = self.bias_training_components_cif
-                if components_cif is None:
-                    components_cif = self.ligand_training_data_path.parent / "ccd" / "components.cif"
-                if not components_cif.exists():
-                    raise ValueError(
-                        f"components.cif not found for in-validate bias build: {components_cif}. "
-                        "Provide --bias_training_components_cif or prepare training data root."
-                    )
-                self.logger.info(
-                    "Building bias training data in validate(): components_cif=%s protein_csv=%s ligand_csv=%s",
-                    components_cif,
-                    self.protein_training_data_path,
-                    self.ligand_training_data_path,
-                )
-                available_protein_chains = {
-                    str(row["CHAIN_ID"]).strip().upper()
-                    for _, row in chain_df.iterrows()
-                    if str(row.get("ENTITY_TYPE")) == "protein"
-                    and str(row.get("CHAIN_ID", "")).strip()
-                }
-                available_ligand_chains = {
-                    str(row["CHAIN_ID"]).strip().upper()
-                    for _, row in chain_df.iterrows()
-                    if str(row.get("ENTITY_TYPE")) == "ligand"
-                    and str(row.get("CHAIN_ID", "")).strip()
-                }
-                selected_chains = (
-                    {str(x).strip().upper() for x in self.bias_chains}
-                    if self.bias_chains
-                    else None
-                )
-                selected_protein_chains = (
-                    (available_protein_chains & selected_chains)
-                    if selected_chains is not None
-                    else available_protein_chains
-                )
-                selected_ligand_chains = (
-                    (available_ligand_chains & selected_chains)
-                    if selected_chains is not None
-                    else available_ligand_chains
-                )
-                invalid_smiles_chains = self._find_invalid_ligand_smiles_chain_ids()
-                invalid_selected_ligand_chains = selected_ligand_chains & invalid_smiles_chains
-                if invalid_selected_ligand_chains:
-                    self.logger.warning(
-                        "Invalid ligand SMILES detected for chains=%s. "
-                        "Skipping ligand ECFP protocol for this bias-build run.",
-                        sorted(invalid_selected_ligand_chains),
-                    )
-                    selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
-                run_protein_protocol = bool(selected_protein_chains)
-                run_ligand_protocol = bool(selected_ligand_chains)
-                self.logger.info(
-                    "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s",
-                    run_protein_protocol,
-                    sorted(selected_protein_chains),
-                    run_ligand_protocol,
-                    sorted(selected_ligand_chains),
-                )
-                run_build_bias_training_data(
-                    system_path=self.system_path,
-                    components_cif=components_cif,
-                    output_protein_csv=self.protein_training_data_path,
-                    output_ligand_csv=self.ligand_training_data_path,
-                    release_cutoff=self.bias_release_cutoff,
-                    ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
-                    overwrite=True,
-                    skip_bias_csv=True,
-                    skip_protein_mmseqs=(not run_protein_protocol),
-                    skip_ligand_ecfp=(not run_ligand_protocol),
-                    ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
+
+            # --- Save updated system to YAML ---
+            yaml_path = os.path.join(self.raw_dir, str(self.system_path.name))
+            try:
+                with self._debug_timer("system_yaml.write"):
+                    write.write_yaml(self.sys, path=yaml_path)
+                self.logger.info("Updated system saved to YAML: %s", yaml_path)
+            except Exception as e:
+                self.logger.error("Failed to save updated system YAML: %s", e)
+
+            # Set and run command
+            for i, seed in enumerate(self.run_seeds, 1):
+                logger.info("Running repeat %d/%d with seed %d", i, self.repeats, seed)
+                
+                # Update the options
+                self.opt.seed = seed
+                self.opt.out_dir = self.raw_dir / f"repeat_{i}"
+                self.opt.system_path = yaml_path
+
+                # Build the command for this repeat
+                with self._debug_timer(f"repeat_{i}.command.build"):
+                    cmd = self.opt.set_command(system=self.sys)
+                logger.info("Running: %s", " ".join(map(str, cmd)))
+
+                # Execute the command
+                with self._debug_timer(f"repeat_{i}.boltz.run"):
+                    run_boltz(cmd)
+
+            # Gather structures from all repeats
+            with self._debug_timer("structures.gather"):
+                gather.gather_structures(
+                    base_dir=self.wrk_dir,
+                    system_name=self.system_path.stem,
+                    repeats=self.repeats,
+                    logger=self.logger
                 )
 
-            protein_ok = (
-                self.protein_training_data_path is not None
-                and self.protein_training_data_path.exists()
-                and self.protein_training_data_path.is_file()
-            )
-            ligand_ok = (
-                self.ligand_training_data_path is not None
-                and self.ligand_training_data_path.exists()
-                and self.ligand_training_data_path.is_file()
-            )
+            # initialize results dataframes
+            with self._debug_timer("results.initialize"):
+                system_df, chain_df = gather.initialize_results(
+                    raw_dir=self.raw_dir,
+                    system_name=self.system_path.stem,
+                    repeats=self.repeats,
+                    diffusion_samples=self.opt.find_value(key="diffusion_samples") if self.opt.find_value(key="diffusion_samples") else 1
+                )
+                chain_df = gather.add_chain_info(chain_df, self.sys)
 
-            if protein_ok and ligand_ok:
-                system_df, chain_df = apply_bias_metrics(
+            # gather confidence metrics
+            if "boltz_confidence_metrics" in self.scoring_functions:
+                with self._debug_timer("scores.boltz_confidence_metrics"):
+                    system_df, chain_df = gather.gather_confidence_metrics(
+                        raw_dir=self.raw_dir,
+                        system_df=system_df,
+                        chain_df=chain_df,
+                        system_name=self.system_path.stem,
+                        repeats=self.repeats,
+                        diffusion_samples=(
+                            self.opt.find_value(key="diffusion_samples")
+                            if self.opt.find_value(key="diffusion_samples")
+                            else 1
+                        )
+                    )
+
+            # gather affinity metrics
+            if {
+                "boltz_affinity_metrics",
+                "boltz_affinity_metrics_ext",
+            } & self.scoring_functions:
+                with self._debug_timer("scores.boltz_affinity_metrics"):
+                    chain_df = gather.gather_affinity_metrics(
+                        raw_dir=self.raw_dir,
+                        chain_df=chain_df,
+                        system_name=self.system_path.stem,
+                        sys=self.sys,
+                        repeats=self.repeats,
+                        extended="boltz_affinity_metrics_ext" in self.scoring_functions,
+                    )
+
+            # gather structure-based metrics
+            structure_metrics = {
+                "ifp_distance",
+                "ifp_prolif",
+                "sasa",
+                "sasa_normalized",
+            }
+
+            if self.scoring_functions & structure_metrics:
+                with self._debug_timer("structure.init"):
+                    structure = Structure(
+                        wrk_dir=self.wrk_dir,
+                        chain_df=chain_df,
+                        cif_folder=Path(self.wrk_dir / "results" / "structures"),
+                    )
+
+                if "ifp_distance" in self.scoring_functions:
+                    with self._debug_timer("scores.ifp_distance"):
+                        chain_df = structure.add_ifp_distance()
+
+                if "ifp_prolif" in self.scoring_functions:
+                    with self._debug_timer("scores.ifp_prolif"):
+                        chain_df = structure.add_ifp_prolif()
+
+            if {
+                "sasa",
+                "sasa_normalized",
+            } & self.scoring_functions:
+                with self._debug_timer("scores.sasa"):
+                    chain_df = structure.add_sasa(
+                        absolute="sasa" in self.scoring_functions,
+                        normalized="sasa_normalized" in self.scoring_functions,
+                    )
+
+            # Scaffold model reproduction and bias schema.
+            with self._debug_timer("scores.reproduction_metrics"):
+                system_df, chain_df = scaffold_reproduction_metrics(
                     system_df=system_df,
                     chain_df=chain_df,
-                    sys_obj=self.sys,
-                    protein_training_data_path=self.protein_training_data_path,
-                    ligand_training_data_path=self.ligand_training_data_path,
-                    release_cutoff=self.bias_release_cutoff,
-                    bias_chains=self.bias_chains,
-                    protein_top_n=100,
-                    boltz_cache_path=self.opt.find_value(key="cache") or "~/.boltz",
-                    output_dir=self.wrk_dir / "results" / "bias_train",
+                    reference_path=self.reference_path,
+                    wrk_dir=self.wrk_dir,
+                    pocket_coverage_reference=self.pocket_coverage_reference,
+                    reproduction_metrics=sorted(self.reproduction_metrics),
                     logger=self.logger,
                 )
-            else:
-                self.logger.warning(
-                    "Bias assessment requested but training data files are missing/unavailable "
-                    "(protein=%s, ligand=%s). Skipping bias metrics. "
-                    "To bootstrap bias references, run: "
-                    "`python scripts/fetch_bias_training_data.py "
-                    "--output_root <bias_data_dir>` then "
-                    "`python scripts/build_bias_training_data.py "
-                    "--system_path <system.yaml> "
-                    "--components_cif <bias_data_dir>/ccd/components.cif "
-                    "--output_protein_csv <protein_training.csv> "
-                    "--output_ligand_csv <ligand_training.csv> "
-                    "--release_cutoff %s`",
-                    self.protein_training_data_path,
-                    self.ligand_training_data_path,
-                    self.bias_release_cutoff,
+
+            if self.assess_bias:
+                if self.build_bias_training_data:
+                    if self.protein_training_data_path is None or self.ligand_training_data_path is None:
+                        raise ValueError(
+                            "--build_bias_training_data requires both "
+                            "--protein_training_data_path and --ligand_training_data_path."
+                        )
+                    components_cif = self.bias_training_components_cif
+                    if components_cif is None:
+                        components_cif = self.ligand_training_data_path.parent / "ccd" / "components.cif"
+                    if not components_cif.exists():
+                        raise ValueError(
+                            f"components.cif not found for in-validate bias build: {components_cif}. "
+                            "Provide --bias_training_components_cif or prepare training data root."
+                        )
+                    self.logger.info(
+                        "Building bias training data in validate(): components_cif=%s protein_csv=%s ligand_csv=%s",
+                        components_cif,
+                        self.protein_training_data_path,
+                        self.ligand_training_data_path,
+                    )
+                    available_protein_chains = {
+                        str(row["CHAIN_ID"]).strip().upper()
+                        for _, row in chain_df.iterrows()
+                        if str(row.get("ENTITY_TYPE")) == "protein"
+                        and str(row.get("CHAIN_ID", "")).strip()
+                    }
+                    available_ligand_chains = {
+                        str(row["CHAIN_ID"]).strip().upper()
+                        for _, row in chain_df.iterrows()
+                        if str(row.get("ENTITY_TYPE")) == "ligand"
+                        and str(row.get("CHAIN_ID", "")).strip()
+                    }
+                    selected_chains = (
+                        {str(x).strip().upper() for x in self.bias_chains}
+                        if self.bias_chains
+                        else None
+                    )
+                    selected_protein_chains = (
+                        (available_protein_chains & selected_chains)
+                        if selected_chains is not None
+                        else available_protein_chains
+                    )
+                    selected_ligand_chains = (
+                        (available_ligand_chains & selected_chains)
+                        if selected_chains is not None
+                        else available_ligand_chains
+                    )
+                    invalid_smiles_chains = self._find_invalid_ligand_smiles_chain_ids()
+                    invalid_selected_ligand_chains = selected_ligand_chains & invalid_smiles_chains
+                    if invalid_selected_ligand_chains:
+                        self.logger.warning(
+                            "Invalid ligand SMILES detected for chains=%s. "
+                            "Skipping ligand ECFP protocol for this bias-build run.",
+                            sorted(invalid_selected_ligand_chains),
+                        )
+                        selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
+                    run_protein_protocol = bool(selected_protein_chains)
+                    run_ligand_protocol = bool(selected_ligand_chains)
+                    self.logger.info(
+                        "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s",
+                        run_protein_protocol,
+                        sorted(selected_protein_chains),
+                        run_ligand_protocol,
+                        sorted(selected_ligand_chains),
+                    )
+                    with self._debug_timer("bias.training_data.build"):
+                        run_build_bias_training_data(
+                            system_path=self.system_path,
+                            components_cif=components_cif,
+                            output_protein_csv=self.protein_training_data_path,
+                            output_ligand_csv=self.ligand_training_data_path,
+                            release_cutoff=self.bias_release_cutoff,
+                            ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
+                            overwrite=True,
+                            skip_bias_csv=True,
+                            skip_protein_mmseqs=(not run_protein_protocol),
+                            skip_ligand_ecfp=(not run_ligand_protocol),
+                            ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
+                        )
+
+                protein_ok = (
+                    self.protein_training_data_path is not None
+                    and self.protein_training_data_path.exists()
+                    and self.protein_training_data_path.is_file()
+                )
+                ligand_ok = (
+                    self.ligand_training_data_path is not None
+                    and self.ligand_training_data_path.exists()
+                    and self.ligand_training_data_path.is_file()
                 )
 
-        write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
-        write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
+                if protein_ok and ligand_ok:
+                    with self._debug_timer("scores.bias_metrics"):
+                        system_df, chain_df = apply_bias_metrics(
+                            system_df=system_df,
+                            chain_df=chain_df,
+                            sys_obj=self.sys,
+                            protein_training_data_path=self.protein_training_data_path,
+                            ligand_training_data_path=self.ligand_training_data_path,
+                            release_cutoff=self.bias_release_cutoff,
+                            bias_chains=self.bias_chains,
+                            protein_top_n=100,
+                            boltz_cache_path=self.opt.find_value(key="cache") or "~/.boltz",
+                            output_dir=self.wrk_dir / "results" / "bias_train",
+                            logger=self.logger,
+                        )
+                else:
+                    self.logger.warning(
+                        "Bias assessment requested but training data files are missing/unavailable "
+                        "(protein=%s, ligand=%s). Skipping bias metrics. "
+                        "To bootstrap bias references, run: "
+                        "`python scripts/fetch_bias_training_data.py "
+                        "--output_root <bias_data_dir>` then "
+                        "`python scripts/build_bias_training_data.py "
+                        "--system_path <system.yaml> "
+                        "--components_cif <bias_data_dir>/ccd/components.cif "
+                        "--output_protein_csv <protein_training.csv> "
+                        "--output_ligand_csv <ligand_training.csv> "
+                        "--release_cutoff %s`",
+                        self.protein_training_data_path,
+                        self.ligand_training_data_path,
+                        self.bias_release_cutoff,
+                    )
 
-        if self.assess_robustness and \
-            (self.repeats > 1 or \
-             (self.opt.find_value(key="diffusion_samples") or 1) > 1):
-            results_df = gather.gather_robustness_results(
-                system_df=system_df,
-                chain_df=chain_df,
-                wrk_dir=self.wrk_dir,
-                reference_path=self.reference_path,
-            )
+            with self._debug_timer("results.write.system_chain"):
+                write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
+                write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
 
-            write.write_csv(results_df, output_path=self.wrk_dir / "results" / "robustness_metrics.csv")
+            if self.assess_robustness and \
+                (self.repeats > 1 or \
+                 (self.opt.find_value(key="diffusion_samples") or 1) > 1):
+                with self._debug_timer("scores.robustness_metrics"):
+                    results_df = gather.gather_robustness_results(
+                        system_df=system_df,
+                        chain_df=chain_df,
+                        wrk_dir=self.wrk_dir,
+                        reference_path=self.reference_path,
+                    )
+
+                    write.write_csv(results_df, output_path=self.wrk_dir / "results" / "robustness_metrics.csv")
+
+        self._log_timing_summary()
 
     def _find_invalid_ligand_smiles_chain_ids(self) -> set[str]:
         """Return ligand chain IDs with invalid/empty SMILES in current system."""

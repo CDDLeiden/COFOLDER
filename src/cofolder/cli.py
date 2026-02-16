@@ -375,6 +375,32 @@ class OracleRecipe(BaseRecipe):
     @staticmethod
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
+        input_group = parser.add_mutually_exclusive_group(required=True)
+        input_group.add_argument(
+            "--input_smiles",
+            type=str,
+            default=None,
+            help="Single query SMILES for oracle scoring."
+        )
+        input_group.add_argument(
+            "--input_mol_file",
+            type=str,
+            default=None,
+            help="Single query MOL/SDF file for oracle scoring."
+        )
+        parser.add_argument(
+            "--output_metric",
+            type=str,
+            required=True,
+            help="Metric column name to return as oracle value (e.g. affinity_pred_value)."
+        )
+        parser.add_argument(
+            "--aggregate",
+            type=str,
+            choices=["first", "mean", "max", "min", "median"],
+            default="first",
+            help="Aggregation applied when multiple metric rows are present."
+        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
@@ -383,13 +409,15 @@ class OracleRecipe(BaseRecipe):
         logger.info("Starting COFOLDER oracle pipeline.")
 
         oracle = Oracle(
-            wrk_dir=args.wrk_dir,
-            system_path=args.system_path,
-            options_path=args.options_path,
-            conformers=args.conformers
+            input_smiles=args.input_smiles,
+            input_mol_file=args.input_mol_file,
+            output_metric=args.output_metric,
+            aggregate=args.aggregate,
+            **BaseRecipe.common_kwargs(args),
         )
 
-        oracle.run()
+        value = oracle.run()
+        logger.info("Oracle value (%s, aggregate=%s): %s", args.output_metric, args.aggregate, value)
         logger.info("Oracle pipeline completed.")
 
 

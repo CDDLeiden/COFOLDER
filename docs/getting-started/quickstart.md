@@ -64,7 +64,7 @@ cofolder screen -s system.yaml -b options.yaml -c compounds.csv --col_id compoun
 ### Use as Oracle
 
 ```bash
-cofolder oracle -s system.yaml -b options.yaml
+cofolder oracle -s system.yaml -b options.yaml --input_smiles "CCO" --output_metric affinity_pred_value
 ```
 
 ## Getting Help

@@ -67,12 +67,22 @@ cofolder [-h] [-v] {validate,screen,oracle}
 ### Subcommands
 - **validate**: Co-fold and validate a single system using Boltz.
 - **screen**: Co-fold a library using Boltz for virtual screening.
-- **oracle**: Use Boltz as an oracle function for single SMILES predictions.
+- **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) and return one metric value.
 
 Use the -h flag with any command to see detailed usage:
 ```
 cofolder -h
+cofolder validate -h
 cofolder screen -h
+cofolder oracle -h
+```
+
+Validate example:
+```bash
+cofolder validate \
+  -s system.yaml \
+  -b options.yaml \
+  -w ./validate_out
 ```
 
 Screening example (CSV -> per-row validate wrapper):
@@ -85,6 +95,16 @@ cofolder screen \
   --variable sequences,1,ligand,smiles --col_variable smiles
 ```
 Outputs include `screen_results.csv` and `screen_results_with_scores.csv`.
+
+Oracle example:
+```bash
+cofolder oracle \
+  -s system.yaml \
+  -b options.yaml \
+  --input_smiles "CCO" \
+  --output_metric affinity_pred_value \
+  --aggregate first
+```
 
 ## Package Structure
 ```
