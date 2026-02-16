@@ -77,6 +77,7 @@ class Validate(object):
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
         bias_training_components_cif: str | None = None,
@@ -101,6 +102,7 @@ class Validate(object):
             Path(ligand_training_data_path) if ligand_training_data_path else None
         )
         self.bias_release_cutoff = bias_release_cutoff
+        self.bias_ligand_similarity_threshold = float(bias_ligand_similarity_threshold)
         self.build_bias_training_data = build_bias_training_data
         self.bias_training_components_cif = (
             Path(bias_training_components_cif) if bias_training_components_cif else None
@@ -137,6 +139,7 @@ class Validate(object):
             "protein_training_data_path": self.protein_training_data_path,
             "ligand_training_data_path": self.ligand_training_data_path,
             "bias_release_cutoff": self.bias_release_cutoff,
+            "bias_ligand_similarity_threshold": self.bias_ligand_similarity_threshold,
             "bias_chains": sorted(self.bias_chains) if self.bias_chains else None,
             "build_bias_training_data": self.build_bias_training_data,
             "bias_training_components_cif": self.bias_training_components_cif,
@@ -358,6 +361,15 @@ class Validate(object):
                     if selected_chains is not None
                     else available_ligand_chains
                 )
+                invalid_smiles_chains = self._find_invalid_ligand_smiles_chain_ids()
+                invalid_selected_ligand_chains = selected_ligand_chains & invalid_smiles_chains
+                if invalid_selected_ligand_chains:
+                    self.logger.warning(
+                        "Invalid ligand SMILES detected for chains=%s. "
+                        "Skipping ligand ECFP protocol for this bias-build run.",
+                        sorted(invalid_selected_ligand_chains),
+                    )
+                    selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
                 run_protein_protocol = bool(selected_protein_chains)
                 run_ligand_protocol = bool(selected_ligand_chains)
                 self.logger.info(
@@ -373,6 +385,7 @@ class Validate(object):
                     output_protein_csv=self.protein_training_data_path,
                     output_ligand_csv=self.ligand_training_data_path,
                     release_cutoff=self.bias_release_cutoff,
+                    ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
                     overwrite=True,
                     skip_bias_csv=True,
                     skip_protein_mmseqs=(not run_protein_protocol),
@@ -437,3 +450,31 @@ class Validate(object):
             )
 
             write.write_csv(results_df, output_path=self.wrk_dir / "results" / "robustness_metrics.csv")
+
+    def _find_invalid_ligand_smiles_chain_ids(self) -> set[str]:
+        """Return ligand chain IDs with invalid/empty SMILES in current system."""
+        try:
+            from rdkit import Chem
+        except Exception:
+            return set()
+
+        invalid: set[str] = set()
+        sequences = self.sys.find_value(key="sequences") or []
+        for entry in sequences:
+            if not isinstance(entry, dict) or "ligand" not in entry:
+                continue
+            ligand_data = entry.get("ligand") or {}
+            smiles = str(ligand_data.get("smiles", "")).strip()
+            if not smiles:
+                continue
+            if Chem.MolFromSmiles(smiles) is not None:
+                continue
+            chain_ids = ligand_data.get("id")
+            if chain_ids is None:
+                continue
+            if isinstance(chain_ids, list):
+                for cid in chain_ids:
+                    invalid.add(str(cid).strip().upper())
+            else:
+                invalid.add(str(chain_ids).strip().upper())
+        return {c for c in invalid if c}

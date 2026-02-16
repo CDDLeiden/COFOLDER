@@ -75,6 +75,17 @@ cofolder -h
 cofolder screen -h
 ```
 
+Screening example (CSV -> per-row validate wrapper):
+```bash
+cofolder screen \
+  -s system.yaml \
+  -b options.yaml \
+  -c compounds.csv \
+  --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles
+```
+Outputs include `screen_results.csv` and `screen_results_with_scores.csv`.
+
 ## Package Structure
 ```
 src/cofolder/

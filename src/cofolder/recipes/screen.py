@@ -1,300 +1,287 @@
-import os
-import pandas as pd
-import subprocess
-import time
-import json
-import shutil
-import logging
+"""Screening workflow implemented as a Validate wrapper over CSV inputs."""
 
-# legacy imports
-from cofolder.modules.entities import ligand
-from cofolder.modules.input import command, system
-from cofolder.modules.utils import helpers
+from __future__ import annotations
+
+import copy
+import logging
+import re
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from cofolder.modules.input import system
+from cofolder.modules.utils import read, write
+from cofolder.recipes.validate import Validate
+
+logger = logging.getLogger(__name__)
+
 
 class Screen:
-    """High-level orchestrator for virtual screening workflow.
+    """Run Validate for each molecule row in a CSV by adapting system.yaml."""
 
-    Performs high-throughput screening of compound libraries by
-    iteratively running Boltz predictions with different ligands.
-
-    Parameters
-    ----------
-    wrk_dir : str
-        Working directory for output files.
-    system_path : str
-        Path to system YAML template file.
-    options_path : str
-        Path to Boltz options YAML file.
-    variable : str, optional
-        Comma-separated path to update in system (e.g., "sequences,0,ligand,smiles").
-    variable_csv : str, optional
-        Path to CSV file containing variables.
-    col_variable : str, optional
-        Column name containing variables (e.g., SMILES).
-    col_id : str, optional
-        Column name containing compound IDs.
-    variable_sdf : str, optional
-        Path to SDF file containing variables.
-    property_id : str, optional
-        Property name for compound ID in SDF.
-    generate_conformers : {"2D", "3D"}, optional
-        Generate 2D or 3D conformers for ligands.
-    merge_data : str, optional
-        Comma-separated list of columns to merge into output.
-    debug : bool, optional
-        Enable debug logging (default: False).
-
-    Examples
-    --------
-    >>> screener = Screen(
-    ...     wrk_dir="./screening",
-    ...     system_path="system.yaml",
-    ...     options_path="options.yaml",
-    ...     variable="sequences,0,ligand,smiles",
-    ...     variable_csv="compounds.csv",
-    ...     col_variable="smiles",
-    ...     col_id="compound_id"
-    ... )
-    >>> screener.run()
-    """
     def __init__(
         self,
         wrk_dir: str,
         system_path: str,
         options_path: str,
-        variable: str | None = None,
+        variable: list[str] | None = None,
         variable_csv: str | None = None,
-        col_variable: str | None = None,
+        col_variable: list[str] | None = None,
         col_id: str | None = None,
-        variable_sdf: str | None = None,
-        property_id: str | None = None,
-        generate_conformers: str | None = None,
         merge_data: str | None = None,
-        debug: bool = False,
+        repeats: int = 1,
+        seed: int | None = None,
+        scoring_functions: list[str] | None = None,
+        assess_robustness: bool = True,
+        assess_bias: bool = False,
+        protein_training_data_path: str | None = None,
+        ligand_training_data_path: str | None = None,
+        bias_release_cutoff: str = "2023-06-01",
+        bias_ligand_similarity_threshold: float = 0.35,
+        bias_chains: list[str] | None = None,
+        build_bias_training_data: bool = False,
+        bias_training_components_cif: str | None = None,
+        conformers: str | None = None,
+        sdf_file: str | None = None,
+        reference_path: str | None = None,
+        pocket_coverage_reference: str | None = None,
+        reproduction_metrics: list[str] | None = None,
     ):
-        self.wrk_dir = wrk_dir
-        self.system_path = system_path
-        self.options_path = options_path
+        self.wrk_dir = Path(wrk_dir)
+        self.system_path = Path(system_path)
+        self.options_path = Path(options_path)
 
-        # Parse variables (comma-separated string)
-        self.variable = self._parse_list(variable)
+        self.variable_raw = variable or []
+        self.col_variable = col_variable or []
+        self.col_id = col_id
+        self.variable_csv = Path(variable_csv) if variable_csv else None
         self.merge_data = self._parse_list(merge_data)
 
-        self.variable_csv = variable_csv
-        self.col_variable = col_variable
-        self.col_id = col_id
-        self.variable_sdf = variable_sdf
-        self.property_id = property_id
-        self.generate_conformers = generate_conformers
+        self.variable_paths = [self._parse_path(v) for v in self.variable_raw]
 
-        # Logger setup
-        self.logger = logging.getLogger('cofolder.screening.Screen')
-        self.logger.setLevel(logging.DEBUG if debug else logging.INFO)
-        self.logger.debug("Initializing Screen with parameters: %s", {
-            "wrk_dir": wrk_dir,
-            "system_path": system_path,
-            "options_path": options_path,
-            "variable": variable,
-            "variable_csv": variable_csv,
-            "col_variable": col_variable,
-            "col_id": col_id,
-            "variable_sdf": variable_sdf,
-            "property_id": property_id,
-            "generate_conformers": generate_conformers,
-            "merge_data": merge_data,
-        })
+        self.validate_kwargs: dict[str, Any] = {
+            "repeats": repeats,
+            "seed": seed,
+            "scoring_functions": scoring_functions,
+            "assess_robustness": assess_robustness,
+            "assess_bias": assess_bias,
+            "protein_training_data_path": protein_training_data_path,
+            "ligand_training_data_path": ligand_training_data_path,
+            "bias_release_cutoff": bias_release_cutoff,
+            "bias_ligand_similarity_threshold": bias_ligand_similarity_threshold,
+            "bias_chains": bias_chains,
+            "build_bias_training_data": build_bias_training_data,
+            "bias_training_components_cif": bias_training_components_cif,
+            "conformers": conformers,
+            "sdf_file": sdf_file,
+            "reference_path": reference_path,
+            "pocket_coverage_reference": pocket_coverage_reference,
+            "reproduction_metrics": reproduction_metrics,
+        }
 
-        # Load system and options
-        self._options = helpers.read_yaml(path=self.options_path)
-        self.opt = command.Command(options=self._options)
+        self.base_system = read.read_yaml(path=self.system_path)
+        self.logger = logging.getLogger("cofolder.screen")
 
-        self._system = helpers.read_yaml(path=self.system_path)
-        self.sys = system.System(system=self._system)
+        self._validate_config()
 
-        self.logger.debug("Screen initialization complete.")
+    def _validate_config(self) -> None:
+        if self.variable_csv is None:
+            raise ValueError("--variable_csv is required.")
+        if not self.variable_csv.exists():
+            raise ValueError(f"--variable_csv does not exist: {self.variable_csv}")
+        if not self.variable_csv.is_file():
+            raise ValueError(f"--variable_csv is not a file: {self.variable_csv}")
+        if self.col_id is None or not str(self.col_id).strip():
+            raise ValueError("--col_id is required.")
+        if not self.variable_raw or not self.col_variable:
+            raise ValueError("At least one --variable/--col_variable pair is required.")
+        if len(self.variable_raw) != len(self.col_variable):
+            raise ValueError(
+                "Number of --variable entries must match number of --col_variable entries. "
+                f"Got variable={len(self.variable_raw)} col_variable={len(self.col_variable)}."
+            )
 
-    def run(self):
-        """Execute the screening workflow."""
-        self.load_screen()
-        self.iterate()
+    def run(self) -> None:
+        self.wrk_dir.mkdir(parents=True, exist_ok=True)
+        df = pd.read_csv(self.variable_csv)
 
-    def load_screen(self):
-        # Load variables from CSV if provided
-        if self.variable_csv:
-            if not self.col_variable or not self.col_id:
-                raise ValueError("Both col_smiles and col_id must be specified.")
+        required_cols = [self.col_id, *self.col_variable, *self.merge_data]
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"CSV missing required columns: {', '.join(missing)}")
 
-            if self.generate_conformers:
-                self.variable_sdf = os.path.splitext(self.variable_csv)[0] + ".sdf"
-                self.property_id = self.col_id
-                ligand.csv_to_sdf(
-                    csv_path=self.variable_csv,
-                    smiles_col=self.col_variable,
-                    output_sdf_path=self.variable_sdf,
-                    property_cols=[self.col_id]+self.merge_data
-                )     
+        records: list[dict[str, Any]] = []
+        records_with_scores: list[dict[str, Any]] = []
+        total = len(df)
+        for i, (_, row) in enumerate(df.iterrows(), 1):
+            compound_id = str(row[self.col_id])
+            safe_id = self._safe_name(compound_id)
+            run_dir = self.wrk_dir / f"{i}_{safe_id}"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            row_system_path = run_dir / "screen_system.yaml"
 
-            else:
-                self.variables = helpers.read_csv(
-                    path=self.variable_csv, 
-                    columns=[self.col_variable, self.col_id] + self.merge_data
-                ) 
+            summary = {
+                "index": i,
+                self.col_id: compound_id,
+                "status": "success",
+                "error_message": "",
+                "run_dir": str(run_dir),
+            }
+            detailed: dict[str, Any] = {k: row.get(k) for k in df.columns}
+            detailed.update(summary)
+            for col in self.col_variable:
+                summary[col] = row.get(col)
+            for col in self.merge_data:
+                summary[col] = row.get(col)
 
-                missing = [c for c in [self.col_variable, self.col_id] + self.merge_data 
-                        if c not in self.variables.columns]
-                if missing:
-                    raise ValueError(f"CSV missing columns: {', '.join(missing)}")
-        
-        # If SDF exists (either provided or generated from CSV)
-        if self.variable_sdf:
-            self.variables = helpers.read_sdf(path=self.variable_sdf)
-            #self.variables = conformers.refine_sdf(self._variables)
+            self.logger.info("(%d/%d) screening %s", i, total, compound_id)
 
-            if self.generate_conformers == "2D":
-                ligand.generate_2d_conformers(self.variable_sdf)
-            elif self.generate_conformers == "3D":
-                ligand.generate_3d_conformers(self.variable_sdf)
-
-            # Cache each mol as PKL
-            cache_dir = self.opt.find_value(key='cache') or '~/.boltz/'
-            for mol in self.variables:
-                if mol is None:
-                    continue
-                if mol.HasProp(self.property_id):
-                    mol_id = mol.GetProp(self.property_id)
-                    mol_id = ligand.sanitize_mol_id(mol_id)
-                else:
-                    self.logger.error(f"SDF molecule missing ID property '{self.property_id}'")
-                    continue
-                try:
-                    ligand.mol_to_ccd(mol_id, mol, boltz_path=cache_dir)
-                except Exception as e:
-                    self.logger.error(f"Failed to process ID {mol_id}: {e}")
-                
-    def iterate(self):      
-        if self.variable_sdf:
-            for i, mol in enumerate(self.variables, 1):
-                start_time = time.time()
-                    
-                name = mol.GetProp(self.property_id)
-                basename = f"{i}_{name}"
-
-                variable = name
-                if len(name) > 5:
-                    truncated = name[:5]
-                    print(f"[WARNING] Variable name '{name}' is longer than 5 characters. "
-                        f"Truncating to '{truncated}' to comply with CCD naming rules.")
-                    variable = truncated
-
-
-                self._run_single_prediction(variable, basename)
-
-                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
-
-        # Set basename and variable for CSV input         
-        elif self.variable_csv:
-            # Run the screening process for each variable
-            for i, (_, row) in enumerate(self.variables.iterrows(), 1):
-                start_time = time.time()
-
-                name = str(row[self.col_id])
-                basename = f'{i}_{name}'
-                variable = row[self.col_variable]
-                self.logger.info(f"({i}/{len(self.variables)}) {name}: {variable}")
-
-                self._run_single_prediction(variable, basename)
-                
-                self.logger.info(" pred time--- %.2f seconds ---" % (time.time() - start_time))
-
-    def _run_single_prediction(self, variable, basename):       
-        self.sys.update_system(value=variable, path=self.variable)
-        
-        # Set output directory and update system
-        out_dir = os.path.join(self.wrk_dir, basename)
-        helpers.set_dir(out_dir)
-        self.opt.out_dir = out_dir
-        
-        # MSA recycling - only possible for monomer systems
-        self.msa = self.sys.find_value(key='msa')
-        if self.msa and not os.path.exists(self.msa):
-            raise FileNotFoundError(f"MSA file not found at {self.msa}")
-
-        self.logger.info(f'System:\n{str(self.sys.system)}')
-        yaml_path = os.path.join(out_dir, f'{basename}.yaml')
-        self.opt.system_path = yaml_path
-        self.sys.save_system_to_yaml(path=yaml_path)
-
-        # Set and run command
-        cmd = self.opt.set_command(system=self.sys)
-        self.logger.info(f'Running: {" ".join(cmd)}')
-        subprocess.run(cmd)
-
-        # update MSA after first iteration
-        if self.msa is None:
             try:
-                _ = self.sys.find_value(key='protein')
-                self.msa = os.path.join(out_dir, f'boltz_results_{basename}/msa/{basename}_unpaired_tmp_env/uniref.a3m')
-                self.sys.update_system(value=self.msa, parent_key='protein', sub_key='msa')
-                self.logger.info(f'Cleaning up MSA file: {self.msa}')
-                helpers.delete_last_line(self.msa)
-            except ValueError:
-                self.logger.info('MSA recycling not available for multimers in current version')
+                sys_obj = system.System(system=copy.deepcopy(self.base_system))
+                for path, col in zip(self.variable_paths, self.col_variable):
+                    value = row[col]
+                    if pd.isna(value) or (isinstance(value, str) and value.strip() == ""):
+                        raise ValueError(
+                            f"Empty value for mapped column '{col}' in row {i} ({compound_id})."
+                        )
+                    if self._path_targets_smiles(path) and not self._is_valid_smiles(str(value)):
+                        raise ValueError(
+                            f"Invalid SMILES in column '{col}' for row {i} ({compound_id}): {value}"
+                        )
+                    sys_obj.update_system(value=value, path=path)
 
-        #TODO: gather results (sdf/csv independent) | Current: Only CSV
-        #self.gather_metrics(out_dir, i, row)
-        #self.gather_structures(out_dir, i, row)
+                write.write_yaml(sys_obj, path=row_system_path)
 
+                validator = Validate(
+                    wrk_dir=str(run_dir),
+                    system_path=str(row_system_path),
+                    options_path=str(self.options_path),
+                    **self.validate_kwargs,
+                )
+                validator.run()
+                detailed.update(self._collect_score_columns(run_dir=run_dir))
+            except Exception as exc:
+                summary["status"] = "failed"
+                summary["error_message"] = str(exc)
+                detailed["status"] = "failed"
+                detailed["error_message"] = str(exc)
+                self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
 
-    def gather_metrics(self, out_dir, i, row):
-        # function for gathering confidence and affinity metrics into csv
-        basename = f'{i}_{row[self.col_id]}'
-        csv_file = os.path.join(self.wrk_dir, "output.csv")
-        conf_file = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/confidence_{basename}_model_0.json')
-        aff_file = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/affinity_{basename}.json')
+            records.append(summary)
+            records_with_scores.append(detailed)
 
-        if not os.path.exists(conf_file):
-            self.logger.warning(f"Missing confidence file: {conf_file}")
-            return
+        out_csv = self.wrk_dir / "screen_results.csv"
+        pd.DataFrame(records).to_csv(out_csv, index=False)
+        out_scores_csv = self.wrk_dir / "screen_results_with_scores.csv"
+        pd.DataFrame(records_with_scores).to_csv(out_scores_csv, index=False)
 
-        try:
-            df_conf = pd.json_normalize(json.load(open(conf_file)))
-        except Exception as e:
-            self.logger.error(f"Error reading {conf_file}: {e}")
-            return
+        failures = sum(1 for r in records if r["status"] == "failed")
+        successes = len(records) - failures
+        self.logger.info(
+            "Screen complete: total=%d success=%d failed=%d summary=%s merged=%s",
+            len(records),
+            successes,
+            failures,
+            out_csv,
+            out_scores_csv,
+        )
 
-        df_new = df_conf
-        if os.path.exists(aff_file):
+    def _collect_score_columns(self, run_dir: Path) -> dict[str, Any]:
+        """Collect computed scores from per-row validate outputs."""
+        out: dict[str, Any] = {}
+        system_csv = run_dir / "results" / "system_metrics.csv"
+        chain_csv = run_dir / "results" / "chain_metrics.csv"
+
+        if system_csv.exists():
             try:
-                df_aff = pd.json_normalize(json.load(open(aff_file)))
-                df_new = pd.concat([df_aff, df_conf], axis=1)
-            except Exception as e:
-                self.logger.error(f"Error reading {aff_file}: {e}")
+                sdf = pd.read_csv(system_csv)
+                if not sdf.empty:
+                    row = self._select_metrics_row(sdf)
+                    for col, value in row.items():
+                        if col in {"idx", "cif_file", "model_name", "repeat", "diffusion_sample"}:
+                            continue
+                        out[f"system__{col}"] = value
+            except Exception as exc:
+                self.logger.warning("Failed reading system metrics from %s: %s", system_csv, exc)
 
-        output = {**{'index': i, 'id': row[self.col_id], 'basename': basename, 'smiles': row[self.col_variable]},
-                  **{col: row[col] for col in self.merge_data},
-                  **df_new.iloc[0].to_dict()}
+        if chain_csv.exists():
+            try:
+                cdf = pd.read_csv(chain_csv)
+                if not cdf.empty and {"CHAIN_ID", "ENTITY_TYPE"}.issubset(cdf.columns):
+                    cdf = self._select_chain_metrics_rows(cdf)
+                    for _, crow in cdf.iterrows():
+                        chain_id = str(crow.get("CHAIN_ID", "")).strip() or "NA"
+                        entity_type = str(crow.get("ENTITY_TYPE", "")).strip() or "unknown"
+                        prefix = f"{entity_type}_{chain_id}"
+                        for col, value in crow.items():
+                            if col in {
+                                "idx",
+                                "conf_chain_id",
+                                "CHAIN_ID",
+                                "ENTITY_TYPE",
+                                "ligand_molecule_id",
+                                "cif_file",
+                                "model_name",
+                                "repeat",
+                                "diffusion_sample",
+                            }:
+                                continue
+                            out[f"{prefix}__{col}"] = value
+            except Exception as exc:
+                self.logger.warning("Failed reading chain metrics from %s: %s", chain_csv, exc)
 
-        pd.DataFrame([output]).to_csv(csv_file, mode='a', header=not os.path.exists(csv_file), index=False)
-
-    def gather_structures(self, out_dir, i, row):
-        # function to gather cif or pdb files into single folder
-        basename = f'{i}_{row[self.col_id]}'
-        target_dir = os.path.join(self.wrk_dir, "structures")
-        os.makedirs(target_dir, exist_ok=True)
-        structure_dir = os.path.join(out_dir, f'boltz_results_{basename}/predictions/{basename}/')
-        if not os.path.exists(structure_dir):
-            self.logger.warning(f"Missing structure directory: {structure_dir}")
-            return
-        for file_name in os.listdir(structure_dir):
-            if file_name.endswith(('.cif', '.pdb')):
-                try:
-                    shutil.copy2(os.path.join(structure_dir, file_name), os.path.join(target_dir, file_name))
-                except Exception as e:
-                    self.logger.error(f"Error copying {file_name}: {e}")
+        return out
 
     @staticmethod
-    def _parse_list(input_str: str | None) -> list:
-        """Parse a comma-separated string into a list, converting digits to int."""
+    def _select_metrics_row(df: pd.DataFrame) -> pd.Series:
+        """Prefer repeat=1/sample=0 row if available; otherwise first row."""
+        if {"repeat", "diffusion_sample"}.issubset(df.columns):
+            sub = df[(df["repeat"] == 1) & (df["diffusion_sample"] == 0)]
+            if not sub.empty:
+                return sub.iloc[0]
+        return df.iloc[0]
+
+    @staticmethod
+    def _select_chain_metrics_rows(df: pd.DataFrame) -> pd.DataFrame:
+        """Prefer repeat=1/sample=0 chain rows when available; otherwise de-duplicate by chain."""
+        if {"repeat", "diffusion_sample"}.issubset(df.columns):
+            sub = df[(df["repeat"] == 1) & (df["diffusion_sample"] == 0)]
+            if not sub.empty:
+                return sub
+        if "CHAIN_ID" in df.columns:
+            return df.drop_duplicates(subset=["CHAIN_ID"], keep="first")
+        return df
+
+    @staticmethod
+    def _parse_path(path_str: str) -> list[Any]:
+        if not path_str or not str(path_str).strip():
+            raise ValueError("--variable path cannot be empty.")
+        return [int(v.strip()) if v.strip().isdigit() else v.strip() for v in str(path_str).split(",")]
+
+    @staticmethod
+    def _parse_list(input_str: str | None) -> list[str]:
         if not input_str:
             return []
-        return [int(v.strip()) if v.strip().isdigit() else v.strip() for v in input_str.split(",")]
+        return [v.strip() for v in str(input_str).split(",") if v.strip()]
+
+    @staticmethod
+    def _safe_name(value: str) -> str:
+        token = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip())
+        return token or "item"
+
+    @staticmethod
+    def _path_targets_smiles(path: list[Any]) -> bool:
+        return bool(path) and str(path[-1]).strip().lower() == "smiles"
+
+    @staticmethod
+    def _is_valid_smiles(smiles: str) -> bool:
+        try:
+            from rdkit import Chem
+        except Exception:
+            # If RDKit is unavailable, do not block screen row execution here.
+            return True
+        s = str(smiles).strip()
+        if not s:
+            return False
+        return Chem.MolFromSmiles(s) is not None

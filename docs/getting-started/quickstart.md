@@ -58,7 +58,7 @@ cofolder validate -s system.yaml -b options.yaml
 ### Screen a Library
 
 ```bash
-cofolder screen -s system.yaml -b options.yaml -v "sequences,0,ligand,smiles" -c compounds.csv --col_variable smiles --col_id compound_id
+cofolder screen -s system.yaml -b options.yaml -c compounds.csv --col_id compound_id --variable sequences,0,ligand,smiles --col_variable smiles
 ```
 
 ### Use as Oracle

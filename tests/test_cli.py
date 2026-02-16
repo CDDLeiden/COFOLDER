@@ -86,14 +86,34 @@ class TestScreenRecipe:
         args = screen_parser.parse_args([
             "-s", "system.yaml",
             "-b", "options.yaml",
-            "-v", "sequences,0,ligand,smiles",
-            "--variable_csv", "compounds.csv",
-            "--col_variable", "smiles",
+            "-c", "compounds.csv",
             "--col_id", "id",
+            "-v", "sequences,0,ligand,smiles",
+            "--col_variable", "smiles",
+            "-v", "sequences,0,ligand,ccd",
+            "--col_variable", "ccd",
         ])
 
         assert args.system_path == "system.yaml"
-        assert args.variable == "sequences,0,ligand,smiles"
+        assert args.variable == ["sequences,0,ligand,smiles", "sequences,0,ligand,ccd"]
+        assert args.col_variable == ["smiles", "ccd"]
+
+    def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):
+        """Test that screen main rejects mismatched --variable/--col_variable counts."""
+        args = [
+            "screen",
+            "-s", str(sample_system_yaml),
+            "-b", str(sample_options_yaml),
+            "-c", "compounds.csv",
+            "--col_id", "id",
+            "-v", "sequences,0,ligand,smiles",
+            "-v", "sequences,0,ligand,ccd",
+            "--col_variable", "smiles",
+            "-w", str(temp_dir),
+        ]
+
+        with pytest.raises(ValueError, match="Number of --variable entries must match"):
+            cli.main(args)
 
 
 class TestOracleRecipe:

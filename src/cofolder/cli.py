@@ -120,6 +120,12 @@ class BaseRecipe:
             help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
         )
         parser.add_argument(
+            '--bias_ligand_similarity_threshold',
+            type=float,
+            default=0.35,
+            help='Ligand ECFP/Tanimoto threshold used while building bias training data.'
+        )
+        parser.add_argument(
             '--bias_chains',
             nargs='+',
             default=None,
@@ -221,6 +227,7 @@ class BaseRecipe:
             protein_training_data_path=args.protein_training_data_path,
             ligand_training_data_path=args.ligand_training_data_path,
             bias_release_cutoff=args.bias_release_cutoff,
+            bias_ligand_similarity_threshold=args.bias_ligand_similarity_threshold,
             bias_chains=args.bias_chains,
             build_bias_training_data=args.build_bias_training_data,
             bias_training_components_cif=args.bias_training_components_cif,
@@ -319,16 +326,14 @@ class ScreenRecipe(BaseRecipe):
         parser.add_argument(
             '-v', '--variable',
             type=str,
-            required=True,
-            help='Comma-separated YAML path to variable.'
+            action='append',
+            default=None,
+            help='Repeatable comma-separated YAML path(s) to update.'
         )
 
-        parser.add_argument('--variable_csv', type=str)
-        parser.add_argument('--col_variable', type=str)
-        parser.add_argument('--col_id', type=str)
-
-        parser.add_argument('--variable_sdf', type=str)
-        parser.add_argument('--property_id', type=str)
+        parser.add_argument('-c', '--variable_csv', type=str, required=True)
+        parser.add_argument('--col_variable', type=str, action='append', default=None)
+        parser.add_argument('--col_id', type=str, required=True)
 
         parser.add_argument(
             '--merge_data',
@@ -343,18 +348,21 @@ class ScreenRecipe(BaseRecipe):
         logger = ScreenRecipe.setup(args)
         logger.info("Starting COFOLDER screening pipeline.")
 
+        if not args.variable or not args.col_variable:
+            raise ValueError("At least one --variable/--col_variable pair is required.")
+        if len(args.variable) != len(args.col_variable):
+            raise ValueError(
+                "Number of --variable entries must match number of --col_variable entries. "
+                f"Got variable={len(args.variable)} col_variable={len(args.col_variable)}."
+            )
+
         screener = Screen(
-            wrk_dir=args.wrk_dir,
-            system_path=args.system_path,
-            options_path=args.options_path,
             variable=args.variable,
             variable_csv=args.variable_csv,
             col_variable=args.col_variable,
             col_id=args.col_id,
-            variable_sdf=args.variable_sdf,
-            property_id=args.property_id,
-            conformers=args.conformers,
-            merge_data=args.merge_data
+            merge_data=args.merge_data,
+            **BaseRecipe.common_kwargs(args),
         )
 
         screener.run()

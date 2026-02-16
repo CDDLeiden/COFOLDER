@@ -60,10 +60,9 @@ diffusion_samples: 1
 cofolder screen \
   -s system_template.yaml \
   -b screening_options.yaml \
-  -v "sequences,1,ligand,smiles" \
   -c library.csv \
-  --col_variable smiles \
   --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles \
   --merge_data "mw,logp" \
   -w ./screening_output
 ```
@@ -116,42 +115,27 @@ Split library and run parallel jobs:
 ```bash
 # GPU 0
 cofolder screen -s system.yaml -b options.yaml \
-  -c library_part1.csv --col_variable smiles --col_id compound_id \
-  -v "sequences,1,ligand,smiles"
+  -c library_part1.csv --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles
 
 # GPU 1 (in parallel)
 cofolder screen -s system.yaml -b options.yaml \
-  -c library_part2.csv --col_variable smiles --col_id compound_id \
-  -v "sequences,1,ligand,smiles"
+  -c library_part2.csv --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles
 ```
 
-### SDF Input
+### Multi-Variable Mapping
 
-Screen from SDF file:
+Update multiple fields in one run:
 
 ```bash
 cofolder screen \
   -s system.yaml \
   -b options.yaml \
-  -v "sequences,1,ligand,smiles" \
-  --variable_sdf library.sdf \
-  --property_id ID \
-  --generate_conformers 3D
-```
-
-### 3D Conformer Generation
-
-Generate 3D conformers for better accuracy:
-
-```bash
-cofolder screen \
-  -s system.yaml \
-  -b options.yaml \
-  -v "sequences,1,ligand,smiles" \
   -c library.csv \
-  --col_variable smiles \
   --col_id compound_id \
-  --generate_conformers 3D
+  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --variable sequences,1,ligand,ccd --col_variable ccd
 ```
 
 ## Best Practices
