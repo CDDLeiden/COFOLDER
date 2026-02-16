@@ -26,8 +26,8 @@ SYSTEM_REPRODUCTION_COLUMNS = (
     "pocket_coverage_custom_mean",
     "ligand_pose_overlap_ref",
     "sucos_ref_mean",
-    "protein_sequence_identity_train_max",
-    "ligand_fingerprint_similarity_train_max",
+    "bias_prot_sim_train_max",
+    "bias_lig_sim_train_max",
 )
 
 CHAIN_REPRODUCTION_COLUMNS = (
@@ -39,8 +39,8 @@ CHAIN_REPRODUCTION_COLUMNS = (
     "sucos_ref",
     "sucos_shape_ref",
     "sucos_feature_ref",
-    "protein_sequence_identity_train",
-    "ligand_fingerprint_similarity_train",
+    "bias_prot_sim_train",
+    "bias_lig_sim_train",
 )
 
 DEFAULT_REPRODUCTION_METRICS = {
