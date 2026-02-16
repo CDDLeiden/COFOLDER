@@ -77,41 +77,51 @@ cofolder screen -h
 
 ## Package Structure
 ```
-examples/
-src/
-└── cofolder/
-    ├── __init__.py
-    ├── __main__.py
-    ├── cli.py
-    ├── recipes/
-    │   ├── __init__.py
-    │   ├── validate.py
-    │   ├── screen.py
-    │   └── oracle.py
-    └── modules/
-        ├── input/
-        │   ├── __init__.py
-        │   ├── command.py
-        │   └── system.py
-        ├── entities/
-        │   ├── __init__.py
-        │   └── ligand.py
-        ├── utils/
-        │   ├── __init__.py
-        │   ├── helpers.py
-        │   └── log.py
-        ├── analytics/
-        │   └── __init__.py
-        └── runners/
-            └── __init__.py
+src/cofolder/
+├── __main__.py
+├── cli.py
+├── recipes/
+│   ├── validate.py
+│   ├── screen.py
+│   └── oracle.py
+├── modules/
+│   ├── analytics/
+│   │   ├── align.py
+│   │   ├── bias.py
+│   │   ├── bias_training.py
+│   │   ├── dataset.py
+│   │   ├── plots.py
+│   │   ├── reproduction.py
+│   │   ├── stats.py
+│   │   ├── structure.py
+│   │   └── sucos.py
+│   ├── entities/
+│   │   └── ligand.py
+│   ├── input/
+│   │   ├── command.py
+│   │   └── system.py
+│   ├── runners/
+│   │   └── boltz_runner.py
+│   └── utils/
+│       ├── gather.py
+│       ├── helpers.py
+│       ├── read.py
+│       └── write.py
+└── ui/
+    └── app.py
+
+scripts/
+├── fetch_bias_training_data.py
+├── build_bias_training_data.py
+├── install_mmseqs_vendor.sh
+└── fetch_bias_training_data_tmp_mmseqs_env.sh
+
 docs/
 tests/
 tutorials/
+examples/
 LICENSE
-tests/
-tutorials/
-LISENCE
 pyproject.toml
 README.md
+THIRD_PARTY_LICENSES.md
 ```
-
