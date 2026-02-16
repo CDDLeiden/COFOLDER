@@ -8,6 +8,7 @@ from cofolder.modules.runners.boltz_runner import run_boltz
 from cofolder.modules.utils import helpers, gather, read, write
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
+from cofolder.modules.analytics.bias import apply_bias_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,10 @@ class Validate(object):
         seed: int | None = None,
         scoring_functions: list[str] | None = None,
         assess_robustness: bool = True,
+        assess_bias: bool = False,
+        protein_training_data_path: str | None = None,
+        ligand_training_data_path: str | None = None,
+        bias_release_cutoff: str = "2023-06-01",
         conformers: str | None = None,
         sdf_file: str | None = None,
         reference_path: str | None = None,
@@ -84,6 +89,14 @@ class Validate(object):
         self.seed = seed
         self.scoring_functions = scoring_functions
         self.assess_robustness = assess_robustness
+        self.assess_bias = assess_bias
+        self.protein_training_data_path = (
+            Path(protein_training_data_path) if protein_training_data_path else None
+        )
+        self.ligand_training_data_path = (
+            Path(ligand_training_data_path) if ligand_training_data_path else None
+        )
+        self.bias_release_cutoff = bias_release_cutoff
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
         self.reference_path = Path(reference_path) if reference_path else None
@@ -105,6 +118,10 @@ class Validate(object):
             "seed": self.seed,
             "conformers": self.conformers,
             "sdf_file": self.sdf_file,
+            "assess_bias": self.assess_bias,
+            "protein_training_data_path": self.protein_training_data_path,
+            "ligand_training_data_path": self.ligand_training_data_path,
+            "bias_release_cutoff": self.bias_release_cutoff,
             "reference_path": self.reference_path,
             "pocket_coverage_reference": self.pocket_coverage_reference,
             "reproduction_metrics": sorted(self.reproduction_metrics),
@@ -274,6 +291,50 @@ class Validate(object):
             reproduction_metrics=sorted(self.reproduction_metrics),
             logger=self.logger,
         )
+
+        if self.assess_bias:
+            protein_ok = (
+                self.protein_training_data_path is not None
+                and self.protein_training_data_path.exists()
+                and self.protein_training_data_path.is_file()
+            )
+            ligand_ok = (
+                self.ligand_training_data_path is not None
+                and self.ligand_training_data_path.exists()
+                and self.ligand_training_data_path.is_file()
+            )
+
+            if protein_ok and ligand_ok:
+                system_df, chain_df, bias_df = apply_bias_metrics(
+                    system_df=system_df,
+                    chain_df=chain_df,
+                    sys_obj=self.sys,
+                    protein_training_data_path=self.protein_training_data_path,
+                    ligand_training_data_path=self.ligand_training_data_path,
+                    release_cutoff=self.bias_release_cutoff,
+                    logger=self.logger,
+                )
+                write.write_csv(
+                    bias_df,
+                    output_path=self.wrk_dir / "results" / "bias_to_training_data.csv"
+                )
+            else:
+                self.logger.warning(
+                    "Bias assessment requested but training data files are missing/unavailable "
+                    "(protein=%s, ligand=%s). Skipping bias metrics. "
+                    "To bootstrap bias references, run: "
+                    "`python scripts/fetch_bias_training_data.py "
+                    "--output_root <bias_data_dir>` then "
+                    "`python scripts/build_bias_training_data.py "
+                    "--system_path <system.yaml> "
+                    "--components_cif <bias_data_dir>/ccd/components.cif "
+                    "--output_protein_csv <protein_training.csv> "
+                    "--output_ligand_csv <ligand_training.csv> "
+                    "--release_cutoff %s`",
+                    self.protein_training_data_path,
+                    self.ligand_training_data_path,
+                    self.bias_release_cutoff,
+                )
 
         write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
         write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")

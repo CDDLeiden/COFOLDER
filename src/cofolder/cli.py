@@ -93,6 +93,32 @@ class BaseRecipe:
             default=True,
             help='Assess robustness across repeats and diffusion samples (default: True).'
         )
+        parser.add_argument(
+            '--assess_bias',
+            '--asess_bias',
+            dest='assess_bias',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='Assess bias against training data references (default: False).'
+        )
+        parser.add_argument(
+            '--protein_training_data_path',
+            type=str,
+            default=None,
+            help='Path to protein training reference CSV (requires release_date, pdb_id, sequence).'
+        )
+        parser.add_argument(
+            '--ligand_training_data_path',
+            type=str,
+            default=None,
+            help='Path to ligand training reference CSV/SDF (requires release_date, pdb_id, smiles).'
+        )
+        parser.add_argument(
+            '--bias_release_cutoff',
+            type=str,
+            default='2023-06-01',
+            help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
+        )
 
         parser.add_argument(
             '--conformers',
@@ -167,6 +193,10 @@ class BaseRecipe:
             seed=args.seed,
             scoring_functions=args.scoring_functions,
             assess_robustness=args.assess_robustness,
+            assess_bias=args.assess_bias,
+            protein_training_data_path=args.protein_training_data_path,
+            ligand_training_data_path=args.ligand_training_data_path,
+            bias_release_cutoff=args.bias_release_cutoff,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
             reference_path=args.reference_path,
@@ -207,6 +237,10 @@ class BaseRecipe:
             raise ValueError(
                 '--sdf_file must be provided when --conformers is "sdf"'
             )
+        if args.assess_bias:
+            # Runtime availability checks are handled in Validate.run so the
+            # pipeline can continue while warning and skipping bias metrics.
+            pass
 
     @classmethod
     def setup(cls, args):
