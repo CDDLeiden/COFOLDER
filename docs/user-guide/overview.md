@@ -1,10 +1,10 @@
 # User Guide Overview
 
-COFOLDER provides four main commands for different co-folding workflows.
+COFOLDER provides three main commands for different co-folding workflows.
 
 ## Commands
 
-### Predict
+### Validate
 
 Co-fold a single protein-ligand system.
 
@@ -13,7 +13,7 @@ Co-fold a single protein-ligand system.
 - Testing configurations
 - Detailed analysis of one complex
 
-[Learn more →](predict.md)
+[Learn more →](validate.md)
 
 ### Screen
 
@@ -37,17 +37,6 @@ Use Boltz as a scoring function for molecular design.
 
 [Learn more →](oracle.md)
 
-### Evaluate
-
-Comprehensive evaluation with reference structures.
-
-**Use cases:**
-- Benchmarking predictions
-- Validation against experimental data
-- Repeated predictions with different seeds
-
-[Learn more →](evaluate.md)
-
 ## Workflow Selection
 
 Choose the right command for your task:
@@ -55,10 +44,9 @@ Choose the right command for your task:
 ```mermaid
 graph TD
     A[Start] --> B{What is your goal?}
-    B -->|Single prediction| C[predict]
+    B -->|Single system| C[validate]
     B -->|Multiple ligands| D[screen]
     B -->|Scoring function| E[oracle]
-    B -->|Validation| F[evaluate]
 ```
 
 ## Common Patterns
@@ -106,7 +94,7 @@ For screening large libraries:
 
 ### Reproducibility
 
-- Use fixed random seeds with `--seeds`
+- Use a fixed random seed with `--seed`
 - Document COFOLDER version
 - Save all configuration files
 
@@ -114,7 +102,6 @@ For screening large libraries:
 
 Explore detailed guides for each command:
 
-- [Predict Command →](predict.md)
+- [Validate Command →](validate.md)
 - [Screen Command →](screen.md)
 - [Oracle Command →](oracle.md)
-- [Evaluate Command →](evaluate.md)

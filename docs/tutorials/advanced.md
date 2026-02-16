@@ -294,6 +294,6 @@ for i, compound in enumerate(compounds):
 
 ## Related
 
-- [API Reference](../api/recipes/predict.md)
+- [API Reference](../api/recipes/validate.md)
 - [Configuration Guide](../getting-started/configuration.md)
 - [Contributing](../contributing.md)

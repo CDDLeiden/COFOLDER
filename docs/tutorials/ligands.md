@@ -54,7 +54,7 @@ ligand:
 Fast generation of 2D coordinates:
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s system.yaml \
   -b options.yaml \
   --generate_conformers 2D
@@ -65,7 +65,7 @@ cofolder predict \
 Generate 3D conformers using ETKDG + UFF:
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s system.yaml \
   -b options.yaml \
   --generate_conformers 3D

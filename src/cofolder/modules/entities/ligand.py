@@ -404,6 +404,8 @@ def smiles_to_sdf(
 
     raise ValueError("Invalid input for smiles_or_csv_to_sdf: must be SMILES string, list of SMILES, or CSV file path.")
 
+# Adapted from jacktday/boltztools (MIT License).
+# See THIRD_PARTY_LICENSES.md for attribution and full license text.
 def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] = os.path.expanduser("~/.boltz")):
     """Convert an RDKit molecule to Boltz CCD format and cache it.
 
@@ -438,6 +440,8 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
 
     Notes
     -----
+    This function contains adapted logic from jacktday/boltztools (MIT).
+
     The CCD format includes:
     - Atomic symmetries
     - Bond length and angle constraints

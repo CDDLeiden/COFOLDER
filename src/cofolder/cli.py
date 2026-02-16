@@ -5,10 +5,9 @@ from pathlib import Path
 
 from cofolder import __version__
 
-from cofolder.recipes.predict import Predict
+from cofolder.recipes.validate import Validate
 from cofolder.recipes.screen import Screen
 from cofolder.recipes.oracle import Oracle
-from cofolder.recipes.evaluate import Evaluate
 
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
@@ -25,6 +24,13 @@ SCORING_FUNCTIONS = [
 
 DEFAULT_SCORING_FUNCTIONS = [
     f for f in SCORING_FUNCTIONS if f != "ifp_prolif"
+]
+
+REPRODUCTION_METRICS = [
+    "protein_rmsd",
+    "ligand_rmsd",
+    "sucos",
+    "pocket_coverage",
 ]
 
 class BaseRecipe:
@@ -87,6 +93,56 @@ class BaseRecipe:
             default=True,
             help='Assess robustness across repeats and diffusion samples (default: True).'
         )
+        parser.add_argument(
+            '--assess_bias',
+            '--asess_bias',
+            dest='assess_bias',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='Assess bias against training data references (default: False).'
+        )
+        parser.add_argument(
+            '--protein_training_data_path',
+            type=str,
+            default=None,
+            help='Path to protein training reference CSV (requires release_date, pdb_id, sequence).'
+        )
+        parser.add_argument(
+            '--ligand_training_data_path',
+            type=str,
+            default=None,
+            help='Path to ligand training reference CSV/SDF (requires release_date, pdb_id, smiles).'
+        )
+        parser.add_argument(
+            '--bias_release_cutoff',
+            type=str,
+            default='2023-06-01',
+            help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
+        )
+        parser.add_argument(
+            '--bias_chains',
+            nargs='+',
+            default=None,
+            help=(
+                "Optional chain IDs to restrict bias assessment to. "
+                "Example: --bias_chains A F"
+            )
+        )
+        parser.add_argument(
+            '--build_bias_training_data',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='Build bias training CSVs inside validate() before assessing bias (default: False).'
+        )
+        parser.add_argument(
+            '--bias_training_components_cif',
+            type=str,
+            default=None,
+            help=(
+                "Path to components.cif used by in-validate bias training build. "
+                "Default: <ligand_training_data_path parent>/ccd/components.cif"
+            ),
+        )
 
         parser.add_argument(
             '--conformers',
@@ -107,6 +163,33 @@ class BaseRecipe:
                 'Path to an SDF file containing conformers to use. '
                 'Required if --conformers is set to "sdf".'
             )
+        )
+
+        parser.add_argument(
+            '--reference_path',
+            type=str,
+            default=None,
+            help='Path to reference structure (PDB/CIF) used for model reproduction metrics.'
+        )
+        parser.add_argument(
+            "--pocket_coverage_reference",
+            type=str,
+            default=None,
+            help=(
+                "Custom pocket-coverage reference (residue list or bitstring). "
+                "Examples: '2 8 10', 'A2 S8 T10', '0100000101'. "
+                "You may also provide a text file path containing one of these formats."
+            ),
+        )
+        parser.add_argument(
+            "--reproduction_metrics",
+            nargs="+",
+            choices=REPRODUCTION_METRICS,
+            default=REPRODUCTION_METRICS,
+            help=(
+                "Reference-based reproduction metrics to compute when --reference_path is set. "
+                f"Choices: {', '.join(REPRODUCTION_METRICS)}"
+            ),
         )
 
     @staticmethod
@@ -134,8 +217,18 @@ class BaseRecipe:
             seed=args.seed,
             scoring_functions=args.scoring_functions,
             assess_robustness=args.assess_robustness,
+            assess_bias=args.assess_bias,
+            protein_training_data_path=args.protein_training_data_path,
+            ligand_training_data_path=args.ligand_training_data_path,
+            bias_release_cutoff=args.bias_release_cutoff,
+            bias_chains=args.bias_chains,
+            build_bias_training_data=args.build_bias_training_data,
+            bias_training_components_cif=args.bias_training_components_cif,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
+            reference_path=args.reference_path,
+            pocket_coverage_reference=args.pocket_coverage_reference,
+            reproduction_metrics=args.reproduction_metrics,
         )
 
     @staticmethod
@@ -171,6 +264,10 @@ class BaseRecipe:
             raise ValueError(
                 '--sdf_file must be provided when --conformers is "sdf"'
             )
+        if args.assess_bias:
+            # Runtime availability checks are handled in Validate.run so the
+            # pipeline can continue while warning and skipping bias metrics.
+            pass
 
     @classmethod
     def setup(cls, args):
@@ -193,8 +290,8 @@ class BaseRecipe:
 
         return logger
 
-class PredictRecipe(BaseRecipe):
-    LOGGER_NAME = "cofolder.predict"
+class ValidateRecipe(BaseRecipe):
+    LOGGER_NAME = "cofolder.validate"
 
     @staticmethod
     def add_arguments(parser):
@@ -203,59 +300,13 @@ class PredictRecipe(BaseRecipe):
 
     @staticmethod
     def main(args):
-        logger = PredictRecipe.setup(args)
-        logger.info("Starting COFOLDER prediction pipeline.")
+        logger = ValidateRecipe.setup(args)
+        logger.info("Starting COFOLDER validation pipeline.")
 
-        predictor = Predict(
-            **BaseRecipe.common_kwargs(args)
-        )
+        validator = Validate(**BaseRecipe.common_kwargs(args))
 
-        predictor.run()
-        logger.info("Prediction pipeline completed.")
-
-
-class EvaluateRecipe(BaseRecipe):
-    LOGGER_NAME = "cofolder.evaluate"
-
-    @staticmethod
-    def add_arguments(parser):
-        BaseRecipe.add_common_arguments(parser)
-
-        parser.add_argument(
-            '-i', '--input_pdb',
-            type=str,
-            help='Reference CIF/PDB for RMSD calculations.'
-        )
-
-        parser.add_argument(
-            '--ifp',
-            type=str,
-            help='Interaction fingerprint specification.'
-        )
-
-        parser.add_argument(
-            '--training_data_dir',
-            type=str,
-            required=True,
-            help='Path to directory containing training data used for evaluation.'
-        )
-
-        BaseRecipe.add_final_arguments(parser)
-
-    @staticmethod
-    def main(args):
-        logger = EvaluateRecipe.setup(args)
-        logger.info("Starting COFOLDER evaluation pipeline.")
-
-        evaluator = Evaluate(
-            **BaseRecipe.common_kwargs(args),
-            input_pdb=args.input_pdb,
-            ifp=args.ifp,
-            training_data_dir=args.training_data_dir,
-        )
-
-        evaluator.run()
-        logger.info("Evaluation pipeline completed.")
+        validator.run()
+        logger.info("Validation pipeline completed.")
 
 
 class ScreenRecipe(BaseRecipe):
@@ -335,10 +386,9 @@ class OracleRecipe(BaseRecipe):
 
 
 RECIPES = [
-    ("predict", PredictRecipe, "Basic protocol for co-folding a single system using Boltz."),
+    ("validate", ValidateRecipe, "Basic protocol for co-folding and validating a single system using Boltz."),
     ("screen", ScreenRecipe, "Co-fold a library using Boltz for virtual screening."),
     ("oracle", OracleRecipe, "Use Boltz as an oracle function for single SMILES predictions."),
-    ("evaluate", EvaluateRecipe, "Evaluate Boltz system configuration."),
 ]
 
 
@@ -358,5 +408,3 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     args.func(args)
-
-

@@ -25,10 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial development version
-- `predict` command for single system co-folding
+- `validate` command for single system co-folding and validation
 - `screen` command for virtual screening
 - `oracle` command for oracle function usage
-- `evaluate` command for validation and benchmarking
 - Support for SMILES, SDF, PDB, and CIF input formats
 - 2D and 3D conformer generation
 - RMSD calculation against reference structures

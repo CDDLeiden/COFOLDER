@@ -1,11 +1,11 @@
-# Predict Command
+# Validate Command
 
-The `predict` command performs co-folding of a single protein-ligand system.
+The `validate` command performs co-folding of a single protein-ligand system.
 
 ## Basic Usage
 
 ```bash
-cofolder predict -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -b options.yaml
 ```
 
 ## Arguments
@@ -18,15 +18,16 @@ cofolder predict -s system.yaml -b options.yaml
 ### Optional Arguments
 
 - `-w, --wrk_dir`: Working directory (default: current directory)
-- `--generate_conformers {2D,3D}`: Generate conformers for SMILES input
+- `--conformers {2D,3D,sdf}`: Generate or load conformers for SMILES input
+- `--sdf_file`: SDF path (required with `--conformers sdf`)
 - `-d, --debug`: Enable debug logging
 
 ## Examples
 
-### Basic Prediction
+### Basic Validation
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s examples/system.yaml \
   -b examples/options.yaml \
   -w ./output
@@ -35,16 +36,16 @@ cofolder predict \
 ### With 3D Conformer Generation
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s system.yaml \
   -b options.yaml \
-  --generate_conformers 3D
+  --conformers 3D
 ```
 
 ### With Debug Logging
 
 ```bash
-cofolder predict \
+cofolder validate \
   -s system.yaml \
   -b options.yaml \
   -d
@@ -81,5 +82,5 @@ The command creates:
 ## Related
 
 - [Configuration Guide](../getting-started/configuration.md)
-- [Predict API Reference](../api/recipes/predict.md)
+- [Validate API Reference](../api/recipes/validate.md)
 - [Basic Tutorial](../tutorials/basic.md)

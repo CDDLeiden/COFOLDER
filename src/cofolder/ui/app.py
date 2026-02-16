@@ -188,7 +188,7 @@ st.markdown("""
 def initialize_session_state():
     """Initialize Streamlit session state."""
     if 'recipe' not in st.session_state:
-        st.session_state.recipe = 'predict'
+        st.session_state.recipe = 'validate'
     if 'options' not in st.session_state:
         st.session_state.options = DEFAULT_OPTIONS.copy()
     if 'execution_log' not in st.session_state:
@@ -240,10 +240,9 @@ def render_recipe_selector():
     st.sidebar.markdown("### 🎯 Select Recipe")
 
     recipes = {
-        'predict': '🔮 Predict - Co-fold a single system',
+        'validate': '✅ Validate - Co-fold and validate a single system',
         'screen': '🔬 Screen - Virtual screening library',
         'oracle': '🎰 Oracle - Single SMILES prediction',
-        'evaluate': '📊 Evaluate - Evaluate system configuration',
     }
 
     selected = st.sidebar.radio(
@@ -258,10 +257,10 @@ def render_recipe_selector():
         st.rerun()
 
 
-def render_predict_ui():
-    """Render the Predict workflow UI."""
+def render_validate_ui():
+    """Render the Validate workflow UI."""
     st.markdown('<div class="recipe-description">'
-                '<b>Predict:</b> Co-fold a single system using Boltz. Perfect for structure prediction of a specific protein-ligand complex.'
+                '<b>Validate:</b> Co-fold and validate a single system using Boltz.'
                 '</div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
@@ -297,8 +296,8 @@ def render_predict_ui():
     render_options_editor(system_path, options_path)
 
     # Run button
-    if st.button('▶️ Run Prediction', use_container_width=True, type='primary'):
-        run_predict(wrk_dir, system_path, options_path, debug)
+    if st.button('▶️ Run Validation', use_container_width=True, type='primary'):
+        run_validate(wrk_dir, system_path, options_path, debug)
 
 
 def render_screen_ui():
@@ -462,108 +461,6 @@ def render_oracle_ui():
         run_oracle(wrk_dir, system_path, options_path, debug)
 
 
-def render_evaluate_ui():
-    """Render the Evaluate workflow UI."""
-    st.markdown('<div class="recipe-description">'
-                '<b>Evaluate:</b> Evaluate Boltz system configuration with optional comparison to reference structures.'
-                '</div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown('#### System Configuration')
-        system_path = st.text_input(
-            'System YAML Path',
-            value='./system.yaml',
-            key='eval_system_path',
-            help='Path to the system YAML file'
-        )
-
-    with col2:
-        st.markdown('#### Options Configuration')
-        options_path = st.text_input(
-            'Options YAML Path',
-            value='./options.yaml',
-            key='eval_options_path',
-            help='Path to the Boltz options YAML file'
-        )
-
-    # Repeat and seed configuration
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        repeats = st.number_input(
-            'Number of Repeats',
-            value=1,
-            min_value=1,
-            max_value=100,
-            help='How many times to run the prediction'
-        )
-
-    with col2:
-        use_seeds = st.checkbox('Use Custom Seeds', value=False)
-        if use_seeds:
-            seeds = st.text_input(
-                'Seeds (comma-separated)',
-                value='42',
-                help=f'Provide exactly {repeats} seeds'
-            )
-        else:
-            seeds = None
-
-    with col3:
-        generate_conformers = st.selectbox(
-            'Generate Conformers',
-            [None, '2D', '3D'],
-            key='eval_gen_conf',
-            help='Generate 2D or 3D conformers'
-        )
-
-    # Reference structure
-    st.markdown('#### Optional: Reference Structure')
-    input_pdb = st.text_input(
-        'Reference Structure Path',
-        value='',
-        help='Path to CIF/PDB file for RMSD calculations'
-    )
-
-    # IFP configuration
-    col1, col2 = st.columns(2)
-    with col1:
-        ifp_type = st.selectbox(
-            'Interaction Fingerprint (IFP)',
-            ['None', 'From Crystal', 'Manual'],
-            help='Extract or specify interaction fingerprint'
-        )
-        if ifp_type == 'From Crystal':
-            ifp = 'true'
-        elif ifp_type == 'Manual':
-            ifp = st.text_area('IFP Dictionary (JSON)', value='{}')
-        else:
-            ifp = None
-
-    with col2:
-        wrk_dir = st.text_input(
-            'Working Directory',
-            value=os.getcwd(),
-            key='eval_wrk_dir',
-            help='Directory where results will be saved'
-        )
-
-    debug = st.checkbox('Enable Debug Logging', value=False, key='eval_debug')
-
-    # Render options
-    render_options_editor(system_path, options_path, key_suffix='_eval')
-
-    # Run button
-    if st.button('▶️ Run Evaluation', use_container_width=True, type='primary'):
-        run_evaluate(
-            wrk_dir, system_path, options_path, repeats, seeds,
-            input_pdb if input_pdb else None,
-            ifp, generate_conformers, debug
-        )
-
-
 def render_options_editor(system_path: str, options_path: str, key_suffix: str = ''):
     """Render the options editor with grouped controls."""
     st.markdown('#### 🔧 Boltz Options')
@@ -662,8 +559,8 @@ def render_options_editor(system_path: str, options_path: str, key_suffix: str =
                 st.success(f"Options saved to {options_path}")
 
 
-def run_predict(wrk_dir: str, system_path: str, options_path: str, debug: bool):
-    """Run the predict workflow."""
+def run_validate(wrk_dir: str, system_path: str, options_path: str, debug: bool):
+    """Run the validate workflow."""
     try:
         # Validate inputs
         if not system_path or not options_path:
@@ -680,11 +577,11 @@ def run_predict(wrk_dir: str, system_path: str, options_path: str, debug: bool):
         }
         save_config(options_to_save, options_path)
 
-        st.info('🚀 Starting prediction workflow...')
+        st.info('🚀 Starting validation workflow...')
 
         # Build command
         cmd = [
-            'python', '-m', 'cofolder', 'predict',
+            'python', '-m', 'cofolder', 'validate',
             '-w', wrk_dir,
             '-s', system_path,
             '-b', options_path,
@@ -694,19 +591,19 @@ def run_predict(wrk_dir: str, system_path: str, options_path: str, debug: bool):
             cmd.append('-d')
 
         # Run command
-        with st.spinner('Running Boltz prediction...'):
+        with st.spinner('Running Boltz validation...'):
             result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode == 0:
-            st.markdown('<div class="success-box">✅ Prediction completed successfully!</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ Validation completed successfully!</div>', unsafe_allow_html=True)
             if result.stdout:
                 st.code(result.stdout, language='bash')
         else:
-            st.markdown('<div class="error-box">❌ Prediction failed!</div>', unsafe_allow_html=True)
+            st.markdown('<div class="error-box">❌ Validation failed!</div>', unsafe_allow_html=True)
             st.code(result.stderr, language='bash')
 
     except Exception as e:
-        st.error(f'Error running prediction: {str(e)}')
+        st.error(f'Error running validation: {str(e)}')
 
 
 def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
@@ -835,74 +732,6 @@ def run_oracle(wrk_dir: str, system_path: str, options_path: str, debug: bool):
         st.error(f'Error running oracle: {str(e)}')
 
 
-def run_evaluate(wrk_dir: str, system_path: str, options_path: str, repeats: int,
-                seeds: Optional[str], input_pdb: Optional[str], ifp: Optional[str],
-                generate_conformers: Optional[str], debug: bool):
-    """Run the evaluate workflow."""
-    try:
-        if not system_path or not options_path:
-            st.error('System and Options paths are required.')
-            return
-
-        # Validate seeds
-        if seeds:
-            seed_list = [s.strip() for s in seeds.split(',')]
-            if len(seed_list) != repeats:
-                st.error(f'Number of seeds ({len(seed_list)}) must match repeats ({repeats})')
-                return
-
-        # Save current options
-        options_to_save = {
-            'wrapper': [
-                {'run_dir': wrk_dir},
-                {'system': system_path},
-            ],
-            'options': [st.session_state.options]
-        }
-        save_config(options_to_save, options_path)
-
-        st.info('🚀 Starting evaluation workflow...')
-
-        # Build command
-        cmd = [
-            'python', '-m', 'cofolder', 'evaluate',
-            '-w', wrk_dir,
-            '-s', system_path,
-            '-b', options_path,
-            '--repeats', str(repeats),
-        ]
-
-        if seeds:
-            cmd.extend(['--seeds', seeds])
-
-        if input_pdb:
-            cmd.extend(['-i', input_pdb])
-
-        if ifp:
-            cmd.extend(['--ifp', ifp])
-
-        if generate_conformers:
-            cmd.extend(['--generate_conformers', generate_conformers])
-
-        if debug:
-            cmd.append('-d')
-
-        # Run command
-        with st.spinner('Running evaluation...'):
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode == 0:
-            st.markdown('<div class="success-box">✅ Evaluation completed successfully!</div>', unsafe_allow_html=True)
-            if result.stdout:
-                st.code(result.stdout, language='bash')
-        else:
-            st.markdown('<div class="error-box">❌ Evaluation failed!</div>', unsafe_allow_html=True)
-            st.code(result.stderr, language='bash')
-
-    except Exception as e:
-        st.error(f'Error running evaluation: {str(e)}')
-
-
 def main():
     """Main application entry point."""
     initialize_session_state()
@@ -910,24 +739,21 @@ def main():
     render_recipe_selector()
 
     # Render selected recipe
-    if st.session_state.recipe == 'predict':
-        render_predict_ui()
+    if st.session_state.recipe == 'validate':
+        render_validate_ui()
     elif st.session_state.recipe == 'screen':
         render_screen_ui()
     elif st.session_state.recipe == 'oracle':
         render_oracle_ui()
-    elif st.session_state.recipe == 'evaluate':
-        render_evaluate_ui()
 
     # Render sidebar information
     with st.sidebar:
         st.markdown('---')
         st.markdown('### 📚 Documentation')
         st.markdown("""
-        - **Predict**: Single system co-folding
+        - **Validate**: Single system co-folding and validation
         - **Screen**: Batch virtual screening
         - **Oracle**: Quick affinity predictions
-        - **Evaluate**: Configuration validation
         """)
 
         st.markdown('---')

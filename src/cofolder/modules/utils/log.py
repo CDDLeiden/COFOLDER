@@ -23,7 +23,7 @@ Format includes timestamp, log level, logger name, file location,
 function name, and the actual message, separated by pipes for readability.
 
 Example output:
-    2025-01-15 10:30:45,123 | INFO     | cofolder.predict | predict.py:42 | run | Starting prediction
+    2025-01-15 10:30:45,123 | INFO     | cofolder.validate | validate.py:42 | run | Starting validation
 """
 
 def setup_root_logger(

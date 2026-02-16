@@ -201,7 +201,7 @@ cofolder screen \
 
 ## Next Steps
 
-- [Evaluate top hits](../user-guide/evaluate.md) against reference structures
+- [Validate top hits](../user-guide/validate.md) with the single-system workflow
 - Try [advanced features](advanced.md) like custom scoring
 - Explore [ligand handling](ligands.md) in detail
 

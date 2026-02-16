@@ -111,15 +111,13 @@ def test_ui_structure():
             'load_yaml_file',
             'save_config',
             'render_recipe_selector',
-            'render_predict_ui',
+            'render_validate_ui',
             'render_screen_ui',
             'render_oracle_ui',
-            'render_evaluate_ui',
             'render_options_editor',
-            'run_predict',
+            'run_validate',
             'run_screen',
             'run_oracle',
-            'run_evaluate',
         ]
 
         for func_name in required_functions:
@@ -170,7 +168,7 @@ def test_recipes_configuration():
     try:
         from boltz_eval.ui.app import DEFAULT_OPTIONS
 
-        recipes = ['predict', 'screen', 'oracle', 'evaluate']
+        recipes = ['validate', 'screen', 'oracle']
         print(f"  ✓ Found {len(recipes)} recipes: {', '.join(recipes)}")
 
         # Verify all common options are present
@@ -229,4 +227,3 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
-

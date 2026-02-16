@@ -1,6 +1,6 @@
-# Evaluate Recipe
+# Validate Recipe
 
-::: cofolder.recipes.evaluate
+::: cofolder.recipes.validate
     options:
       show_root_heading: true
       show_source: true
