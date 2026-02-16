@@ -9,6 +9,7 @@ from cofolder.modules.utils import helpers, gather, read, write
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.bias import apply_bias_metrics
+from cofolder.modules.analytics.bias_training import run_build_bias_training_data
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,9 @@ class Validate(object):
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_chains: list[str] | None = None,
+        build_bias_training_data: bool = False,
+        bias_training_components_cif: str | None = None,
         conformers: str | None = None,
         sdf_file: str | None = None,
         reference_path: str | None = None,
@@ -97,6 +101,17 @@ class Validate(object):
             Path(ligand_training_data_path) if ligand_training_data_path else None
         )
         self.bias_release_cutoff = bias_release_cutoff
+        self.build_bias_training_data = build_bias_training_data
+        self.bias_training_components_cif = (
+            Path(bias_training_components_cif) if bias_training_components_cif else None
+        )
+        normalized_bias_chains: set[str] = set()
+        for value in (bias_chains or []):
+            for token in str(value).split(","):
+                token = token.strip()
+                if token:
+                    normalized_bias_chains.add(token.upper())
+        self.bias_chains = normalized_bias_chains or None
         self.conformers = conformers
         self.sdf_file = Path(sdf_file) if sdf_file else None
         self.reference_path = Path(reference_path) if reference_path else None
@@ -122,6 +137,9 @@ class Validate(object):
             "protein_training_data_path": self.protein_training_data_path,
             "ligand_training_data_path": self.ligand_training_data_path,
             "bias_release_cutoff": self.bias_release_cutoff,
+            "bias_chains": sorted(self.bias_chains) if self.bias_chains else None,
+            "build_bias_training_data": self.build_bias_training_data,
+            "bias_training_components_cif": self.bias_training_components_cif,
             "reference_path": self.reference_path,
             "pocket_coverage_reference": self.pocket_coverage_reference,
             "reproduction_metrics": sorted(self.reproduction_metrics),
@@ -293,6 +311,75 @@ class Validate(object):
         )
 
         if self.assess_bias:
+            if self.build_bias_training_data:
+                if self.protein_training_data_path is None or self.ligand_training_data_path is None:
+                    raise ValueError(
+                        "--build_bias_training_data requires both "
+                        "--protein_training_data_path and --ligand_training_data_path."
+                    )
+                components_cif = self.bias_training_components_cif
+                if components_cif is None:
+                    components_cif = self.ligand_training_data_path.parent / "ccd" / "components.cif"
+                if not components_cif.exists():
+                    raise ValueError(
+                        f"components.cif not found for in-validate bias build: {components_cif}. "
+                        "Provide --bias_training_components_cif or prepare training data root."
+                    )
+                self.logger.info(
+                    "Building bias training data in validate(): components_cif=%s protein_csv=%s ligand_csv=%s",
+                    components_cif,
+                    self.protein_training_data_path,
+                    self.ligand_training_data_path,
+                )
+                available_protein_chains = {
+                    str(row["CHAIN_ID"]).strip().upper()
+                    for _, row in chain_df.iterrows()
+                    if str(row.get("ENTITY_TYPE")) == "protein"
+                    and str(row.get("CHAIN_ID", "")).strip()
+                }
+                available_ligand_chains = {
+                    str(row["CHAIN_ID"]).strip().upper()
+                    for _, row in chain_df.iterrows()
+                    if str(row.get("ENTITY_TYPE")) == "ligand"
+                    and str(row.get("CHAIN_ID", "")).strip()
+                }
+                selected_chains = (
+                    {str(x).strip().upper() for x in self.bias_chains}
+                    if self.bias_chains
+                    else None
+                )
+                selected_protein_chains = (
+                    (available_protein_chains & selected_chains)
+                    if selected_chains is not None
+                    else available_protein_chains
+                )
+                selected_ligand_chains = (
+                    (available_ligand_chains & selected_chains)
+                    if selected_chains is not None
+                    else available_ligand_chains
+                )
+                run_protein_protocol = bool(selected_protein_chains)
+                run_ligand_protocol = bool(selected_ligand_chains)
+                self.logger.info(
+                    "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s",
+                    run_protein_protocol,
+                    sorted(selected_protein_chains),
+                    run_ligand_protocol,
+                    sorted(selected_ligand_chains),
+                )
+                run_build_bias_training_data(
+                    system_path=self.system_path,
+                    components_cif=components_cif,
+                    output_protein_csv=self.protein_training_data_path,
+                    output_ligand_csv=self.ligand_training_data_path,
+                    release_cutoff=self.bias_release_cutoff,
+                    overwrite=True,
+                    skip_bias_csv=True,
+                    skip_protein_mmseqs=(not run_protein_protocol),
+                    skip_ligand_ecfp=(not run_ligand_protocol),
+                    ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
+                )
+
             protein_ok = (
                 self.protein_training_data_path is not None
                 and self.protein_training_data_path.exists()
@@ -305,18 +392,18 @@ class Validate(object):
             )
 
             if protein_ok and ligand_ok:
-                system_df, chain_df, bias_df = apply_bias_metrics(
+                system_df, chain_df = apply_bias_metrics(
                     system_df=system_df,
                     chain_df=chain_df,
                     sys_obj=self.sys,
                     protein_training_data_path=self.protein_training_data_path,
                     ligand_training_data_path=self.ligand_training_data_path,
                     release_cutoff=self.bias_release_cutoff,
+                    bias_chains=self.bias_chains,
+                    protein_top_n=100,
+                    boltz_cache_path=self.opt.find_value(key="cache") or "~/.boltz",
+                    output_dir=self.wrk_dir / "results" / "bias_train",
                     logger=self.logger,
-                )
-                write.write_csv(
-                    bias_df,
-                    output_path=self.wrk_dir / "results" / "bias_to_training_data.csv"
                 )
             else:
                 self.logger.warning(

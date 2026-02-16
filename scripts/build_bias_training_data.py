@@ -22,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -53,8 +54,10 @@ ALIGNER.extend_gap_score = 0.0
 
 @dataclass(frozen=True)
 class LigandQuery:
-    chain_ids: tuple[str, ...]
+    chain_id: str
     smiles: str
+    source: str
+    source_ccd: str | None = None
 
 
 def _fetch_json(url: str, timeout: int) -> dict | list:
@@ -105,42 +108,73 @@ def _as_list(value) -> list[str]:
     return [str(value)]
 
 
-def _extract_single_ligand_query(
+def _extract_ligand_queries(
     system_path: Path,
     ccd_smiles_by_id: dict[str, str],
-) -> LigandQuery | None:
+    selected_chains: set[str] | None = None,
+) -> list[LigandQuery]:
     data = yaml.safe_load(system_path.read_text(encoding="utf-8"))
     seqs = data.get("sequences") if isinstance(data, dict) else None
     if not isinstance(seqs, list):
-        return None
+        return []
 
-    # Single-query mode: first ligand definition with usable smiles (direct or CCD-mapped).
+    out: list[LigandQuery] = []
+
     for item in seqs:
         if not isinstance(item, dict):
             continue
         lig = item.get("ligand")
         if not isinstance(lig, dict):
             continue
-        chain_ids = _as_list(lig.get("id"))
+        chain_ids = [c.strip().upper() for c in _as_list(lig.get("id")) if c and c.strip()]
+        if selected_chains:
+            chain_ids = [c for c in chain_ids if c in selected_chains]
+            if not chain_ids:
+                continue
         smiles = _normalize_smiles(lig.get("smiles"))
-        if not smiles:
-            # Also support ligand definitions that only provide CCD IDs.
-            ccd_ids = [x.upper() for x in _as_list(lig.get("ccd"))]
-            for ccd_id in ccd_ids:
-                mapped = _normalize_smiles(ccd_smiles_by_id.get(ccd_id))
-                if not mapped:
-                    continue
-                return LigandQuery(
-                    chain_ids=tuple(chain_ids),
-                    smiles=mapped,
+        if smiles:
+            for chain_id in chain_ids:
+                out.append(
+                    LigandQuery(
+                        chain_id=chain_id,
+                        smiles=smiles,
+                        source="smiles",
+                    )
                 )
             continue
-        return LigandQuery(
-            chain_ids=tuple(chain_ids),
-            smiles=smiles,
-        )
 
-    return None
+        # Also support ligand definitions that only provide CCD IDs.
+        ccd_ids = [x.upper() for x in _as_list(lig.get("ccd"))]
+        mapped_smiles = None
+        mapped_ccd = None
+        for ccd_id in ccd_ids:
+            mapped = _normalize_smiles(ccd_smiles_by_id.get(ccd_id))
+            if not mapped:
+                continue
+            mapped_smiles = mapped
+            mapped_ccd = ccd_id
+            break
+
+        if not mapped_smiles:
+            joined_ccd = ",".join(ccd_ids) if ccd_ids else "<none>"
+            joined_chains = ",".join(chain_ids) if chain_ids else "<none>"
+            print(f"[warn] no CCD->SMILES mapping found for chains={joined_chains} ccd={joined_ccd}")
+            continue
+
+        for chain_id in chain_ids:
+            print(
+                f"[info] ccd_to_smiles chain={chain_id} ccd={mapped_ccd} smiles={mapped_smiles}"
+            )
+            out.append(
+                LigandQuery(
+                    chain_id=chain_id,
+                    smiles=mapped_smiles,
+                    source="ccd",
+                    source_ccd=mapped_ccd,
+                )
+            )
+
+    return out
 
 
 def _load_ccd_smiles(components_cif_path: Path) -> pd.DataFrame:
@@ -396,12 +430,86 @@ def _extract_protein_query_from_system(system_path: Path) -> str | None:
     return None
 
 
+def _extract_protein_query_chain_id_from_system(system_path: Path) -> str | None:
+    data = yaml.safe_load(system_path.read_text(encoding="utf-8"))
+    seqs = data.get("sequences") if isinstance(data, dict) else None
+    if not isinstance(seqs, list):
+        return None
+    for item in seqs:
+        if not isinstance(item, dict):
+            continue
+        prot = item.get("protein")
+        if not isinstance(prot, dict):
+            continue
+        ids = _as_list(prot.get("id"))
+        for cid in ids:
+            token = str(cid).strip().upper()
+            if token:
+                return token
+    return None
+
+
+def _order_ligand_training_columns(df: pd.DataFrame) -> pd.DataFrame:
+    preferred = [
+        "query_chain_id",
+        "pdb_id",
+        "release_date",
+        "ligand_id",
+        "ecfp_similarity",
+        "smiles",
+    ]
+    cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+    return df.loc[:, cols].copy()
+
+
+def _order_protein_training_columns(df: pd.DataFrame) -> pd.DataFrame:
+    preferred = [
+        "query_chain_id",
+        "pdb_id",
+        "release_date",
+        "sequence_similarity",
+        "sequence",
+    ]
+    cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
+    return df.loc[:, cols].copy()
+
+
 def _guess_mmseqs_db_from_components(components_cif: Path) -> Path:
     # expected fetch layout:
     # <output_root>/ccd/components.cif
     # <output_root>/mmseqs/pdb/db
     output_root = components_cif.parent.parent
     return output_root / "mmseqs" / "pdb" / "db"
+
+
+def _resolve_mmseqs_bin(mmseqs_bin: str | None = None) -> str | None:
+    candidates: list[str] = []
+    if mmseqs_bin:
+        candidates.append(str(mmseqs_bin))
+    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
+    if explicit_env:
+        candidates.insert(0, explicit_env)
+    candidates.extend(
+        [
+            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
+            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/bin/mmseqs"),
+            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/mmseqs"),
+        ]
+    )
+    from_path = shutil.which("mmseqs")
+    if from_path:
+        candidates.append(from_path)
+
+    for cand in candidates:
+        if not cand:
+            continue
+        p = Path(cand).expanduser()
+        if p.exists() and p.is_file():
+            return str(p)
+        found = shutil.which(cand)
+        if found:
+            return found
+    return None
 
 
 def _run_mmseqs(
@@ -412,7 +520,8 @@ def _run_mmseqs(
     tmp_root: Path,
     max_seqs: int,
 ) -> pd.DataFrame:
-    if shutil.which(mmseqs_bin) is None and not Path(mmseqs_bin).exists():
+    resolved_mmseqs = _resolve_mmseqs_bin(mmseqs_bin)
+    if resolved_mmseqs is None:
         raise RuntimeError(
             f"mmseqs binary not found: {mmseqs_bin}. Provide --mmseqs_bin with full path."
         )
@@ -434,9 +543,9 @@ def _run_mmseqs(
     search_tmp.mkdir(parents=True, exist_ok=True)
 
     cmds = [
-        [mmseqs_bin, "createdb", str(query_fasta), str(qdb)],
+        [resolved_mmseqs, "createdb", str(query_fasta), str(qdb)],
         [
-            mmseqs_bin,
+            resolved_mmseqs,
             "search",
             str(qdb),
             str(target_db),
@@ -448,7 +557,7 @@ def _run_mmseqs(
             str(max(1, int(max_seqs))),
         ],
         [
-            mmseqs_bin,
+            resolved_mmseqs,
             "convertalis",
             str(qdb),
             str(target_db),
@@ -484,7 +593,6 @@ def _collect_ccd_hits(
         ccd_df = ccd_df[ccd_df["fp"].notna()].copy()
 
     rows: list[dict[str, str | float]] = []
-    query_chain_id = query.chain_ids[0] if query.chain_ids else ""
     hits = _find_ccd_hits(
         query_smiles=query.smiles,
         ccd_df=ccd_df,
@@ -494,13 +602,33 @@ def _collect_ccd_hits(
     for ccd_id, hit_smiles, sim in hits:
         rows.append(
             {
-                "query_chain_id": query_chain_id,
+                "query_chain_id": query.chain_id,
                 "ligand_pdbid": ccd_id,
                 "hit_smiles": hit_smiles,
                 "ecfp_similarity": sim,
             }
         )
     return pd.DataFrame(rows)
+
+
+def _write_chain_ligand_csvs(output_ligand_csv: Path, ligand_df: pd.DataFrame) -> None:
+    if "query_chain_id" not in ligand_df.columns:
+        return
+
+    chain_ids = sorted(
+        ligand_df["query_chain_id"].dropna().astype(str).str.strip().unique().tolist()
+    )
+    stem = output_ligand_csv.stem
+    suffix = output_ligand_csv.suffix or ".csv"
+    for chain_id in chain_ids:
+        if not chain_id:
+            continue
+        chain_path = output_ligand_csv.with_name(f"{stem}_{chain_id}{suffix}")
+        sub = ligand_df[
+            ligand_df["query_chain_id"].astype(str).str.strip() == chain_id
+        ].copy()
+        sub.to_csv(chain_path, index=False)
+        print(f"[done] chain_ligand_csv[{chain_id}]={chain_path} rows={len(sub)}")
 
 
 def main() -> int:
@@ -557,6 +685,30 @@ def main() -> int:
         action="store_true",
         help="Overwrite existing output CSVs (default: false).",
     )
+    parser.add_argument(
+        "--skip_protein_mmseqs",
+        action="store_true",
+        help=(
+            "Skip MMseqs protein expansion and emit an empty protein_training_data.csv "
+            "with required columns."
+        ),
+    )
+    parser.add_argument(
+        "--skip_bias_csv",
+        action="store_true",
+        help="Do not write bias_training_data.csv.",
+    )
+    parser.add_argument(
+        "--skip_ligand_ecfp",
+        action="store_true",
+        help="Skip ligand ECFP/CCD expansion and emit an empty ligand_training_data.csv.",
+    )
+    parser.add_argument(
+        "--ligand_chains",
+        nargs="+",
+        default=None,
+        help="Optional ligand chain IDs to process (e.g. --ligand_chains E F).",
+    )
     args = parser.parse_args()
 
     cutoff = _parse_iso_date(args.release_cutoff)
@@ -565,134 +717,167 @@ def main() -> int:
     if args.query_sequence and args.query_sequence_fasta:
         raise ValueError("Use either --query_sequence or --query_sequence_fasta, not both.")
 
-    ccd_df = _load_ccd_smiles(args.components_cif)
-    if ccd_df.empty:
-        raise ValueError("No CCD SMILES could be read from components.cif")
-    ccd_smiles_by_id = {
-        str(row["ligand_id"]).upper(): _normalize_smiles(str(row["smiles"]))
-        for _, row in ccd_df.iterrows()
-    }
-
-    query = _extract_single_ligand_query(
-        args.system_path,
-        ccd_smiles_by_id=ccd_smiles_by_id,
+    ccd_smiles_by_id: dict[str, str] = {}
+    ccd_to_entries: dict[str, list[str]] = {}
+    queries: list[LigandQuery] = []
+    hits_best_sorted = pd.DataFrame(
+        columns=["query_chain_id", "ligand_pdbid", "hit_smiles", "ecfp_similarity"]
     )
-    if query is None:
-        raise ValueError(
-            "No ligand queries found. Provide ligand.smiles and/or ligand.ccd values in system.yaml."
-        )
-
-    print("[info] query_mode=single_smiles")
-    print(f"[info] query_chain_ids={','.join(query.chain_ids)}")
-    print(f"[info] ccd_with_smiles={len(ccd_df)}")
-
     output_bias_csv = args.output_bias_csv or args.output_ligand_csv.with_name("bias_training_data.csv")
 
-    hits_df = _collect_ccd_hits(
-        query=query,
-        ccd_df=ccd_df,
-        threshold=args.ligand_similarity_threshold,
-        top_k=args.top_k_per_query,
-    )
-    if hits_df.empty:
-        raise ValueError(
-            "No CCD hits above threshold. Lower --ligand_similarity_threshold or inspect query ligands."
+    if args.skip_ligand_ecfp:
+        print("[info] skipping ligand ECFP/CCD expansion (--skip_ligand_ecfp)")
+        ligand_df = pd.DataFrame(
+            columns=["query_chain_id", "pdb_id", "release_date", "ligand_id", "ecfp_similarity", "smiles"]
         )
-
-    # Keep only best score per CCD ID across all query ligands.
-    hits_df = hits_df.sort_values("ecfp_similarity", ascending=False)
-    hits_best = hits_df.drop_duplicates(subset=["ligand_pdbid"], keep="first")
-    hit_ccd_ids = sorted(hits_best["ligand_pdbid"].astype(str).unique())
-
-    print(f"[info] ccd_hits={len(hit_ccd_ids)}")
-
-    # For each hit CCD, fetch associated PDB entries.
-    ccd_to_entries: dict[str, list[str]] = {}
-    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
-        fut_map = {
-            ex.submit(_search_entries_for_ccd, ccd_id, args.timeout): ccd_id
-            for ccd_id in hit_ccd_ids
+    else:
+        ccd_df = _load_ccd_smiles(args.components_cif)
+        if ccd_df.empty:
+            raise ValueError("No CCD SMILES could be read from components.cif")
+        ccd_smiles_by_id = {
+            str(row["ligand_id"]).upper(): _normalize_smiles(str(row["smiles"]))
+            for _, row in ccd_df.iterrows()
         }
-        done = 0
-        for fut in as_completed(fut_map):
-            ccd_id = fut_map[fut]
-            done += 1
-            if done % 50 == 0:
-                print(f"[map] ccd_done={done}/{len(fut_map)}", flush=True)
-            try:
-                ccd_to_entries[ccd_id] = fut.result()
-            except Exception as e:
-                print(f"[warn] failed ccd->pdb mapping for {ccd_id}: {e}")
-                ccd_to_entries[ccd_id] = []
 
-    candidate_pdb_ids = sorted({p for vals in ccd_to_entries.values() for p in vals})
-    print(f"[info] candidate_pdb_entries={len(candidate_pdb_ids)}")
+        selected_ligand_chains: set[str] | None = None
+        if args.ligand_chains:
+            selected_ligand_chains = set()
+            for value in args.ligand_chains:
+                for token in str(value).split(","):
+                    token = token.strip().upper()
+                    if token:
+                        selected_ligand_chains.add(token)
+            print(f"[info] selected_ligand_chains={','.join(sorted(selected_ligand_chains))}")
 
-    # Fetch release dates and keep pre-cutoff entries only.
-    pdb_release: dict[str, date] = {}
-    with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
-        fut_map = {
-            ex.submit(_entry_release_date, pdb_id, args.timeout): pdb_id
-            for pdb_id in candidate_pdb_ids
-        }
-        done = 0
-        for fut in as_completed(fut_map):
-            pdb_id = fut_map[fut]
-            done += 1
-            if done % 200 == 0:
-                print(f"[release] checked={done}/{len(fut_map)}", flush=True)
-            try:
-                rel = fut.result()
-            except (HTTPError, URLError):
-                continue
-            if rel is not None and rel < cutoff:
-                pdb_release[pdb_id] = rel
-
-    selected_pdb_ids = sorted(pdb_release.keys())
-    print(f"[info] selected_pdb_entries_pre_cutoff={len(selected_pdb_ids)}")
-
-    # Build ligand training rows (ligand branch only).
-    hit_smiles_by_ccd = {
-        str(row["ligand_pdbid"]): str(row["hit_smiles"])
-        for _, row in hits_best.iterrows()
-    }
-    ccd_similarity = {
-        str(row["ligand_pdbid"]): float(row["ecfp_similarity"])
-        for _, row in hits_best.iterrows()
-    }
-    ligand_rows: list[dict[str, str]] = []
-    for ccd_id, pdb_ids in ccd_to_entries.items():
-        smiles = hit_smiles_by_ccd.get(ccd_id)
-        if not smiles:
-            continue
-        for pdb_id in pdb_ids:
-            rel = pdb_release.get(pdb_id)
-            if rel is None:
-                continue
-            ligand_rows.append(
-                {
-                    "pdb_id": pdb_id,
-                    "release_date": rel.isoformat(),
-                    "ligand_id": ccd_id,
-                    "smiles": smiles,
-                    "ecfp_similarity": ccd_similarity.get(ccd_id),
-                }
+        queries = _extract_ligand_queries(
+            args.system_path,
+            ccd_smiles_by_id=ccd_smiles_by_id,
+            selected_chains=selected_ligand_chains,
+        )
+        if not queries:
+            raise ValueError(
+                "No ligand queries found. Provide ligand.smiles and/or ligand.ccd values in system.yaml."
             )
 
-    ligand_df = pd.DataFrame(ligand_rows).drop_duplicates(
-        subset=["pdb_id", "ligand_id", "smiles"]
-    )
-    if not ligand_df.empty:
-        ligand_df = ligand_df.sort_values(
-            by=["ecfp_similarity", "pdb_id", "ligand_id"],
-            ascending=[False, True, True],
+        print("[info] query_mode=multi_chain")
+        print(f"[info] query_chain_ids={','.join(q.chain_id for q in queries)}")
+        print(f"[info] ccd_with_smiles={len(ccd_df)}")
+
+        hit_frames: list[pd.DataFrame] = []
+        for query in queries:
+            print(f"[info] collecting_ccd_hits chain={query.chain_id} source={query.source}")
+            hit_frames.append(
+                _collect_ccd_hits(
+                    query=query,
+                    ccd_df=ccd_df,
+                    threshold=args.ligand_similarity_threshold,
+                    top_k=args.top_k_per_query,
+                )
+            )
+        hits_df = pd.concat(hit_frames, ignore_index=True) if hit_frames else pd.DataFrame()
+        if hits_df.empty:
+            raise ValueError(
+                "No CCD hits above threshold. Lower --ligand_similarity_threshold or inspect query ligands."
+            )
+
+        # Keep only best score per CCD ID for each query chain independently.
+        hits_df = hits_df.sort_values("ecfp_similarity", ascending=False)
+        hits_best = hits_df.drop_duplicates(subset=["query_chain_id", "ligand_pdbid"], keep="first")
+        hit_ccd_ids = sorted(hits_best["ligand_pdbid"].astype(str).unique())
+        hits_best_sorted = hits_best.sort_values("ecfp_similarity", ascending=False).copy()
+
+        print(f"[info] ccd_hits={len(hit_ccd_ids)}")
+
+        # For each hit CCD, fetch associated PDB entries.
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
+            fut_map = {
+                ex.submit(_search_entries_for_ccd, ccd_id, args.timeout): ccd_id
+                for ccd_id in hit_ccd_ids
+            }
+            done = 0
+            for fut in as_completed(fut_map):
+                ccd_id = fut_map[fut]
+                done += 1
+                if done % 50 == 0:
+                    print(f"[map] ccd_done={done}/{len(fut_map)}", flush=True)
+                try:
+                    ccd_to_entries[ccd_id] = fut.result()
+                except Exception as e:
+                    print(f"[warn] failed ccd->pdb mapping for {ccd_id}: {e}")
+                    ccd_to_entries[ccd_id] = []
+
+        candidate_pdb_ids = sorted({p for vals in ccd_to_entries.values() for p in vals})
+        print(f"[info] candidate_pdb_entries={len(candidate_pdb_ids)}")
+
+        # Fetch release dates and keep pre-cutoff entries only.
+        pdb_release: dict[str, date] = {}
+        with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
+            fut_map = {
+                ex.submit(_entry_release_date, pdb_id, args.timeout): pdb_id
+                for pdb_id in candidate_pdb_ids
+            }
+            done = 0
+            for fut in as_completed(fut_map):
+                pdb_id = fut_map[fut]
+                done += 1
+                if done % 200 == 0:
+                    print(f"[release] checked={done}/{len(fut_map)}", flush=True)
+                try:
+                    rel = fut.result()
+                except (HTTPError, URLError):
+                    continue
+                if rel is not None and rel < cutoff:
+                    pdb_release[pdb_id] = rel
+
+        selected_pdb_ids = sorted(pdb_release.keys())
+        print(f"[info] selected_pdb_entries_pre_cutoff={len(selected_pdb_ids)}")
+
+        # Build ligand training rows (ligand branch only).
+        ligand_rows: list[dict[str, str]] = []
+        for _, hit in hits_best.iterrows():
+            chain_id = str(hit["query_chain_id"]).strip()
+            ccd_id = str(hit["ligand_pdbid"]).strip().upper()
+            smiles = str(hit["hit_smiles"])
+            sim = float(hit["ecfp_similarity"])
+            pdb_ids = ccd_to_entries.get(ccd_id, [])
+            for pdb_id in pdb_ids:
+                rel = pdb_release.get(pdb_id)
+                if rel is None:
+                    continue
+                ligand_rows.append(
+                    {
+                        "query_chain_id": chain_id,
+                        "pdb_id": pdb_id,
+                        "release_date": rel.isoformat(),
+                        "ligand_id": ccd_id,
+                        "smiles": smiles,
+                        "ecfp_similarity": sim,
+                    }
+                )
+
+        ligand_df = pd.DataFrame(ligand_rows).drop_duplicates(
+            subset=["query_chain_id", "pdb_id", "ligand_id", "smiles"]
         )
+        if not ligand_df.empty:
+            ligand_df = ligand_df.sort_values(
+                by=["query_chain_id", "ecfp_similarity", "pdb_id", "ligand_id"],
+                ascending=[True, False, True, True],
+            )
+        if args.output_ligand_csv.exists() and not args.overwrite:
+            try:
+                ligand_df = pd.read_csv(args.output_ligand_csv)
+                print(f"[info] reusing existing ligand CSV: {args.output_ligand_csv}")
+            except Exception as e:
+                print(f"[warn] failed to read existing ligand CSV, using newly computed data: {e}")
+    ligand_df = _order_ligand_training_columns(ligand_df)
+
+    # Persist ligand outputs immediately after compute/reuse.
+    args.output_ligand_csv.parent.mkdir(parents=True, exist_ok=True)
     if args.output_ligand_csv.exists() and not args.overwrite:
-        try:
-            ligand_df = pd.read_csv(args.output_ligand_csv)
-            print(f"[info] reusing existing ligand CSV: {args.output_ligand_csv}")
-        except Exception as e:
-            print(f"[warn] failed to read existing ligand CSV, using newly computed data: {e}")
+        print(f"[info] keeping existing ligand CSV (overwrite=false): {args.output_ligand_csv}")
+    else:
+        ligand_df.to_csv(args.output_ligand_csv, index=False)
+    _write_chain_ligand_csvs(args.output_ligand_csv, ligand_df)
 
     # Build protein training rows independently from MMseqs DB (no ligand filtering).
     query_sequence = _resolve_query_sequence(args.query_sequence, args.query_sequence_fasta)
@@ -718,76 +903,95 @@ def main() -> int:
     else:
         protein_df = pd.DataFrame()
 
+    protein_query_chain_id = _extract_protein_query_chain_id_from_system(args.system_path)
+
     if protein_df.empty:
-        mmseqs_db_path = args.mmseqs_db_path or _guess_mmseqs_db_from_components(args.components_cif)
-        if not mmseqs_db_path.exists():
-            raise ValueError(
-                f"MMseqs DB path not found: {mmseqs_db_path}. "
-                "Pass --mmseqs_db_path explicitly or run fetch_bias_training_data first."
+        if args.skip_protein_mmseqs:
+            protein_df = pd.DataFrame(
+                columns=["query_chain_id", "pdb_id", "release_date", "sequence_similarity", "sequence"]
             )
-
-        protein_tmp = args.output_protein_csv.parent / "_mmseqs_bias_tmp"
-        query_fasta_path = protein_tmp / "query.fasta"
-        query_fasta_path.parent.mkdir(parents=True, exist_ok=True)
-        query_fasta_path.write_text(f">query\n{query_sequence}\n", encoding="utf-8")
-
-        mmseqs_hits = _run_mmseqs(
-            mmseqs_bin=args.mmseqs_bin,
-            query_fasta=query_fasta_path,
-            target_db=mmseqs_db_path,
-            workers=args.workers,
-            tmp_root=protein_tmp,
-            max_seqs=args.mmseqs_max_seqs,
-        )
-        if len(mmseqs_hits) >= int(args.mmseqs_max_seqs):
-            print(
-                "[warn] MMseqs hit count reached --mmseqs_max_seqs=%d; results may be truncated. "
-                "Increase --mmseqs_max_seqs for broader coverage."
-                % int(args.mmseqs_max_seqs)
-            )
-        if mmseqs_hits.empty:
-            protein_df = pd.DataFrame(columns=["pdb_id", "release_date", "sequence", "sequence_similarity"])
+            print("[info] skipping MMseqs protein expansion (--skip_protein_mmseqs); protein CSV will be empty")
         else:
-            mmseqs_hits["target"] = mmseqs_hits["target"].astype(str)
-            mmseqs_hits["sequence"] = mmseqs_hits["tseq"].astype(str)
-            mmseqs_hits["sequence_similarity"] = pd.to_numeric(mmseqs_hits["pident"], errors="coerce")
-            mmseqs_hits["pdb_id"] = mmseqs_hits["target"].str.split("_").str[0].str.upper()
-            mmseqs_hits = mmseqs_hits.dropna(subset=["sequence_similarity", "pdb_id", "sequence"])
-            mmseqs_hits = mmseqs_hits[
-                mmseqs_hits["sequence_similarity"] >= float(args.protein_similarity_threshold)
-            ].copy()
+            mmseqs_db_path = args.mmseqs_db_path or _guess_mmseqs_db_from_components(args.components_cif)
+            if not mmseqs_db_path.exists():
+                raise ValueError(
+                    f"MMseqs DB path not found: {mmseqs_db_path}. "
+                    "Pass --mmseqs_db_path explicitly, run fetch_bias_training_data first, "
+                    "or use --skip_protein_mmseqs."
+                )
 
-            unique_pdb = sorted(mmseqs_hits["pdb_id"].unique())
-            pdb_release_all: dict[str, date] = {}
-            with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
-                fut_map = {
-                    ex.submit(_entry_release_date, pdb_id, args.timeout): pdb_id
-                    for pdb_id in unique_pdb
-                }
-                for fut in as_completed(fut_map):
-                    pdb_id = fut_map[fut]
-                    try:
-                        rel = fut.result()
-                    except Exception:
-                        continue
-                    if rel is not None and rel < cutoff:
-                        pdb_release_all[pdb_id] = rel
+            protein_tmp = args.output_protein_csv.parent / "_mmseqs_bias_tmp"
+            query_fasta_path = protein_tmp / "query.fasta"
+            query_fasta_path.parent.mkdir(parents=True, exist_ok=True)
+            query_fasta_path.write_text(f">query\n{query_sequence}\n", encoding="utf-8")
 
-            mmseqs_hits = mmseqs_hits[mmseqs_hits["pdb_id"].isin(pdb_release_all.keys())].copy()
-            mmseqs_hits["release_date"] = mmseqs_hits["pdb_id"].map(
-                lambda x: pdb_release_all[x].isoformat()
+            mmseqs_hits = _run_mmseqs(
+                mmseqs_bin=args.mmseqs_bin,
+                query_fasta=query_fasta_path,
+                target_db=mmseqs_db_path,
+                workers=args.workers,
+                tmp_root=protein_tmp,
+                max_seqs=args.mmseqs_max_seqs,
             )
-            protein_df = mmseqs_hits[["pdb_id", "release_date", "sequence", "sequence_similarity"]].copy()
-            protein_df = protein_df.drop_duplicates(subset=["pdb_id", "sequence"])
-            protein_df = protein_df.sort_values(
-                by=["sequence_similarity", "pdb_id"],
-                ascending=[False, True],
-            )
-            print(f"[info] protein MMseqs hits kept: {len(protein_df)}")
+            if len(mmseqs_hits) >= int(args.mmseqs_max_seqs):
+                print(
+                    "[warn] MMseqs hit count reached --mmseqs_max_seqs=%d; results may be truncated. "
+                    "Increase --mmseqs_max_seqs for broader coverage."
+                    % int(args.mmseqs_max_seqs)
+                )
+            if mmseqs_hits.empty:
+                protein_df = pd.DataFrame(
+                    columns=["query_chain_id", "pdb_id", "release_date", "sequence_similarity", "sequence"]
+                )
+            else:
+                mmseqs_hits["target"] = mmseqs_hits["target"].astype(str)
+                mmseqs_hits["sequence"] = mmseqs_hits["tseq"].astype(str)
+                mmseqs_hits["sequence_similarity"] = pd.to_numeric(mmseqs_hits["pident"], errors="coerce")
+                mmseqs_hits["pdb_id"] = mmseqs_hits["target"].str.split("_").str[0].str.upper()
+                mmseqs_hits = mmseqs_hits.dropna(subset=["sequence_similarity", "pdb_id", "sequence"])
+                mmseqs_hits = mmseqs_hits[
+                    mmseqs_hits["sequence_similarity"] >= float(args.protein_similarity_threshold)
+                ].copy()
+
+                unique_pdb = sorted(mmseqs_hits["pdb_id"].unique())
+                pdb_release_all: dict[str, date] = {}
+                with ThreadPoolExecutor(max_workers=max(1, args.workers)) as ex:
+                    fut_map = {
+                        ex.submit(_entry_release_date, pdb_id, args.timeout): pdb_id
+                        for pdb_id in unique_pdb
+                    }
+                    for fut in as_completed(fut_map):
+                        pdb_id = fut_map[fut]
+                        try:
+                            rel = fut.result()
+                        except Exception:
+                            continue
+                        if rel is not None and rel < cutoff:
+                            pdb_release_all[pdb_id] = rel
+
+                mmseqs_hits = mmseqs_hits[mmseqs_hits["pdb_id"].isin(pdb_release_all.keys())].copy()
+                mmseqs_hits["release_date"] = mmseqs_hits["pdb_id"].map(
+                    lambda x: pdb_release_all[x].isoformat()
+                )
+                protein_df = mmseqs_hits[["pdb_id", "release_date", "sequence_similarity", "sequence"]].copy()
+                protein_df = protein_df.drop_duplicates(subset=["pdb_id", "sequence"])
+                protein_df = protein_df.sort_values(
+                    by=["sequence_similarity", "pdb_id"],
+                    ascending=[False, True],
+                )
+                print(f"[info] protein MMseqs hits kept: {len(protein_df)}")
+    if "query_chain_id" not in protein_df.columns:
+        protein_df["query_chain_id"] = protein_query_chain_id or ""
+    else:
+        protein_df["query_chain_id"] = protein_df["query_chain_id"].fillna(protein_query_chain_id or "")
+    protein_df = _order_protein_training_columns(protein_df)
 
     # Build combined bias training data per pdb_id with protein/ligand combinations.
     # Required output columns: pdb_id, sequence_similarity, ecfp_similarity
-    query_ligand_fp = _morgan_fp(query.smiles)
+    query_fps_by_chain = {
+        q.chain_id: _morgan_fp(q.smiles)
+        for q in queries
+    } if queries else {}
     ligand_by_pdb: dict[str, list[float]] = {}
     for _, r in ligand_df.iterrows():
         pdb_id = str(r["pdb_id"]).upper()
@@ -836,27 +1040,55 @@ def main() -> int:
 
     # Ensure output parent dirs exist.
     args.output_protein_csv.parent.mkdir(parents=True, exist_ok=True)
-    args.output_ligand_csv.parent.mkdir(parents=True, exist_ok=True)
-    output_bias_csv.parent.mkdir(parents=True, exist_ok=True)
+    if not args.skip_bias_csv:
+        output_bias_csv.parent.mkdir(parents=True, exist_ok=True)
 
     if args.output_protein_csv.exists() and not args.overwrite:
         print(f"[info] keeping existing protein CSV (overwrite=false): {args.output_protein_csv}")
     else:
         protein_df.to_csv(args.output_protein_csv, index=False)
 
-    if args.output_ligand_csv.exists() and not args.overwrite:
-        print(f"[info] keeping existing ligand CSV (overwrite=false): {args.output_ligand_csv}")
-    else:
-        ligand_df.to_csv(args.output_ligand_csv, index=False)
+    # Always mirror training references into results/bias_train.
+    common_root = Path(
+        os.path.commonpath(
+            [str(args.output_protein_csv.parent.resolve()), str(args.output_ligand_csv.parent.resolve())]
+        )
+    )
+    bias_train_dir = common_root / "results" / "bias_train"
+    bias_train_dir.mkdir(parents=True, exist_ok=True)
+    protein_mirror = bias_train_dir / "protein_training_data.csv"
+    ligand_mirror = bias_train_dir / "ligand_training_data.csv"
 
-    if output_bias_csv.exists() and not args.overwrite:
-        try:
-            existing_bias = pd.read_csv(output_bias_csv)
-            if {"pdb_id", "sequence_similarity", "ecfp_similarity"} <= set(existing_bias.columns):
-                bias_df = existing_bias.copy()
-                print(f"[info] reusing existing bias CSV for backfill: {output_bias_csv}")
-            else:
-                print("[warn] existing bias CSV missing expected columns; rebuilding initial bias table")
+    if protein_mirror.exists() and not args.overwrite:
+        print(f"[info] keeping existing mirrored protein CSV (overwrite=false): {protein_mirror}")
+    else:
+        protein_df.to_csv(protein_mirror, index=False)
+
+    if ligand_mirror.exists() and not args.overwrite:
+        print(f"[info] keeping existing mirrored ligand CSV (overwrite=false): {ligand_mirror}")
+    else:
+        ligand_df.to_csv(ligand_mirror, index=False)
+
+    if args.skip_bias_csv:
+        print("[info] skipping bias CSV generation (--skip_bias_csv)")
+    else:
+        if output_bias_csv.exists() and not args.overwrite:
+            try:
+                existing_bias = pd.read_csv(output_bias_csv)
+                if {"pdb_id", "sequence_similarity", "ecfp_similarity"} <= set(existing_bias.columns):
+                    bias_df = existing_bias.copy()
+                    print(f"[info] reusing existing bias CSV for backfill: {output_bias_csv}")
+                else:
+                    print("[warn] existing bias CSV missing expected columns; rebuilding initial bias table")
+                    if not bias_df.empty:
+                        bias_df = bias_df.sort_values(
+                            by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
+                            ascending=[False, False, True],
+                            na_position="last",
+                        )
+                    bias_df.to_csv(output_bias_csv, index=False)
+            except Exception as e:
+                print(f"[warn] failed reading existing bias CSV, rebuilding: {e}")
                 if not bias_df.empty:
                     bias_df = bias_df.sort_values(
                         by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
@@ -864,8 +1096,7 @@ def main() -> int:
                         na_position="last",
                     )
                 bias_df.to_csv(output_bias_csv, index=False)
-        except Exception as e:
-            print(f"[warn] failed reading existing bias CSV, rebuilding: {e}")
+        else:
             if not bias_df.empty:
                 bias_df = bias_df.sort_values(
                     by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
@@ -873,102 +1104,102 @@ def main() -> int:
                     na_position="last",
                 )
             bias_df.to_csv(output_bias_csv, index=False)
-    else:
-        if not bias_df.empty:
-            bias_df = bias_df.sort_values(
-                by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
-                ascending=[False, False, True],
-                na_position="last",
-            )
-        bias_df.to_csv(output_bias_csv, index=False)
-        print(f"[info] initial bias_csv written (pre-backfill): {output_bias_csv} rows={len(bias_df)}")
+            print(f"[info] initial bias_csv written (pre-backfill): {output_bias_csv} rows={len(bias_df)}")
 
-    # Step 2: backfill missing sides in chunks of 100 PDBs and save after each chunk.
-    if not bias_df.empty and {"pdb_id", "sequence_similarity", "ecfp_similarity"} <= set(bias_df.columns):
-        missing_mask = bias_df["sequence_similarity"].isna() | bias_df["ecfp_similarity"].isna()
-        missing_pdb_ids = sorted(bias_df.loc[missing_mask, "pdb_id"].astype(str).str.upper().unique())
-    else:
-        missing_pdb_ids = [
-            pdb_id
-            for pdb_id in all_pdb_ids
-            if (not protein_by_pdb.get(pdb_id)) or (not ligand_by_pdb.get(pdb_id))
-        ]
-    chunk_size = 100
-    for start in range(0, len(missing_pdb_ids), chunk_size):
-        chunk = missing_pdb_ids[start:start + chunk_size]
-        replacement_rows: list[dict[str, float | str | None]] = []
-        for pdb_id in chunk:
-            seq_sims = list(protein_by_pdb.get(pdb_id, []))
-            lig_sims = list(ligand_by_pdb.get(pdb_id, []))
+        # Step 2: backfill missing sides in chunks of 100 PDBs and save after each chunk.
+        if not bias_df.empty and {"pdb_id", "sequence_similarity", "ecfp_similarity"} <= set(bias_df.columns):
+            missing_mask = bias_df["sequence_similarity"].isna() | bias_df["ecfp_similarity"].isna()
+            missing_pdb_ids = sorted(bias_df.loc[missing_mask, "pdb_id"].astype(str).str.upper().unique())
+        else:
+            missing_pdb_ids = [
+                pdb_id
+                for pdb_id in all_pdb_ids
+                if (not protein_by_pdb.get(pdb_id)) or (not ligand_by_pdb.get(pdb_id))
+            ]
+        chunk_size = 100
+        for start in range(0, len(missing_pdb_ids), chunk_size):
+            chunk = missing_pdb_ids[start:start + chunk_size]
+            replacement_rows: list[dict[str, float | str | None]] = []
+            for pdb_id in chunk:
+                seq_sims = list(protein_by_pdb.get(pdb_id, []))
+                lig_sims = list(ligand_by_pdb.get(pdb_id, []))
 
-            if not lig_sims and query_ligand_fp is not None:
-                for ccd_id in _entry_ligand_ids(pdb_id, args.timeout):
-                    smiles = ccd_smiles_by_id.get(ccd_id)
-                    if not smiles:
-                        continue
-                    fp = _morgan_fp(smiles)
-                    if fp is None:
-                        continue
-                    lig_sims.append(float(DataStructs.TanimotoSimilarity(query_ligand_fp, fp)))
+                if not lig_sims:
+                    # Backfill against all ligand query chains independently.
+                    for ccd_id in _entry_ligand_ids(pdb_id, args.timeout):
+                        smiles = ccd_smiles_by_id.get(ccd_id)
+                        if not smiles:
+                            continue
+                        fp = _morgan_fp(smiles)
+                        if fp is None:
+                            continue
+                        for qfp in query_fps_by_chain.values():
+                            if qfp is None:
+                                continue
+                            lig_sims.append(float(DataStructs.TanimotoSimilarity(qfp, fp)))
 
-            if not seq_sims and query_sequence:
-                try:
-                    seqs = _entry_fasta_sequences(pdb_id, args.timeout)
-                except Exception:
-                    seqs = []
-                for s in seqs:
-                    seq_sims.append(_sequence_identity_percent(query_sequence, str(s)))
+                if not seq_sims and query_sequence:
+                    try:
+                        seqs = _entry_fasta_sequences(pdb_id, args.timeout)
+                    except Exception:
+                        seqs = []
+                    for s in seqs:
+                        seq_sims.append(_sequence_identity_percent(query_sequence, str(s)))
 
-            replacement_rows.extend(_rows_for_pdb(pdb_id, seq_sims, lig_sims))
+                replacement_rows.extend(_rows_for_pdb(pdb_id, seq_sims, lig_sims))
 
-        # Replace chunk rows and save intermediate result.
-        keep_df = bias_df[~bias_df["pdb_id"].isin(chunk)].copy() if not bias_df.empty else pd.DataFrame()
-        repl_df = pd.DataFrame(replacement_rows)
-        bias_df = pd.concat([keep_df, repl_df], ignore_index=True)
-        if not bias_df.empty:
-            bias_df = bias_df.sort_values(
-                by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
-                ascending=[False, False, True],
-                na_position="last",
-            )
-        bias_df.to_csv(output_bias_csv, index=False)
-        print(
-            f"[info] bias backfill progress: {min(start + chunk_size, len(missing_pdb_ids))}/"
-            f"{len(missing_pdb_ids)} pdbs, rows={len(bias_df)}"
-        )
-
-    # Finalize: unresolved missing values mean no ligand/protein was found.
-    # Set these to 0.0 as explicit "no similarity evidence" values.
-    if not bias_df.empty:
-        missing_before = int(
-            bias_df["sequence_similarity"].isna().sum()
-            + bias_df["ecfp_similarity"].isna().sum()
-        )
-        if missing_before > 0:
-            bias_df["sequence_similarity"] = pd.to_numeric(
-                bias_df["sequence_similarity"], errors="coerce"
-            ).fillna(0.0)
-            bias_df["ecfp_similarity"] = pd.to_numeric(
-                bias_df["ecfp_similarity"], errors="coerce"
-            ).fillna(0.0)
-            bias_df = bias_df.sort_values(
-                by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
-                ascending=[False, False, True],
-            )
+            # Replace chunk rows and save intermediate result.
+            keep_df = bias_df[~bias_df["pdb_id"].isin(chunk)].copy() if not bias_df.empty else pd.DataFrame()
+            repl_df = pd.DataFrame(replacement_rows)
+            bias_df = pd.concat([keep_df, repl_df], ignore_index=True)
+            if not bias_df.empty:
+                bias_df = bias_df.sort_values(
+                    by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
+                    ascending=[False, False, True],
+                    na_position="last",
+                )
             bias_df.to_csv(output_bias_csv, index=False)
             print(
-                f"[info] finalized bias_csv: filled unresolved missing similarities with 0.0 "
-                f"(values_filled={missing_before})"
+                f"[info] bias backfill progress: {min(start + chunk_size, len(missing_pdb_ids))}/"
+                f"{len(missing_pdb_ids)} pdbs, rows={len(bias_df)}"
             )
+
+        # Finalize: unresolved missing values mean no ligand/protein was found.
+        # Set these to 0.0 as explicit "no similarity evidence" values.
+        if not bias_df.empty:
+            missing_before = int(
+                bias_df["sequence_similarity"].isna().sum()
+                + bias_df["ecfp_similarity"].isna().sum()
+            )
+            if missing_before > 0:
+                bias_df["sequence_similarity"] = pd.to_numeric(
+                    bias_df["sequence_similarity"], errors="coerce"
+                ).fillna(0.0)
+                bias_df["ecfp_similarity"] = pd.to_numeric(
+                    bias_df["ecfp_similarity"], errors="coerce"
+                ).fillna(0.0)
+                bias_df = bias_df.sort_values(
+                    by=["sequence_similarity", "ecfp_similarity", "pdb_id"],
+                    ascending=[False, False, True],
+                )
+                bias_df.to_csv(output_bias_csv, index=False)
+                print(
+                    f"[info] finalized bias_csv: filled unresolved missing similarities with 0.0 "
+                    f"(values_filled={missing_before})"
+                )
 
     # Save ligand-hit provenance for plotting/debugging.
     hits_out = args.output_hits_csv or args.output_ligand_csv.with_name("ccd_ligand_hits.csv")
-    hits_best_sorted = hits_best.sort_values("ecfp_similarity", ascending=False)
     hits_best_sorted.to_csv(hits_out, index=False)
 
     print(f"[done] protein_csv={args.output_protein_csv} rows={len(protein_df)}")
     print(f"[done] ligand_csv={args.output_ligand_csv} rows={len(ligand_df)}")
-    print(f"[done] bias_csv={output_bias_csv} rows={len(bias_df)}")
+    print(f"[done] mirrored_protein_csv={protein_mirror}")
+    print(f"[done] mirrored_ligand_csv={ligand_mirror}")
+    if args.skip_bias_csv:
+        print("[done] bias_csv=skipped")
+    else:
+        print(f"[done] bias_csv={output_bias_csv} rows={len(bias_df)}")
     print(f"[done] hits_csv={hits_out} rows={len(hits_best_sorted)}")
     return 0
 

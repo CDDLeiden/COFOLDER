@@ -12,6 +12,52 @@ git clone https://github.com/CDDLeiden/cofolder.git
 cd cofolder; pip install -e .
 ```
 
+### Optional: Bias-Assessment Setup (MMseqs2)
+For protein sequence-similarity bias metrics, install `mmseqs2` in the same environment where you run `cofolder`:
+```bash
+conda install -c conda-forge -c bioconda mmseqs2
+```
+
+Alternative without conda-forge (vendor a release binary):
+```bash
+chmod +x scripts/install_mmseqs_vendor.sh
+scripts/install_mmseqs_vendor.sh
+export PATH="$HOME/.cofolder/vendor/mmseqs/bin:$PATH"
+```
+
+Verify:
+```bash
+which mmseqs
+mmseqs --help
+```
+
+Step-by-step:
+```bash
+# 1) install cofolder
+git clone https://github.com/CDDLeiden/cofolder.git
+cd cofolder
+pip install -e .
+
+# 2) optional for bias assessment: install mmseqs2
+conda install -c conda-forge -c bioconda mmseqs2
+
+# 2b) optional alternative: vendor mmseqs2 binary (no conda-forge)
+chmod +x scripts/install_mmseqs_vendor.sh
+scripts/install_mmseqs_vendor.sh
+export PATH="$HOME/.cofolder/vendor/mmseqs/bin:$PATH"
+
+# 3) fetch bias training assets (CCD + mmseqs DB)
+python scripts/fetch_bias_training_data.py \
+  --output_root /path/to/training_data \
+  --overwrite
+
+# 4) run validate with bias
+cofolder validate ... \
+  --assess_bias \
+  --protein_training_data_path /path/to/training_data/protein_training_data.csv \
+  --ligand_training_data_path /path/to/training_data/ligand_training_data.csv
+```
+
 ## Usage
 The main command is `cofolder`, which supports several subcommands:
 ```

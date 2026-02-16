@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 from gzip import decompress
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,6 +23,36 @@ import sys
 from urllib.request import urlopen
 
 CCD_GZ_URL = "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz"
+
+
+def _resolve_mmseqs_bin(mmseqs_bin: str | None = None) -> str | None:
+    candidates: list[str] = []
+    if mmseqs_bin:
+        candidates.append(str(mmseqs_bin))
+    candidates.extend(
+        [
+            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
+            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/bin/mmseqs"),
+            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/mmseqs"),
+        ]
+    )
+    from_env = shutil.which("mmseqs")
+    if from_env:
+        candidates.append(from_env)
+    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
+    if explicit_env:
+        candidates.insert(0, explicit_env)
+
+    for cand in candidates:
+        if not cand:
+            continue
+        p = Path(cand).expanduser()
+        if p.exists() and p.is_file():
+            return str(p)
+        found = shutil.which(cand)
+        if found:
+            return found
+    return None
 
 
 def _fetch_bytes(url: str, timeout: int) -> bytes:
@@ -48,7 +79,7 @@ def _run_mmseqs_databases(
     tmp_dir: Path,
     mmseqs_bin: str | None = None,
 ) -> None:
-    mmseqs_cmd = mmseqs_bin or shutil.which("mmseqs")
+    mmseqs_cmd = _resolve_mmseqs_bin(mmseqs_bin)
     if mmseqs_cmd is None:
         raise RuntimeError(
             "mmseqs binary not found in PATH. Install MMseqs2, pass --mmseqs_bin, or disable with --skip_mmseqs."

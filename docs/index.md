@@ -26,6 +26,17 @@ git clone https://github.com/CDDLeiden/cofolder.git
 cd cofolder
 pip install -e .
 
+# Optional for bias assessment: install mmseqs2
+conda install -c conda-forge -c bioconda mmseqs2
+
+# Optional alternative: vendor mmseqs2 binary (no conda-forge)
+scripts/install_mmseqs_vendor.sh
+export COFOLDER_MMSEQS_BIN="$HOME/.cofolder/vendor/mmseqs/bin/mmseqs"
+
+# Verify mmseqs2
+which mmseqs
+mmseqs --version
+
 # Run a simple prediction
 cofolder validate -s system.yaml -b options.yaml
 ```

@@ -119,6 +119,30 @@ class BaseRecipe:
             default='2023-06-01',
             help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
         )
+        parser.add_argument(
+            '--bias_chains',
+            nargs='+',
+            default=None,
+            help=(
+                "Optional chain IDs to restrict bias assessment to. "
+                "Example: --bias_chains A F"
+            )
+        )
+        parser.add_argument(
+            '--build_bias_training_data',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='Build bias training CSVs inside validate() before assessing bias (default: False).'
+        )
+        parser.add_argument(
+            '--bias_training_components_cif',
+            type=str,
+            default=None,
+            help=(
+                "Path to components.cif used by in-validate bias training build. "
+                "Default: <ligand_training_data_path parent>/ccd/components.cif"
+            ),
+        )
 
         parser.add_argument(
             '--conformers',
@@ -197,6 +221,9 @@ class BaseRecipe:
             protein_training_data_path=args.protein_training_data_path,
             ligand_training_data_path=args.ligand_training_data_path,
             bias_release_cutoff=args.bias_release_cutoff,
+            bias_chains=args.bias_chains,
+            build_bias_training_data=args.build_bias_training_data,
+            bias_training_components_cif=args.bias_training_components_cif,
             conformers=args.conformers,
             sdf_file=args.sdf_file,
             reference_path=args.reference_path,
