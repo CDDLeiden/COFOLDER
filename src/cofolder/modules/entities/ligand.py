@@ -7,6 +7,9 @@ by Boltz for ligand predictions.
 import os
 import pickle
 import logging
+import json
+import hashlib
+import fcntl
 from collections import Counter
 from pathlib import Path
 from typing import Optional, Union, List
@@ -23,6 +26,95 @@ from cofolder.modules.utils import read, write
 import logging
 
 logger = logging.getLogger(__name__)
+
+_CCD_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_CCD_SPACE = len(_CCD_ALPHABET) ** 5
+
+
+def _base36_fixed5(value: int) -> str:
+    """Encode integer to 5-char base36 token."""
+    value = value % _CCD_SPACE
+    chars = []
+    for _ in range(5):
+        value, rem = divmod(value, len(_CCD_ALPHABET))
+        chars.append(_CCD_ALPHABET[rem])
+    return "".join(reversed(chars))
+
+
+def _canonical_smiles(smiles: str) -> str:
+    """Return canonical SMILES when possible; fallback to raw string."""
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is not None:
+            return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
+    except Exception:
+        pass
+    return str(smiles).strip()
+
+
+def _allocate_ccd_resname(smiles: str, boltz_path: Path) -> str:
+    """Allocate stable 5-char CCD ID using shared cache map with file lock.
+
+    This avoids collisions when multiple workers run in parallel and would
+    otherwise all write to the same default ID (e.g. ``0_B``).
+    """
+    mols_dir = Path(boltz_path) / "mols"
+    mols_dir.mkdir(parents=True, exist_ok=True)
+
+    map_path = mols_dir / ".cofolder_ccd_map.json"
+    lock_path = mols_dir / ".cofolder_ccd_map.lock"
+    canonical = _canonical_smiles(smiles)
+
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+        mapping = {"smiles_to_resname": {}, "resname_to_smiles": {}}
+        if map_path.exists():
+            try:
+                with open(map_path, "r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, dict):
+                    mapping["smiles_to_resname"] = dict(loaded.get("smiles_to_resname", {}))
+                    mapping["resname_to_smiles"] = dict(loaded.get("resname_to_smiles", {}))
+            except Exception:
+                logger.warning("Failed reading CCD map at %s. Rebuilding mapping in memory.", map_path)
+
+        smiles_to_resname = mapping["smiles_to_resname"]
+        resname_to_smiles = mapping["resname_to_smiles"]
+
+        # Fast path for reruns.
+        existing = smiles_to_resname.get(canonical)
+        if existing:
+            return existing
+
+        # Prevent accidental overwrite of any already-cached IDs.
+        used_ids = set(resname_to_smiles.keys())
+        used_ids.update(p.stem for p in mols_dir.glob("*.pkl"))
+
+        seed = int(hashlib.sha1(canonical.encode("utf-8")).hexdigest(), 16) % _CCD_SPACE
+        chosen = None
+        for step in range(_CCD_SPACE):
+            candidate = _base36_fixed5(seed + step)
+            owner = resname_to_smiles.get(candidate)
+            if owner == canonical:
+                chosen = candidate
+                break
+            if owner is None and candidate not in used_ids:
+                chosen = candidate
+                break
+
+        if chosen is None:
+            raise RuntimeError("Unable to allocate unique 5-char CCD ID.")
+
+        smiles_to_resname[canonical] = chosen
+        resname_to_smiles[chosen] = canonical
+
+        tmp_path = map_path.with_suffix(".json.tmp")
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(mapping, fh, indent=2, sort_keys=True)
+        os.replace(tmp_path, map_path)
+
+        return chosen
 
 def handle_conformers(
     sys_obj,
@@ -107,17 +199,10 @@ def handle_conformers(
         if conformers == "sdf": mol = mols[ligand_idx]
         else: mol = mols[0]
 
-        # Determine CCD residue name (unique and <=5 chars)
-        resname = mol.GetProp("id") if mol.HasProp("id") else (
-            mol.GetProp("name") if mol.HasProp("name") else ligand_id
-        )
-        # Ensure uniqueness across multiple ligands
-        resname = f"{ligand_idx}_{resname}" if len(sequences) > 1 else resname
-        resname = str(resname)[:5]
-
         # CCD conversion
         boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz'
         boltz_path = Path(boltz_cache).expanduser()
+        resname = _allocate_ccd_resname(smiles_value, boltz_path)
         try:
             ligand.mol_to_ccd(resname, mol, boltz_path=boltz_path)
             logger.info("Saved CCD for %s to %s/mols/", resname, boltz_path)

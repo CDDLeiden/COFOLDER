@@ -261,6 +261,7 @@ def _materialize_bias_training_views(
     proteins_df: pd.DataFrame,
     protein_queries: dict[str, str | None],
     ligand_queries: dict[str, str | None],
+    boltz_cache_path: Path,
     output_dir: Path,
 ) -> None:
     """Write bias training files for debug/inspection under results/bias_train."""
@@ -325,22 +326,14 @@ def _materialize_bias_training_views(
         if not chain_id or not mol_id:
             continue
 
-        query_smiles = ligand_queries.get(chain_id)
+        # Resolve query by system-specific ligand CCD ID first; chain IDs are
+        # often reused (e.g. "B"), so chain-only lookup can produce identical
+        # views across different ligands.
+        query_smiles = _smiles_from_ccd_cache(mol_id, boltz_cache_path)
+        if not query_smiles:
+            query_smiles = ligand_queries.get(chain_id)
         out_name = f"ligand_training_data_{chain_id}.csv"
         out_path = output_dir / out_name
-
-        # Prefer chain-specific training rows produced by build_bias_training_data.py.
-        if "query_chain_id" in ligands_df.columns:
-            sub = ligands_df[
-                ligands_df["query_chain_id"].astype(str).str.strip() == chain_id
-            ].copy()
-            if not sub.empty:
-                sub["ecfp_similarity"] = pd.to_numeric(sub.get("ecfp_similarity"), errors="coerce")
-                sub = sub.dropna(subset=["ecfp_similarity"]).copy()
-                sub = sub[sub["ecfp_similarity"] >= 0.35].copy()
-                sub = sub.sort_values("ecfp_similarity", ascending=False, na_position="last")
-                _order_ligand_training_columns(sub).to_csv(out_path, index=False)
-                continue
 
         if not query_smiles:
             # Fallback: derive chain-specific ligand query from molecule/CCD ID.
@@ -349,8 +342,8 @@ def _materialize_bias_training_views(
                 query_smiles = str(ref.iloc[0]["smiles"])
 
         if not query_smiles:
-            # If still unavailable, keep full filtered ligand set for debugging.
-            _order_ligand_training_columns(ligands_df).to_csv(out_path, index=False)
+            # No reliable ligand query available for this system/chain.
+            _order_ligand_training_columns(ligands_df.iloc[0:0].copy()).to_csv(out_path, index=False)
             continue
 
         qfp = _morgan_fp_from_smiles(query_smiles)
@@ -362,10 +355,15 @@ def _materialize_bias_training_views(
                 sims.append(pd.NA)
             else:
                 sims.append(float(DataStructs.TanimotoSimilarity(qfp, fp)))
-        sub["ecfp_similarity"] = pd.to_numeric(pd.Series(sims), errors="coerce")
+        sub["ecfp_similarity"] = pd.to_numeric(pd.Series(sims, index=sub.index), errors="coerce")
         sub = sub.dropna(subset=["ecfp_similarity"]).copy()
-        sub = sub[sub["ecfp_similarity"] >= 0.35].copy()
         sub = sub.sort_values("ecfp_similarity", ascending=False, na_position="last")
+        above = sub[sub["ecfp_similarity"] >= 0.35].copy()
+        if not above.empty:
+            sub = above
+        else:
+            # Keep top-ranked analogs even when strict threshold yields no hits.
+            sub = sub.head(100).copy()
         _order_ligand_training_columns(sub).to_csv(out_path, index=False)
 
 
@@ -482,6 +480,7 @@ def apply_bias_metrics(
             proteins_df=_load_protein_training(Path(protein_training_data_path), cutoff, top_n=0),
             protein_queries=protein_queries,
             ligand_queries=ligand_queries,
+            boltz_cache_path=cache_path,
             output_dir=Path(output_dir),
         )
         logger.info("Bias training views written to %s", output_dir)

@@ -359,15 +359,21 @@ class Validate(object):
                 )
 
             if self.assess_bias:
+                protein_metrics_path = self.protein_training_data_path
+                ligand_metrics_path = self.ligand_training_data_path
                 if self.build_bias_training_data:
-                    if self.protein_training_data_path is None or self.ligand_training_data_path is None:
+                    if self.protein_training_data_path is None:
                         raise ValueError(
-                            "--build_bias_training_data requires both "
-                            "--protein_training_data_path and --ligand_training_data_path."
+                            "--build_bias_training_data requires --protein_training_data_path."
                         )
+                    if ligand_metrics_path is None:
+                        ligand_metrics_path = (
+                            self.wrk_dir / "results" / "bias_train" / "ligand_training_data.csv"
+                        )
+                        ligand_metrics_path.parent.mkdir(parents=True, exist_ok=True)
                     components_cif = self.bias_training_components_cif
                     if components_cif is None:
-                        components_cif = self.ligand_training_data_path.parent / "ccd" / "components.cif"
+                        components_cif = self.protein_training_data_path.parent / "ccd" / "components.cif"
                     if not components_cif.exists():
                         raise ValueError(
                             f"components.cif not found for in-validate bias build: {components_cif}. "
@@ -377,7 +383,7 @@ class Validate(object):
                         "Building bias training data in validate(): components_cif=%s protein_csv=%s ligand_csv=%s",
                         components_cif,
                         self.protein_training_data_path,
-                        self.ligand_training_data_path,
+                        ligand_metrics_path,
                     )
                     available_protein_chains = {
                         str(row["CHAIN_ID"]).strip().upper()
@@ -417,19 +423,30 @@ class Validate(object):
                         selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
                     run_protein_protocol = bool(selected_protein_chains)
                     run_ligand_protocol = bool(selected_ligand_chains)
+                    build_protein_training_path = self.protein_training_data_path
+                    if not run_protein_protocol:
+                        # Avoid overwriting shared protein training CSV when this system only needs
+                        # ligand-side bias training recomputation.
+                        build_protein_training_path = (
+                            self.wrk_dir / "results" / "bias_train" / "_protein_training_data_build_tmp.csv"
+                        )
+                        build_protein_training_path.parent.mkdir(parents=True, exist_ok=True)
                     self.logger.info(
-                        "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s",
+                        "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s | "
+                        "protein_build_csv=%s | ligand_build_csv=%s",
                         run_protein_protocol,
                         sorted(selected_protein_chains),
                         run_ligand_protocol,
                         sorted(selected_ligand_chains),
+                        build_protein_training_path,
+                        ligand_metrics_path,
                     )
                     with self._debug_timer("bias.training_data.build"):
                         run_build_bias_training_data(
                             system_path=self.system_path,
                             components_cif=components_cif,
-                            output_protein_csv=self.protein_training_data_path,
-                            output_ligand_csv=self.ligand_training_data_path,
+                            output_protein_csv=build_protein_training_path,
+                            output_ligand_csv=ligand_metrics_path,
                             release_cutoff=self.bias_release_cutoff,
                             ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
                             overwrite=True,
@@ -438,16 +455,18 @@ class Validate(object):
                             skip_ligand_ecfp=(not run_ligand_protocol),
                             ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
                         )
+                    if run_protein_protocol:
+                        protein_metrics_path = build_protein_training_path
 
                 protein_ok = (
-                    self.protein_training_data_path is not None
-                    and self.protein_training_data_path.exists()
-                    and self.protein_training_data_path.is_file()
+                    protein_metrics_path is not None
+                    and protein_metrics_path.exists()
+                    and protein_metrics_path.is_file()
                 )
                 ligand_ok = (
-                    self.ligand_training_data_path is not None
-                    and self.ligand_training_data_path.exists()
-                    and self.ligand_training_data_path.is_file()
+                    ligand_metrics_path is not None
+                    and ligand_metrics_path.exists()
+                    and ligand_metrics_path.is_file()
                 )
 
                 if protein_ok and ligand_ok:
@@ -456,8 +475,8 @@ class Validate(object):
                             system_df=system_df,
                             chain_df=chain_df,
                             sys_obj=self.sys,
-                            protein_training_data_path=self.protein_training_data_path,
-                            ligand_training_data_path=self.ligand_training_data_path,
+                            protein_training_data_path=protein_metrics_path,
+                            ligand_training_data_path=ligand_metrics_path,
                             release_cutoff=self.bias_release_cutoff,
                             bias_chains=self.bias_chains,
                             protein_top_n=100,
@@ -478,8 +497,8 @@ class Validate(object):
                         "--output_protein_csv <protein_training.csv> "
                         "--output_ligand_csv <ligand_training.csv> "
                         "--release_cutoff %s`",
-                        self.protein_training_data_path,
-                        self.ligand_training_data_path,
+                        protein_metrics_path,
+                        ligand_metrics_path,
                         self.bias_release_cutoff,
                     )
 

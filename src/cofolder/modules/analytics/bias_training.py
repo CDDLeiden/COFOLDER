@@ -63,6 +63,7 @@ def run_build_bias_training_data(
 
     threshold = float(ligand_similarity_threshold)
     no_hits_msg = "No CCD hits above threshold"
+    context = f"system={system_path} ligand_csv={output_ligand_csv}"
 
     while threshold >= 0.0:
         cmd: list[str] = [
@@ -107,7 +108,7 @@ def run_build_bias_training_data(
         combined = f"{proc.stdout}\n{proc.stderr}"
         if _looks_like_invalid_smiles_error(combined):
             print(
-                "[warn] Invalid SMILES detected during bias-training build; "
+                f"[warn] Invalid SMILES detected during bias-training build ({context}); "
                 "continuing with ligand ECFP skipped for this run.",
                 file=sys.stderr,
             )
@@ -141,13 +142,14 @@ def run_build_bias_training_data(
                     output_ligand_csv=output_ligand_csv,
                 )
                 print(
-                    "[warn] No CCD hits found after threshold backoff; "
+                    f"[warn] No CCD hits found after threshold backoff ({context}); "
                     "wrote empty training CSVs and continuing without ligand bias hits.",
                     file=sys.stderr,
                 )
                 return
             print(
-                f"[warn] {no_hits_msg} at threshold={threshold:.2f}; retrying with {next_threshold:.2f}",
+                f"[warn] {no_hits_msg} ({context}) at threshold={threshold:.2f}; "
+                f"retrying with {next_threshold:.2f}",
                 file=sys.stderr,
             )
             threshold = next_threshold

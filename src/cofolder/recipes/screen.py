@@ -153,11 +153,23 @@ class Screen:
 
                 write.write_yaml(sys_obj, path=row_system_path)
 
+                row_validate_kwargs = dict(self.validate_kwargs)
+                if (
+                    row_validate_kwargs.get("assess_bias")
+                    and row_validate_kwargs.get("build_bias_training_data")
+                ):
+                    bias_train_dir = run_dir / "results" / "bias_train"
+                    bias_train_dir.mkdir(parents=True, exist_ok=True)
+                    # Build ligand references per-screened system after row system YAML exists.
+                    row_validate_kwargs["ligand_training_data_path"] = str(
+                        bias_train_dir / "ligand_training_data.csv"
+                    )
+
                 validator = Validate(
                     wrk_dir=str(run_dir),
                     system_path=str(row_system_path),
                     options_path=str(self.options_path),
-                    **self.validate_kwargs,
+                    **row_validate_kwargs,
                 )
                 validator.run()
                 detailed.update(self._collect_score_columns(run_dir=run_dir))

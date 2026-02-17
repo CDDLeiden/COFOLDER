@@ -111,7 +111,13 @@ class BaseRecipe:
             '--ligand_training_data_path',
             type=str,
             default=None,
-            help='Path to ligand training reference CSV/SDF (requires release_date, pdb_id, smiles).'
+            help=(
+                "Path to ligand training reference CSV/SDF "
+                "(requires release_date, pdb_id, smiles) when --no-build_bias_training_data is used. "
+                "When --build_bias_training_data is enabled, this is treated as output path for generated "
+                "ligand training data. If omitted in build mode, defaults to "
+                "<wrk_dir>/results/bias_train/ligand_training_data.csv."
+            )
         )
         parser.add_argument(
             '--bias_release_cutoff',
@@ -146,7 +152,7 @@ class BaseRecipe:
             default=None,
             help=(
                 "Path to components.cif used by in-validate bias training build. "
-                "Default: <ligand_training_data_path parent>/ccd/components.cif"
+                "Default: <protein_training_data_path parent>/ccd/components.cif"
             ),
         )
 
