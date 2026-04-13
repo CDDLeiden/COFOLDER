@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,7 @@ def run_build_bias_training_data(
 
     threshold = float(ligand_similarity_threshold)
     no_hits_msg = "No CCD hits above threshold"
+    no_pre_cutoff_msg = "No pre-cutoff CCD-linked PDB entries"
     context = f"system={system_path} ligand_csv={output_ligand_csv}"
 
     while threshold >= 0.0:
@@ -102,10 +104,32 @@ def run_build_bias_training_data(
         if proc.stderr:
             print(proc.stderr, end="", file=sys.stderr)
 
+        combined = f"{proc.stdout}\n{proc.stderr}"
+        pre_cutoff_count = _extract_pre_cutoff_count(combined)
+        if pre_cutoff_count == 0:
+            next_threshold = round(threshold - 0.05, 2)
+            if next_threshold < 0.0:
+                _write_empty_training_csvs(
+                    output_protein_csv=output_protein_csv,
+                    output_ligand_csv=output_ligand_csv,
+                )
+                print(
+                    f"[warn] {no_pre_cutoff_msg} ({context}) after threshold backoff; "
+                    "wrote empty training CSVs and continuing without ligand bias hits.",
+                    file=sys.stderr,
+                )
+                return
+            print(
+                f"[warn] {no_pre_cutoff_msg} ({context}) at threshold={threshold:.2f}; "
+                f"retrying with {next_threshold:.2f}",
+                file=sys.stderr,
+            )
+            threshold = next_threshold
+            continue
+
         if proc.returncode == 0:
             return
 
-        combined = f"{proc.stdout}\n{proc.stderr}"
         if _looks_like_invalid_smiles_error(combined):
             print(
                 f"[warn] Invalid SMILES detected during bias-training build ({context}); "
@@ -161,6 +185,13 @@ def run_build_bias_training_data(
             output=proc.stdout,
             stderr=proc.stderr,
         )
+
+
+def _extract_pre_cutoff_count(text: str) -> int | None:
+    matches = re.findall(r"selected_pdb_entries_pre_cutoff=(\d+)", text or "")
+    if not matches:
+        return None
+    return int(matches[-1])
 
 
 def _looks_like_invalid_smiles_error(text: str) -> bool:

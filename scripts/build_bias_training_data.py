@@ -855,9 +855,19 @@ def main() -> int:
                     }
                 )
 
-        ligand_df = pd.DataFrame(ligand_rows).drop_duplicates(
-            subset=["query_chain_id", "pdb_id", "ligand_id", "smiles"]
-        )
+        ligand_columns = [
+            "query_chain_id",
+            "pdb_id",
+            "release_date",
+            "ligand_id",
+            "ecfp_similarity",
+            "smiles",
+        ]
+        ligand_df = pd.DataFrame(ligand_rows, columns=ligand_columns)
+        if not ligand_df.empty:
+            ligand_df = ligand_df.drop_duplicates(
+                subset=["query_chain_id", "pdb_id", "ligand_id", "smiles"]
+            )
         if not ligand_df.empty:
             ligand_df = ligand_df.sort_values(
                 by=["query_chain_id", "ecfp_similarity", "pdb_id", "ligand_id"],

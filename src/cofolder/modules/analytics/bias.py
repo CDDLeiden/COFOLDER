@@ -8,6 +8,7 @@ import logging
 import pickle
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 from Bio.Align import PairwiseAligner
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
@@ -125,12 +126,17 @@ def _read_ligand_training_from_sdf(path: Path) -> pd.DataFrame:
             )
     return pd.DataFrame(rows)
 
-
 def _load_ligand_training(path: Path, cutoff: date) -> pd.DataFrame:
     if path.suffix.lower() == ".sdf":
         df = _read_ligand_training_from_sdf(path)
     else:
-        df = pd.read_csv(path)
+        try:
+            df = pd.read_csv(path)
+        except EmptyDataError:
+            df = pd.DataFrame(columns=["pdb_id", "release_date", "smiles", "ligand_id"])
+
+    if df.empty and len(df.columns) == 0:
+        df = pd.DataFrame(columns=["pdb_id", "release_date", "smiles", "ligand_id"])
 
     required = {"pdb_id", "release_date", "smiles"}
     missing = required - set(df.columns)
