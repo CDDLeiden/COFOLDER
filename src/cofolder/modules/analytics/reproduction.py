@@ -67,6 +67,31 @@ def _load_structure(path: Path):
     return parser.get_structure(path.stem, str(path))
 
 
+def _summarize_structure_contents(structure):
+    protein_chains = []
+    ligands = []
+
+    model = next(iter(structure))
+    for chain in model:
+        polymer_residues = [res for res in chain if res.id[0] == " "]
+        if polymer_residues:
+            protein_chains.append(
+                {
+                    "chain_id": chain.id,
+                    "polymer_residues": len(polymer_residues),
+                }
+            )
+        for residue in chain:
+            if residue.id[0] == " " or residue.resname in {"HOH", "WAT", "DOD"}:
+                continue
+            ligands.append(f"{residue.resname}:{chain.id}:{residue.id}")
+
+    return {
+        "protein_chains": protein_chains,
+        "ligands": ligands,
+    }
+
+
 def _collect_matched_backbone_coords(ref_struct, mob_struct, chain_id):
     ref_coords = []
     mob_coords = []
@@ -89,6 +114,35 @@ def _collect_matched_backbone_coords(ref_struct, mob_struct, chain_id):
             if atom_name in r_ref and atom_name in r_mob:
                 ref_coords.append(r_ref[atom_name].coord)
                 mob_coords.append(r_mob[atom_name].coord)
+
+    return np.array(ref_coords, dtype=float), np.array(mob_coords, dtype=float)
+
+
+def _collect_backbone_coords_from_chain_mapping(ref_struct, mob_struct, chain_mapping):
+    ref_coords = []
+    mob_coords = []
+
+    ref_model = next(iter(ref_struct))
+    mob_model = next(iter(mob_struct))
+    ref_chain_id = chain_mapping["reference_chain_id"]
+    mob_chain_id = chain_mapping["mobile_chain_id"]
+    if ref_chain_id not in ref_model or mob_chain_id not in mob_model:
+        return np.array(ref_coords), np.array(mob_coords)
+
+    ref_chain = ref_model[ref_chain_id]
+    mob_chain = mob_model[mob_chain_id]
+    ref_res = {res.id: res for res in ref_chain if res.id[0] == " "}
+    mob_res = {res.id: res for res in mob_chain if res.id[0] == " "}
+
+    for ref_rid, mob_rid in chain_mapping.get("matched_residue_pairs", []):
+        ref_residue = ref_res.get(ref_rid)
+        mob_residue = mob_res.get(mob_rid)
+        if ref_residue is None or mob_residue is None:
+            continue
+        for atom_name in ("N", "CA", "C", "O"):
+            if atom_name in ref_residue and atom_name in mob_residue:
+                ref_coords.append(ref_residue[atom_name].coord)
+                mob_coords.append(mob_residue[atom_name].coord)
 
     return np.array(ref_coords, dtype=float), np.array(mob_coords, dtype=float)
 
@@ -351,12 +405,20 @@ def _build_aligned_predicted_structures(chain_df, structures_dir: Path, referenc
         predicted.append((cif_name, _load_structure(cif_path)))
 
     if not predicted:
-        return {}
+        return {}, {}
 
     structures = [("__reference__", reference_structure)] + predicted
-    aligned, _, _ = _align_structures_on_protein_ca(structures, save_dir=None)
+    aligned, _, _, alignment_details = _align_structures_on_protein_ca(
+        structures,
+        save_dir=None,
+        logger=logger,
+        return_alignment_details=True,
+    )
 
-    return {name: struct for name, struct in aligned.items() if name != "__reference__"}
+    return (
+        {name: struct for name, struct in aligned.items() if name != "__reference__"},
+        alignment_details,
+    )
 
 
 def _infer_receptor_chain_id(chain_df, cif_name):
@@ -521,6 +583,7 @@ def _compute_reference_ifp_vector(reference_structure, receptor_chain_id, refere
 def _compute_chain_reference_metrics(
     chain_df,
     aligned_predicted,
+    alignment_details,
     reference_structure,
     reproduction_metrics,
     custom_pocket_reference=None,
@@ -573,6 +636,17 @@ def _compute_chain_reference_metrics(
                 )
                 if "ligand_rmsd" in reproduction_metrics:
                     metrics["ligand_rmsd_ref"] = ligand_rmsd
+                    if logger is not None:
+                        logger.debug(
+                            "Ligand reference match for (cif=%s, chain=%s): ref_match=%s heavy_atoms=%d ligand_rmsd=%s",
+                            cif_name,
+                            chain_id,
+                            None
+                            if match is None
+                            else f"{match['resname']}:{match['chain_id']}:{match['residue_id']}",
+                            len(pred_coords),
+                            None if ligand_rmsd is None else f"{float(ligand_rmsd):.6f}",
+                        )
 
                 if match is None:
                     if logger is not None:
@@ -631,6 +705,12 @@ def _compute_chain_reference_metrics(
                 if "pocket_coverage" in reproduction_metrics:
                     pred_ifp = _parse_ifp_vector(row.get("ifp_distance"))
                     receptor_chain_id = _infer_receptor_chain_id(chain_df, cif_name)
+                    reference_receptor_chain_id = receptor_chain_id
+                    structure_alignment = alignment_details.get(cif_name, {})
+                    for chain_mapping in structure_alignment.get("chain_mappings", []):
+                        if chain_mapping.get("mobile_chain_id") == receptor_chain_id:
+                            reference_receptor_chain_id = chain_mapping.get("reference_chain_id")
+                            break
                     ref_ifp = None
                     residue_order = None
 
@@ -665,7 +745,7 @@ def _compute_chain_reference_metrics(
                     if ref_ifp is None and match is not None and residue_order is not None:
                         ref_ifp = _compute_reference_ifp_vector(
                             reference_structure=reference_structure,
-                            receptor_chain_id=receptor_chain_id,
+                            receptor_chain_id=reference_receptor_chain_id,
                             reference_ligand_coords=match["coords"],
                             residue_order=residue_order,
                             cutoff=5.0,
@@ -710,17 +790,48 @@ def _compute_chain_reference_metrics(
                         )
 
         else:
-            ref_coords, pred_coords = _collect_matched_backbone_coords(
-                ref_struct=reference_structure,
-                mob_struct=pred,
-                chain_id=chain_id,
-            )
+            ref_coords = np.array([], dtype=float)
+            pred_coords = np.array([], dtype=float)
+            structure_alignment = alignment_details.get(cif_name, {})
+            for chain_mapping in structure_alignment.get("chain_mappings", []):
+                if chain_mapping.get("mobile_chain_id") != chain_id:
+                    continue
+                ref_coords, pred_coords = _collect_backbone_coords_from_chain_mapping(
+                    ref_struct=reference_structure,
+                    mob_struct=pred,
+                    chain_mapping=chain_mapping,
+                )
+                if len(ref_coords) > 0:
+                    if logger is not None:
+                        logger.debug(
+                            "Protein RMSD chain mapping for (cif=%s, chain=%s): ref_chain=%s matched_backbone_atoms=%d",
+                            cif_name,
+                            chain_id,
+                            chain_mapping.get("reference_chain_id"),
+                            len(ref_coords),
+                        )
+                    break
+
+            if len(ref_coords) == 0:
+                ref_coords, pred_coords = _collect_matched_backbone_coords(
+                    ref_struct=reference_structure,
+                    mob_struct=pred,
+                    chain_id=chain_id,
+                )
             n = min(len(ref_coords), len(pred_coords))
             if n > 0 and "protein_rmsd" in reproduction_metrics:
                 metrics["protein_rmsd_ref"] = float(_rmsd(
                     coords_a=ref_coords[:n],
                     coords_b=pred_coords[:n],
                 ))
+                if logger is not None:
+                    logger.debug(
+                        "Computed protein RMSD for (cif=%s, chain=%s): matched_backbone_atoms=%d protein_rmsd=%.6f",
+                        cif_name,
+                        chain_id,
+                        n,
+                        metrics["protein_rmsd_ref"],
+                    )
 
         for key, value in metrics.items():
             chain_df.at[idx, key] = value
@@ -876,9 +987,16 @@ def scaffold_reproduction_metrics(
             )
         return system_df, chain_df
 
+    if logger is not None:
+        logger.info("Loading reference structure for reproduction metrics: %s", reference_path)
     reference_structure = _load_structure(Path(reference_path))
+    if logger is not None:
+        logger.info(
+            "Loaded reference structure summary: %s",
+            _summarize_structure_contents(reference_structure),
+        )
     structures_dir = Path(wrk_dir) / "results" / "structures"
-    aligned_predicted = _build_aligned_predicted_structures(
+    aligned_predicted, alignment_details = _build_aligned_predicted_structures(
         chain_df=chain_df,
         structures_dir=structures_dir,
         reference_structure=reference_structure,
@@ -888,6 +1006,7 @@ def scaffold_reproduction_metrics(
     chain_df = _compute_chain_reference_metrics(
         chain_df=chain_df,
         aligned_predicted=aligned_predicted,
+        alignment_details=alignment_details,
         reference_structure=reference_structure,
         reproduction_metrics=enabled_metrics,
         custom_pocket_reference=custom_pocket_reference,
