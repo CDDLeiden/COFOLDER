@@ -1,6 +1,8 @@
 import argparse
 import os
 import logging
+import shlex
+import sys
 from pathlib import Path
 
 from cofolder import __version__
@@ -35,6 +37,11 @@ REPRODUCTION_METRICS = [
 
 class BaseRecipe:
     LOGGER_NAME = "cofolder"
+
+    @staticmethod
+    def _format_cli_command(args) -> str:
+        raw_argv = list(getattr(args, "_cli_argv", []) or [])
+        return shlex.join(["cofolder", *raw_argv])
 
     @staticmethod
     def add_common_arguments(parser):
@@ -296,6 +303,7 @@ class BaseRecipe:
         )
 
         logger = logging.getLogger(cls.LOGGER_NAME)
+        logger.info("CLI command: %s", cls._format_cli_command(args))
         logger.info(
             "Logger initialized. "
             f"Log file: {log_file}, debug={args.debug}"
@@ -448,5 +456,7 @@ def main(argv=None):
         recipe.add_arguments(sp)
         sp.set_defaults(func=recipe.main)
 
-    args = parser.parse_args(argv)
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    args = parser.parse_args(raw_argv)
+    args._cli_argv = raw_argv
     args.func(args)

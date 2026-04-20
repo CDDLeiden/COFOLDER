@@ -1,4 +1,5 @@
 """Tests for cofolder.cli module."""
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -11,18 +12,36 @@ class TestCLIMain:
 
     @patch('cofolder.recipes.validate.Validate.run')
     @patch('cofolder.modules.utils.helpers.create_dir')
-    def test_validate_command(self, mock_create_dir, mock_run, sample_system_yaml, sample_options_yaml):
+    def test_validate_command(self, mock_create_dir, mock_run, sample_system_yaml, sample_options_yaml, temp_dir):
         """Test validate command execution."""
         args = [
             "validate",
             "-s", str(sample_system_yaml),
             "-b", str(sample_options_yaml),
-            "-w", "/tmp/test"
+            "-w", str(temp_dir)
         ]
 
         cli.main(args)
 
         assert mock_run.called
+
+    @patch('cofolder.recipes.validate.Validate.run')
+    def test_validate_logs_cli_command_first(self, mock_run, sample_system_yaml, sample_options_yaml, temp_dir, caplog):
+        """Test that the CLI command is logged before the logger-init message."""
+        args = [
+            "validate",
+            "-s", str(sample_system_yaml),
+            "-b", str(sample_options_yaml),
+            "-w", str(temp_dir),
+        ]
+
+        with caplog.at_level(logging.INFO):
+            cli.main(args)
+
+        text = caplog.text
+        assert "CLI command: cofolder validate" in text
+        assert "Logger initialized." in text
+        assert text.index("CLI command: cofolder validate") < text.index("Logger initialized.")
 
     def test_main_no_args(self):
         """Test main with no arguments."""
