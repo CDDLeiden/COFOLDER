@@ -48,12 +48,31 @@ class TestSetupRootLogger:
 
     def test_logger_formatting(self, temp_dir, caplog):
         """Test that logger uses correct format."""
+        logger = logging.getLogger()
+        logger.handlers.clear()
+
         log_file = temp_dir / "test.log"
         setup_root_logger(logging.INFO, log_file=str(log_file))
 
-        logger = logging.getLogger()
         with caplog.at_level(logging.INFO):
             logger.info("Test message")
 
         # Check that the message was logged
         assert "Test message" in caplog.text
+
+    def test_reconfigure_existing_handlers_enables_debug_and_file(self, temp_dir):
+        """Repeated setup should upgrade level and add the requested file handler."""
+        logger = logging.getLogger()
+        logger.handlers.clear()
+
+        setup_root_logger(logging.INFO)
+
+        log_file = temp_dir / "test.log"
+        setup_root_logger(logging.DEBUG, log_file=str(log_file))
+
+        logger.debug("Debug message")
+
+        assert logger.level == logging.DEBUG
+        assert log_file.exists()
+        content = log_file.read_text()
+        assert "Debug message" in content

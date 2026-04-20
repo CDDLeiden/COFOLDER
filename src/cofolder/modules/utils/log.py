@@ -33,9 +33,8 @@ def setup_root_logger(
     """Configure the root logger with console and optional file handlers.
 
     Sets up the root logger with a standardized format for consistent logging
-    across the entire application. If the root logger already has handlers,
-    this function returns immediately to prevent duplicate handler registration.
-    This makes it safe to call multiple times from different modules.
+    across the entire application. Repeated calls update the root log level and
+    ensure the requested console/file handlers exist without duplicating them.
 
     Parameters
     ----------
@@ -61,18 +60,37 @@ def setup_root_logger(
     """
     root = logging.getLogger()
 
-    if root.handlers:
-        return
-
     formatter = logging.Formatter(DEFAULT_FORMAT)
 
-    console = logging.StreamHandler(sys.stdout)
+    root.setLevel(level)
+
+    console = next(
+        (
+            handler
+            for handler in root.handlers
+            if isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)
+            and getattr(handler, "stream", None) is sys.stdout
+        ),
+        None,
+    )
+    if console is None:
+        console = logging.StreamHandler(sys.stdout)
+        root.addHandler(console)
     console.setFormatter(formatter)
 
-    root.setLevel(level)
-    root.addHandler(console)
-
     if log_file:
-        file_handler = logging.FileHandler(log_file)
+        log_path = str(Path(log_file).resolve())
+        file_handler = next(
+            (
+                handler
+                for handler in root.handlers
+                if isinstance(handler, logging.FileHandler)
+                and Path(handler.baseFilename).resolve() == Path(log_path)
+            ),
+            None,
+        )
+        if file_handler is None:
+            file_handler = logging.FileHandler(log_path)
+            root.addHandler(file_handler)
         file_handler.setFormatter(formatter)
-        root.addHandler(file_handler)

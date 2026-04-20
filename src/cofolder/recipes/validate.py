@@ -1,13 +1,12 @@
 import logging
 import os
-from contextlib import contextmanager
 from pathlib import Path
-from time import perf_counter
 
 from cofolder.modules.input import command, system
 from cofolder.modules.entities import ligand
 from cofolder.modules.runners.boltz_runner import run_boltz
 from cofolder.modules.utils import helpers, gather, read, write
+from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.bias import apply_bias_metrics
@@ -170,34 +169,13 @@ class Validate(object):
         self.sys = system.System(system=self._system)
 
         self.logger.debug("Validate initialization complete.")
-        self._timing_entries: list[tuple[str, float]] = []
-
-    @contextmanager
-    def _debug_timer(self, label: str):
-        """Debug-only timer context manager."""
-        start = perf_counter()
-        try:
-            yield
-        finally:
-            elapsed = perf_counter() - start
-            self._timing_entries.append((label, elapsed))
-            if self.logger.isEnabledFor(logging.DEBUG):
-                self.logger.debug("TIMER | %s | %.3fs", label, elapsed)
+        self.timings = DebugTimingCollector(logger=self.logger)
 
     def _log_timing_summary(self) -> None:
-        if not self.logger.isEnabledFor(logging.DEBUG):
-            return
-        if not self._timing_entries:
-            self.logger.debug("TIMER SUMMARY | no timing entries recorded")
-            return
-        total = sum(sec for _, sec in self._timing_entries)
-        self.logger.debug(
-            "TIMER SUMMARY | entries=%d | total=%.3fs",
-            len(self._timing_entries),
-            total,
-        )
-        for label, sec in self._timing_entries:
-            self.logger.debug("TIMER SUMMARY | %s | %.3fs", label, sec)
+        self.timings.log_summary(logger=self.logger)
+
+    def _debug_timer(self, label: str):
+        return self.timings.measure(label, logger=self.logger)
 
     def run(self):
         """Execute the validation workflow.
@@ -259,8 +237,11 @@ class Validate(object):
                 logger.info("Running: %s", " ".join(map(str, cmd)))
 
                 # Execute the command
-                with self._debug_timer(f"repeat_{i}.boltz.run"):
-                    run_boltz(cmd)
+                run_boltz(
+                    cmd,
+                    timings=self.timings,
+                    label_prefix=f"repeat_{i}",
+                )
 
             # Gather structures from all repeats
             with self._debug_timer("structures.gather"):
@@ -454,6 +435,7 @@ class Validate(object):
                             skip_protein_mmseqs=(not run_protein_protocol),
                             skip_ligand_ecfp=(not run_ligand_protocol),
                             ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
+                            timings=self.timings,
                         )
                     if run_protein_protocol:
                         protein_metrics_path = build_protein_training_path
@@ -470,7 +452,7 @@ class Validate(object):
                 )
 
                 if protein_ok and ligand_ok:
-                    with self._debug_timer("scores.bias_metrics"):
+                    with self._debug_timer("scores.bias_metrics.total"):
                         system_df, chain_df = apply_bias_metrics(
                             system_df=system_df,
                             chain_df=chain_df,
@@ -483,6 +465,7 @@ class Validate(object):
                             boltz_cache_path=self.opt.find_value(key="cache") or "~/.boltz",
                             output_dir=self.wrk_dir / "results" / "bias_train",
                             logger=self.logger,
+                            timings=self.timings,
                         )
                 else:
                     self.logger.warning(

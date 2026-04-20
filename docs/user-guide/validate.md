@@ -51,6 +51,15 @@ cofolder validate \
   -d
 ```
 
+When `--debug` is enabled, COFOLDER emits benchmark-friendly timing lines in the log:
+
+- `TIMER | <label> | <seconds>s` during the run
+- `TIMER SUMMARY | <label> | <seconds>s` at the end
+
+This is intended for component benchmarking. For reproducible benchmark numbers, use
+warmed Boltz cache/model files and fresh prediction outputs so one-time downloads or
+cache-hit skips do not distort timings.
+
 ## System File Format
 
 ```yaml

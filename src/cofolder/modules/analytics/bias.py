@@ -6,12 +6,15 @@ from datetime import date
 from pathlib import Path
 import logging
 import pickle
+from contextlib import nullcontext
 
 import pandas as pd
 from pandas.errors import EmptyDataError
 from Bio.Align import PairwiseAligner
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
+
+from cofolder.modules.utils.timing import DebugTimingCollector
 
 ALIGNER = PairwiseAligner(mode="global")
 ALIGNER.match_score = 1.0
@@ -385,6 +388,7 @@ def apply_bias_metrics(
     boltz_cache_path: Path | str | None = None,
     output_dir: Path | str | None = None,
     logger: logging.Logger | None = None,
+    timings: DebugTimingCollector | None = None,
 ):
     """Compute lightweight chain-level bias metrics only.
 
@@ -431,16 +435,28 @@ def apply_bias_metrics(
         }
 
     protein_best: dict[str, float | None] = {}
-    for chain_id, query_seq in protein_queries.items():
-        protein_best[str(chain_id).strip().upper()] = (
-            _best_protein_hit(query_seq, proteins_df) if query_seq else None
-        )
+    protein_timer = (
+        timings.measure("scores.bias_metrics.protein_similarity", logger=logger)
+        if timings is not None
+        else nullcontext()
+    )
+    with protein_timer:
+        for chain_id, query_seq in protein_queries.items():
+            protein_best[str(chain_id).strip().upper()] = (
+                _best_protein_hit(query_seq, proteins_df) if query_seq else None
+            )
 
     ligand_best: dict[str, float | None] = {}
-    for chain_id, query_smiles in ligand_queries.items():
-        ligand_best[str(chain_id).strip().upper()] = (
-            _best_ligand_hit(query_smiles, ligands_df) if query_smiles else None
-        )
+    ligand_timer = (
+        timings.measure("scores.bias_metrics.ligand_similarity", logger=logger)
+        if timings is not None
+        else nullcontext()
+    )
+    with ligand_timer:
+        for chain_id, query_smiles in ligand_queries.items():
+            ligand_best[str(chain_id).strip().upper()] = (
+                _best_ligand_hit(query_smiles, ligands_df) if query_smiles else None
+            )
 
     if "bias_prot_sim_train" not in chain_df.columns:
         chain_df["bias_prot_sim_train"] = pd.NA

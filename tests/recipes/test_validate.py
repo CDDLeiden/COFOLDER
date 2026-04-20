@@ -1,6 +1,78 @@
 """Tests for cofolder.recipes.validate module."""
 
+import logging
+import subprocess
+
+import pandas as pd
+import yaml
+
 from cofolder.recipes.validate import Validate
+
+
+def _patch_validate_pipeline(monkeypatch):
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.helpers.get_seeds",
+        lambda repeats, seed, logger: (123, [123]),
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.gather.gather_structures",
+        lambda base_dir, system_name, repeats, logger: None,
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.gather.initialize_results",
+        lambda raw_dir, system_name, repeats, diffusion_samples: (
+            pd.DataFrame([{"model_name": system_name, "repeat": 1, "diffusion_sample": 0}]),
+            pd.DataFrame(
+                [
+                    {"CHAIN_ID": "A", "ENTITY_TYPE": "protein", "ligand_molecule_id": "protein_A", "repeat": 1, "diffusion_sample": 0},
+                    {"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ligand_molecule_id": "ETH", "repeat": 1, "diffusion_sample": 0},
+                ]
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.gather.add_chain_info",
+        lambda chain_df, sys: chain_df,
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.gather.gather_confidence_metrics",
+        lambda raw_dir, system_df, chain_df, system_name, repeats, diffusion_samples: (
+            system_df,
+            chain_df,
+        ),
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.gather.gather_affinity_metrics",
+        lambda raw_dir, chain_df, system_name, sys, repeats, extended=False: chain_df,
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.scaffold_reproduction_metrics",
+        lambda system_df, chain_df, reference_path, wrk_dir, pocket_coverage_reference, reproduction_metrics, logger: (
+            system_df,
+            chain_df,
+        ),
+    )
+
+    class _FakeStructure:
+        def __init__(self, wrk_dir, chain_df, cif_folder):
+            self.chain_df = chain_df.copy()
+
+        def add_ifp_distance(self):
+            self.chain_df["ifp_distance"] = [None, "[]"]
+            return self.chain_df
+
+        def add_ifp_prolif(self):
+            self.chain_df["ifp_prolif"] = [None, "ligand_B_ifp.pkl"]
+            return self.chain_df
+
+        def add_sasa(self, absolute=False, normalized=False):
+            if absolute:
+                self.chain_df["sasa"] = [10.0, 2.0]
+            if normalized:
+                self.chain_df["sasa_norm_heavy"] = [1.0, 0.2]
+            return self.chain_df
+
+    monkeypatch.setattr("cofolder.recipes.validate.Structure", _FakeStructure)
 
 
 class TestValidateInit:
@@ -63,3 +135,131 @@ class TestValidateInit:
 
         assert validator.pocket_coverage_reference == "A2 S8 T10"
         assert validator.reproduction_metrics == {"pocket_coverage"}
+
+
+class TestValidateRun:
+    def test_debug_run_logs_timing_summary(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+        caplog,
+    ):
+        _patch_validate_pipeline(monkeypatch)
+
+        def _fake_run_boltz(cmd, check=True, timings=None, label_prefix=None):
+            if timings is not None:
+                timings.record(f"{label_prefix}.boltz.total", 1.250, logger=logging.getLogger("cofolder.recipes.validate"))
+                timings.record(f"{label_prefix}.boltz.msa", 0.400, logger=logging.getLogger("cofolder.recipes.validate"))
+                timings.record(
+                    f"{label_prefix}.boltz.affinity_prediction",
+                    0.300,
+                    logger=logging.getLogger("cofolder.recipes.validate"),
+                )
+            return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+        monkeypatch.setattr("cofolder.recipes.validate.run_boltz", _fake_run_boltz)
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=["ifp_distance", "ifp_prolif", "sasa", "sasa_normalized"],
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="cofolder.recipes.validate"):
+            validator.run()
+
+        assert "TIMER SUMMARY | validate.total" in caplog.text
+        assert "TIMER SUMMARY | repeat_1.boltz.total" in caplog.text
+        assert "TIMER SUMMARY | repeat_1.boltz.msa" in caplog.text
+        assert "TIMER SUMMARY | repeat_1.boltz.affinity_prediction" in caplog.text
+        assert "TIMER SUMMARY | scores.ifp_distance" in caplog.text
+        assert "TIMER SUMMARY | scores.ifp_prolif" in caplog.text
+        assert "TIMER SUMMARY | scores.sasa" in caplog.text
+
+    def test_debug_run_logs_bias_similarity_timings(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        temp_dir,
+        caplog,
+    ):
+        _patch_validate_pipeline(monkeypatch)
+
+        system_data = {
+            "sequences": [
+                {"protein": {"id": "A", "fasta": "MKRAAT"}},
+                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+            ]
+        }
+        system_path = temp_dir / "bias_system.yaml"
+        system_path.write_text(yaml.safe_dump(system_data), encoding="utf-8")
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1ABC,2022-01-01,MKRAAT,100.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1ABC,2022-01-01,ETH,CCO,1.0\n",
+            encoding="utf-8",
+        )
+
+        def _fake_run_boltz(cmd, check=True, timings=None, label_prefix=None):
+            if timings is not None:
+                timings.record(f"{label_prefix}.boltz.total", 1.000, logger=logging.getLogger("cofolder.recipes.validate"))
+            return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+        monkeypatch.setattr("cofolder.recipes.validate.run_boltz", _fake_run_boltz)
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            assess_bias=True,
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="cofolder.recipes.validate"):
+            validator.run()
+
+        assert "TIMER SUMMARY | scores.bias_metrics.total" in caplog.text
+        assert "TIMER SUMMARY | scores.bias_metrics.protein_similarity" in caplog.text
+        assert "TIMER SUMMARY | scores.bias_metrics.ligand_similarity" in caplog.text
+
+    def test_non_debug_run_does_not_log_timers(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+        caplog,
+    ):
+        _patch_validate_pipeline(monkeypatch)
+
+        def _fake_run_boltz(cmd, check=True, timings=None, label_prefix=None):
+            if timings is not None:
+                timings.record(f"{label_prefix}.boltz.total", 1.250, logger=logging.getLogger("cofolder.recipes.validate"))
+            return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+        monkeypatch.setattr("cofolder.recipes.validate.run_boltz", _fake_run_boltz)
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=["sasa"],
+        )
+
+        with caplog.at_level(logging.INFO, logger="cofolder.recipes.validate"):
+            validator.run()
+
+        assert "TIMER |" not in caplog.text
+        assert "TIMER SUMMARY |" not in caplog.text
