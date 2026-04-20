@@ -407,10 +407,11 @@ def _build_aligned_predicted_structures(chain_df, structures_dir: Path, referenc
     if not predicted:
         return {}, {}
 
+    aligned_dir = structures_dir.parent / "structures_aligned"
     structures = [("__reference__", reference_structure)] + predicted
     aligned, _, _, alignment_details = _align_structures_on_protein_ca(
         structures,
-        save_dir=None,
+        save_dir=aligned_dir,
         logger=logger,
         return_alignment_details=True,
     )
