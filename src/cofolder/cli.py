@@ -7,7 +7,7 @@ from importlib import import_module
 from pathlib import Path
 
 from cofolder import __version__
-from cofolder.modules.runners import list_runner_names
+from cofolder.modules.runners import get_runner, list_runner_names
 
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
@@ -263,6 +263,8 @@ class BaseRecipe:
 
     @staticmethod
     def _validate_common_args(args):
+        get_runner(args.runner).ensure_available()
+
         # ---- scoring functions validation ----
         if args.scoring_functions is not None:
             invalid = set(args.scoring_functions) - set(SCORING_FUNCTIONS)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -47,11 +48,29 @@ class RunnerResult:
     sample_records: list[dict[str, Any]] = field(default_factory=list)
 
 
+class BaseRunner(ABC):
+    name: str
+    capabilities: set[str]
+
+    @abstractmethod
+    def check_availability(self) -> tuple[bool, str | None]:
+        """Return whether the runner dependencies are available."""
+
+    def ensure_available(self) -> None:
+        available, message = self.check_availability()
+        if available:
+            return
+        raise RuntimeError(message or f"Runner '{self.name}' is not available.")
+
+
 class Runner(Protocol):
     name: str
     capabilities: set[str]
 
-    def is_available(self) -> tuple[bool, str | None]:
+    def check_availability(self) -> tuple[bool, str | None]:
+        ...
+
+    def ensure_available(self) -> None:
         ...
 
     def load_options(self, options_path: Path):

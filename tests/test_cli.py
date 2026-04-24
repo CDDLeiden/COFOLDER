@@ -70,9 +70,23 @@ class TestCLIMain:
             "-w", str(temp_dir),
         ]
         fake_runner = MagicMock()
-        fake_runner.is_available.return_value = (False, "install boltz")
-        with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
+        fake_runner.ensure_available.side_effect = RuntimeError("install boltz")
+        with patch("cofolder.cli.get_runner", return_value=fake_runner):
             with pytest.raises(RuntimeError, match="install boltz"):
+                cli.main(args)
+
+    def test_unavailable_runner_is_checked_before_input_path_validation(self, temp_dir):
+        args = [
+            "validate",
+            "-s", str(temp_dir / "missing_system.yaml"),
+            "-o", str(temp_dir / "missing_options.yaml"),
+            "-w", str(temp_dir),
+        ]
+        fake_runner = MagicMock()
+        fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
+
+        with patch("cofolder.cli.get_runner", return_value=fake_runner):
+            with pytest.raises(RuntimeError, match="install boltz first"):
                 cli.main(args)
 
 

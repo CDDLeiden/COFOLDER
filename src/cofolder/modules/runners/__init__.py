@@ -4,7 +4,7 @@ import importlib
 import pkgutil
 from typing import Any
 
-from cofolder.modules.runners.base import Runner, RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.base import BaseRunner, Runner, RunnerPreparation, RunnerRequest, RunnerResult
 
 
 def discover_runners() -> dict[str, Runner]:
@@ -36,6 +36,7 @@ def get_runner(name: str) -> Runner:
 
 __all__ = [
     "Runner",
+    "BaseRunner",
     "RunnerPreparation",
     "RunnerRequest",
     "RunnerResult",

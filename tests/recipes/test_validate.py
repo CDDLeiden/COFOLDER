@@ -2,8 +2,11 @@
 
 import logging
 from pathlib import Path
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import pandas as pd
+import pytest
 import yaml
 
 from cofolder.modules.runners.base import RunnerPreparation, RunnerResult
@@ -73,6 +76,12 @@ class _FakeRunner:
 
     def is_available(self):
         return True, None
+
+    def check_availability(self):
+        return True, None
+
+    def ensure_available(self):
+        return None
 
     def load_options(self, options_path):
         return {"options_path": str(options_path)}
@@ -234,6 +243,27 @@ def _patch_validate_pipeline_no_metrics(monkeypatch, system_name: str = "system"
 
 class TestValidateInit:
     """Tests for Validate initialization."""
+
+    def test_init_checks_runner_availability_before_loading_inputs(
+        self,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        fake_runner = Mock()
+        fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
+
+        with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
+            with patch("cofolder.recipes.validate.read.read_yaml") as mock_read_yaml:
+                with pytest.raises(RuntimeError, match="install boltz first"):
+                    Validate(
+                        wrk_dir=str(temp_dir),
+                        system_path=str(sample_system_yaml),
+                        options_path=str(sample_options_yaml),
+                        scoring_functions=[],
+                    )
+
+        mock_read_yaml.assert_not_called()
 
     def test_init_basic(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Validate(

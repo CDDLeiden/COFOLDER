@@ -110,6 +110,9 @@ class Validate(object):
             else set(DEFAULT_SCORING_FUNCTIONS)
         )
 
+        self.runner = get_runner(self.runner_name)
+        self.runner.ensure_available()
+
         self._system = read.read_yaml(path=self.system_path)
         self.base_system = system.System(system=self._system)
 
@@ -154,13 +157,8 @@ class Validate(object):
             self.raw_dir.mkdir(parents=True, exist_ok=True)
             self.logger.debug("Using raw directory for outputs: %s", self.raw_dir)
 
-            runner = get_runner(self.runner_name)
-            is_available, missing_message = runner.is_available()
-            if not is_available:
-                raise RuntimeError(missing_message or f"Runner '{self.runner_name}' is not available.")
-
             unsupported_metric_groups = sorted(
-                (self.scoring_functions & RUNNER_METRIC_GROUPS) - set(runner.capabilities)
+                (self.scoring_functions & RUNNER_METRIC_GROUPS) - set(self.runner.capabilities)
             )
             if unsupported_metric_groups:
                 self.logger.warning(
@@ -178,11 +176,12 @@ class Validate(object):
                 )
 
             with self._debug_timer("runner.options.load"):
-                runner_options = runner.load_options(self.options_path)
+                runner_options = self.runner.load_options(self.options_path)
 
             self.sys = system.System(system=copy.deepcopy(self.base_system.system))
             with self._debug_timer("runner.prepare_system"):
-                preparation = runner.prepare_system(
+                preparation = self.runner.prepare_system(
+                    # keep backend-specific prep behind the runner boundary
                     system_obj=self.sys,
                     options_obj=runner_options,
                     wrk_dir=self.raw_dir,
@@ -224,7 +223,7 @@ class Validate(object):
                     timings=self.timings,
                     label_prefix=f"repeat_{i}",
                 )
-                runner_results.append(runner.run(request))
+                runner_results.append(self.runner.run(request))
 
             with self._debug_timer("structures.gather"):
                 gather.gather_structures(

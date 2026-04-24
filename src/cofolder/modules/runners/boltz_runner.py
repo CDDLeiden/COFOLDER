@@ -15,7 +15,7 @@ import pandas as pd
 
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
-from cofolder.modules.runners.base import RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.base import BaseRunner, RunnerPreparation, RunnerRequest, RunnerResult
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -151,7 +151,7 @@ def run_boltz(
     )
 
 
-class BoltzRunner:
+class BoltzRunner(BaseRunner):
     name = "boltz"
     capabilities = {
         "confidence_metrics",
@@ -159,7 +159,7 @@ class BoltzRunner:
         "affinity_metrics_ext",
     }
 
-    def is_available(self) -> tuple[bool, str | None]:
+    def check_availability(self) -> tuple[bool, str | None]:
         if find_spec("boltz") is None:
             return False, (
                 "The selected 'boltz' runner is not installed. Install it with "
