@@ -25,6 +25,7 @@ class Screen:
         wrk_dir: str,
         system_path: str,
         options_path: str,
+        runner: str = "boltz",
         variable: list[str] | None = None,
         variable_csv: str | None = None,
         col_variable: list[str] | None = None,
@@ -51,6 +52,7 @@ class Screen:
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
+        self.runner = str(runner)
 
         self.variable_raw = variable or []
         self.col_variable = col_variable or []
@@ -169,6 +171,7 @@ class Screen:
                     wrk_dir=str(run_dir),
                     system_path=str(row_system_path),
                     options_path=str(self.options_path),
+                    runner=self.runner,
                     **row_validate_kwargs,
                 )
                 validator.run()

@@ -1,42 +1,43 @@
 # COFOLDER
 
 ## Introduction
-COFOLDER is a collection of command-line utilities for performing co-folding workflows through pluggable backends. The default backend is Boltz, which powers the current `validate`, `screen`, and `oracle` workflows in this repository.
+COFOLDER is a collection of command-line utilities for performing co-folding workflows through pluggable runners. The current built-in runner is `boltz`, and the `validate`, `screen`, and `oracle` workflows dispatch through a generic runner interface rather than calling one backend directly.
 
-COFOLDER can be installed without a backend so the package remains flexible. Additional backends are possible, but they require backend-specific runners and integration code.
+COFOLDER can be installed without a backend so the package remains flexible. Additional backends are possible, but they require backend-specific runner implementations and normalization into COFOLDER's canonical output bundle.
 
 Third-party license attributions for vendored code are listed in `THIRD_PARTY_LICENSES.md`.
 
 
 ## Installation
-Install directly from GitHub for newest updates. The default setup installs the Boltz backend:
+Install directly from GitHub for newest updates. The default setup installs the `boltz` runner:
 ```
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
 pip install -e ".[boltz]"
 ```
 
-This is the recommended installation for current prediction workflows.
+This is the recommended installation for current prediction workflows, because `boltz` is the only runner shipped in the current phase of the model-agnostic architecture.
 
-COFOLDER currently supports Python 3.11 and 3.12.
+`pyproject.toml` currently requires Python 3.11+.
 
-### Backend-Agnostic Base Install
-If you only want the base COFOLDER package without a backend:
+### Runner-Agnostic Base Install
+If you only want the base COFOLDER package without any runner dependency:
 ```bash
 pip install -e .
 ```
 
-This installs COFOLDER without Boltz. To run the default prediction workflows later, add the Boltz backend with:
+This installs COFOLDER without `boltz`. To run the current prediction workflows later, add the `boltz` runner with:
 ```bash
 pip install -e ".[boltz]"
 ```
 
 The `boltz` extra currently installs `boltz[cuda]`.
 
-### Backend Notes
-- **Default backend**: Boltz
+### Runner Notes
+- **Shipped runner**: `boltz`
+- **CLI runner selection**: `--runner <name>`
 - **Backend-free install**: supported
-- **Other backends**: possible, but require backend-specific runners and integration work before COFOLDER commands can use them
+- **Other backends**: possible, but require backend-specific runners before COFOLDER commands can use them
 
 ### Optional: Bias-Assessment Setup (MMseqs2)
 For protein sequence-similarity bias metrics, install `mmseqs2` in the same environment where you run `cofolder`:
@@ -59,7 +60,7 @@ mmseqs --help
 
 Step-by-step:
 ```bash
-# 1) install COFOLDER with the default Boltz backend
+# 1) install COFOLDER with the default shipped runner
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
 pip install -e ".[boltz]"
@@ -82,6 +83,7 @@ python scripts/fetch_bias_training_data.py \
 
 # 4) run validate with bias
 cofolder validate ... \
+  --runner boltz \
   --assess_bias \
   --protein_training_data_path /path/to/training_data/protein_training_data.csv \
   --ligand_training_data_path /path/to/training_data/ligand_training_data.csv
@@ -89,17 +91,24 @@ cofolder validate ... \
 
 ## Usage
 The main command is `cofolder`, which supports several subcommands:
-```
-cofolder [-h] [-v] {validate,screen,oracle}
+```bash
+cofolder [-h] [-v] {validate,screen,oracle} ...
 ```
 
 ### Subcommands
-- **validate**: Co-fold and validate a single system using the default Boltz backend.
-- **screen**: Co-fold a library using the default Boltz backend for virtual screening.
-- **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) with the default Boltz backend and return one metric value.
+- **validate**: Co-fold and validate a single system using the selected runner.
+- **screen**: Co-fold a library using the selected runner for virtual screening.
+- **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) with the selected runner and return one metric value.
+
+### Common Runner Arguments
+- `--runner`: select the cofolding runner. In the current release this is `boltz`.
+- `-o` / `--options_path`: path to the runner options YAML.
+- `--scoring_functions`: generic metric groups and analytics, such as `confidence_metrics`, `affinity_metrics`, `affinity_metrics_ext`, `ifp_distance`, `ifp_prolif`, `sasa`, and `sasa_normalized`.
+
+If a requested metric group is not supported by the selected runner, COFOLDER warns and continues, leaving the unsupported output columns empty.
 
 Use the -h flag with any command to see detailed usage:
-```
+```bash
 cofolder -h
 cofolder validate -h
 cofolder screen -h
@@ -110,7 +119,9 @@ Validate example:
 ```bash
 cofolder validate \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
+  --runner boltz \
+  --scoring_functions confidence_metrics affinity_metrics sasa \
   -w ./validate_out
 ```
 
@@ -118,7 +129,8 @@ Screening example (CSV -> per-row validate wrapper):
 ```bash
 cofolder screen \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
+  --runner boltz \
   -c compounds.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles
@@ -129,11 +141,21 @@ Oracle example:
 ```bash
 cofolder oracle \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
+  --runner boltz \
   --input_smiles "CCO" \
   --output_metric affinity_pred_value \
   --aggregate first
 ```
+
+### Canonical Outputs
+Runner-specific raw prediction artifacts remain in the per-repeat `raw/` tree, but COFOLDER normalizes them into a shared result bundle consumed by analytics:
+
+- `results/system_metrics.csv`
+- `results/chain_metrics.csv`
+- `results/structures/`
+
+Each repeat also writes normalized runner metadata under `raw/repeat_<n>/normalized/`, including a manifest describing the runner, capabilities, normalized sample records, and raw artifact locations.
 
 ## Package Structure
 ```
@@ -161,6 +183,7 @@ src/cofolder/
 │   │   ├── command.py
 │   │   └── system.py
 │   ├── runners/
+│   │   ├── base.py
 │   │   └── boltz_runner.py
 │   └── utils/
 │       ├── gather.py

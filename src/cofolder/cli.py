@@ -7,14 +7,15 @@ from importlib import import_module
 from pathlib import Path
 
 from cofolder import __version__
+from cofolder.modules.runners import list_runner_names
 
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
 
 SCORING_FUNCTIONS = [
-    "boltz_confidence_metrics",
-    "boltz_affinity_metrics",
-    "boltz_affinity_metrics_ext",
+    "confidence_metrics",
+    "affinity_metrics",
+    "affinity_metrics_ext",
     "ifp_distance",
     "ifp_prolif",
     "sasa",
@@ -32,26 +33,8 @@ REPRODUCTION_METRICS = [
     "pocket_coverage",
 ]
 
-
-def _raise_missing_boltz_dependency(exc: ModuleNotFoundError) -> None:
-    missing_root = (exc.name or "").split(".")[0]
-    if missing_root != "boltz":
-        raise exc
-
-    raise RuntimeError(
-        "The default Boltz backend is not installed. COFOLDER can be installed "
-        "without a backend, but the current validate/screen/oracle workflows in "
-        "this repository require Boltz. Install it with "
-        '`pip install "cofolder[boltz]"` or `pip install -e ".[boltz]"`. '
-        "Other backends require backend-specific runners."
-    ) from exc
-
-
 def _load_recipe_class(module_name: str, class_name: str):
-    try:
-        module = import_module(module_name)
-    except ModuleNotFoundError as exc:
-        _raise_missing_boltz_dependency(exc)
+    module = import_module(module_name)
     return getattr(module, class_name)
 
 class BaseRecipe:
@@ -79,11 +62,18 @@ class BaseRecipe:
         )
 
         parser.add_argument(
-            '-b', '--boltz_options_path',
-            dest='options_path',
+            '-o', '--options_path',
             type=str,
             required=True,
-            help='Path to Boltz options YAML file.'
+            help='Path to runner options YAML file.'
+        )
+
+        parser.add_argument(
+            '--runner',
+            type=str,
+            choices=list_runner_names(),
+            default='boltz',
+            help='Select the cofolding runner to use.'
         )
 
         parser.add_argument(
@@ -251,6 +241,7 @@ class BaseRecipe:
             wrk_dir=args.wrk_dir,
             system_path=args.system_path,
             options_path=args.options_path,
+            runner=args.runner,
             repeats=args.repeats,
             seed=args.seed,
             scoring_functions=args.scoring_functions,
@@ -287,9 +278,9 @@ class BaseRecipe:
 
         options_path = Path(args.options_path)
         if not options_path.exists():
-            raise ValueError(f'--boltz_options_path does not exist: {options_path}')
+            raise ValueError(f'--options_path does not exist: {options_path}')
         if not options_path.is_file():
-            raise ValueError(f'--boltz_options_path is not a file: {options_path}')
+            raise ValueError(f'--options_path is not a file: {options_path}')
         
         if args.sdf_file is not None:
             sdf_path = Path(args.sdf_file)
@@ -458,16 +449,16 @@ class OracleRecipe(BaseRecipe):
 
 
 RECIPES = [
-    ("validate", ValidateRecipe, "Basic protocol for co-folding and validating a single system using Boltz."),
-    ("screen", ScreenRecipe, "Co-fold a library using Boltz for virtual screening."),
-    ("oracle", OracleRecipe, "Use Boltz as an oracle function for single SMILES predictions."),
+    ("validate", ValidateRecipe, "Basic protocol for co-folding and validating a single system using the selected runner."),
+    ("screen", ScreenRecipe, "Co-fold a library using the selected runner for virtual screening."),
+    ("oracle", OracleRecipe, "Use the selected runner as an oracle function for single SMILES predictions."),
 ]
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog='cofolder',
-        description='Collection of helpful tools for performing various co-folding tasks using Boltz.'
+        description='Collection of helpful tools for performing various co-folding tasks using pluggable runners.'
     )
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {__version__}')
     

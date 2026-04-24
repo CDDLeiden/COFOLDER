@@ -26,9 +26,8 @@ def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: lo
 
     Notes
     -----
-    - Looks into: base_dir/repeat_{i}/predictions/{system_name}/
-    - Copies all .cif and .pdb files to: base_dir/../results/structures/
-    - Renames files as {index}_{system_name}_model_{idx}.cif
+    - Looks into: base_dir/repeat_{i}/normalized/structures/
+    - Copies all .cif/.mmcif/.pdb files to: base_dir/results/structures/
     """
     if logger is None:
         logger = logging.getLogger(__name__)
@@ -38,20 +37,16 @@ def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: lo
     logger.info("Gathering structures into: %s", target_dir)
 
     for i in range(1, repeats + 1):
-        repeat_dir = base_dir / "raw" / f"repeat_{i}" \
-            / f"boltz_results_{system_name}" \
-            / "predictions" / system_name
+        repeat_dir = base_dir / "raw" / f"repeat_{i}" / "normalized" / "structures"
         if not repeat_dir.exists():
-            logger.warning("Predictions directory not found: %s", repeat_dir)
+            logger.warning("Normalized structures directory not found: %s", repeat_dir)
             continue
 
         for file_path in repeat_dir.iterdir():
-            if file_path.suffix.lower() not in (".cif", ".pdb"):
+            if file_path.suffix.lower() not in (".cif", ".mmcif", ".pdb"):
                 continue
 
-            # Rename file as {i}_{system_name}_model_{idx}.cif
-            # Assuming the original file name contains model info
-            new_name = f"{i}_{file_path.name}"
+            new_name = file_path.name
             dest_path = target_dir / new_name
             try:
                 shutil.copy2(file_path, dest_path)
@@ -62,88 +57,52 @@ def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: lo
     logger.info("Structure gathering complete. Total files in %s: %d",
                 target_dir, len(list(target_dir.iterdir())))
 
-def initialize_results(
+def merge_runner_results(
     raw_dir: Path,
-    system_name: str,
     repeats: int,
-    diffusion_samples: int,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Initialize empty system-level and chain-level result DataFrames.
+    logger: logging.Logger | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
+    """Merge normalized per-repeat runner outputs into canonical DataFrames."""
+    if logger is None:
+        logger = logging.getLogger(__name__)
 
-    Notes
-    -----
-    - cif_id is intentionally NOT used.
-    - conf_chain_id corresponds to the index used in confidence JSON files.
-    - CHAIN_ID will be populated later from the system definition.
-    """
-
-    # -------------------------
-    # System-level DataFrame
-    # -------------------------
-    system_rows = []
-    idx = 0
+    system_frames: list[pd.DataFrame] = []
+    chain_frames: list[pd.DataFrame] = []
+    manifests: list[dict] = []
 
     for repeat in range(1, repeats + 1):
-        for sample in range(diffusion_samples):
-            system_rows.append(
-                {
-                    "idx": idx,
-                    "cif_file": f'{repeat}_{system_name}_model_{sample}.cif',
-                    "model_name": system_name,
-                    "repeat": repeat,
-                    "diffusion_sample": sample,
-                }
-            )
-            idx += 1
+        normalized_dir = raw_dir / f"repeat_{repeat}" / "normalized"
+        system_metrics_path = normalized_dir / "system_metrics.csv"
+        chain_metrics_path = normalized_dir / "chain_metrics.csv"
+        manifest_path = normalized_dir / "manifest.json"
 
-    system_df = pd.DataFrame(system_rows)
+        if manifest_path.exists():
+            manifest = read.read_json(manifest_path)
+            if manifest:
+                manifests.append(manifest)
 
-    # -------------------------
-    # Chain-level DataFrame
-    # -------------------------
-    # Determine number of chains from confidence JSONs
-    conf_path = (
-        raw_dir
-        / "repeat_1"
-        / f"boltz_results_{system_name}"
-        / "predictions"
-        / system_name
-        / f"confidence_{system_name}_model_0.json"
-    )
+        if system_metrics_path.exists():
+            system_frames.append(pd.read_csv(system_metrics_path))
+        else:
+            logger.warning("Missing normalized system metrics: %s", system_metrics_path)
 
-    if not conf_path.exists():
-        raise FileNotFoundError(f"Missing confidence file: {conf_path}")
+        if chain_metrics_path.exists():
+            chain_frames.append(pd.read_csv(chain_metrics_path))
+        else:
+            logger.warning("Missing normalized chain metrics: %s", chain_metrics_path)
 
-    data = read.read_json(conf_path)
-    if "chains_ptm" not in data:
-        raise KeyError("chains_ptm missing from confidence JSON")
+    system_df = pd.concat(system_frames, ignore_index=True) if system_frames else pd.DataFrame()
+    chain_df = pd.concat(chain_frames, ignore_index=True) if chain_frames else pd.DataFrame()
 
-    chain_ids = sorted(data["chains_ptm"].keys(), key=int)
+    if not system_df.empty:
+        system_df = system_df.reset_index(drop=True)
+        system_df.insert(0, "idx", range(len(system_df)))
 
-    chain_rows = []
-    idx = 0
+    if not chain_df.empty:
+        chain_df = chain_df.reset_index(drop=True)
+        chain_df.insert(0, "idx", range(len(chain_df)))
 
-    for repeat in range(1, repeats + 1):
-        for sample in range(diffusion_samples):
-            for conf_chain_id in chain_ids:
-                chain_rows.append(
-                    {
-                        "idx": idx,
-                        "CHAIN_ID": None,               # filled later from system
-                        "ENTITY_TYPE": None,            # filled later from system
-                        "conf_chain_id": int(conf_chain_id),
-                        "cif_file": f'{repeat}_{system_name}_model_{sample}.cif',
-                        "model_name": system_name,
-                        "repeat": repeat,
-                        "diffusion_sample": sample,
-                    }
-                )
-                idx += 1
-
-    chain_df = pd.DataFrame(chain_rows)
-
-    return system_df, chain_df
+    return system_df, chain_df, manifests
 
 def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
     """
@@ -241,234 +200,6 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
     cols.insert(insert_at + 3, "ligand_molecule_id")
 
     return chain_df[cols]
-
-def gather_confidence_metrics(
-    raw_dir: Path,
-    system_df: pd.DataFrame,
-    chain_df: pd.DataFrame,
-    system_name: str,
-    repeats: int,
-    diffusion_samples: int
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Gather confidence metrics and append them as new columns to existing DataFrames.
-
-    Parameters
-    ----------
-    raw_dir : Path
-        Path to wrk_dir/raw.
-    system_df : pd.DataFrame
-        DataFrame with columns ['idx', 'model_name', 'repeat', 'diffusion_sample']
-    chain_df : pd.DataFrame
-        DataFrame with columns ['idx', 'CHAIN_ID', 'ENTITY_TYPE', 'conf_chain_id', 'model_name', 'repeat', 'diffusion_sample']
-    system_name : str
-        Name of the system.
-    repeats : int
-        Number of repeats.
-    diffusion_samples : int
-        Number of diffusion samples.
-
-    Returns
-    -------
-    system_df : pd.DataFrame
-        Original DataFrame with new model-level metric columns appended.
-    chain_df : pd.DataFrame
-        Original DataFrame with new chain-level metric columns appended.
-    """
-
-    for repeat in range(1, repeats + 1):
-        for sample_idx in range(diffusion_samples):
-            conf_path = (
-                raw_dir
-                / f"repeat_{repeat}"
-                / f"boltz_results_{system_name}"
-                / "predictions"
-                / system_name
-                / f"confidence_{system_name}_model_{sample_idx}.json"
-            )
-
-            if not conf_path.exists():
-                logger.warning("Missing confidence file: %s", conf_path)
-                continue
-
-            data = read.read_json(conf_path)
-            if not data:
-                continue
-
-            # --- Append model-level metrics ---
-            model_mask = (
-                (system_df["repeat"] == repeat) &
-                (system_df["diffusion_sample"] == sample_idx)
-            )
-
-            for key, value in data.items():
-                if key in {"chains_ptm", "pair_chains_iptm"}:
-                    continue
-                elif not isinstance(value, (dict, list)):
-                    system_df.loc[model_mask, key] = value
-
-            # --- Append chain-level metrics ---
-            chains_ptm = data.get("chains_ptm", {})
-            pair_chains_iptm = data.get("pair_chains_iptm", {})
-
-            for idx, row in chain_df.iterrows():
-                # Only update rows for the current repeat and diffusion_sample
-                if row["repeat"] != repeat or row["diffusion_sample"] != sample_idx:
-                    continue
-
-                cid = str(row["conf_chain_id"])
-
-                # Add chains_ptm if present
-                if cid in chains_ptm:
-                    chain_df.at[idx, "chains_ptm"] = chains_ptm[cid]
-
-                # Flatten all inner values of pair_chains_iptm for this chain
-                if cid in pair_chains_iptm:
-                    inner_dict = pair_chains_iptm[cid]
-                    for other_chain_id, val in inner_dict.items():
-                        col_name = f"pair_chains_iptm_{other_chain_id}"
-                        chain_df.at[idx, col_name] = val
-
-    logger.info(
-        "Confidence metrics appended — system_df: %d rows, chain_df: %d rows",
-        len(system_df),
-        len(chain_df),
-    )
-
-    return system_df, chain_df
-
-def gather_affinity_metrics(
-    raw_dir: Path,
-    chain_df: pd.DataFrame,
-    system_name: str,
-    sys: "System",
-    repeats: int,
-    extended: bool = False,
-) -> pd.DataFrame:
-    """
-    Gather affinity metrics and append them to chain_df.
-
-    Rules:
-    - Affinity is enabled only if specified in system properties
-    - Affinity is repeat-specific
-    - All diffusion samples within a repeat share the same affinity values
-    - Only the binder ligand chain receives affinity values
-    """
-
-    # --------------------------------------------------
-    # Check if affinity prediction is enabled
-    # --------------------------------------------------
-    properties = sys.find_value(key="properties") or []
-    affinity_props = None
-
-    for prop in properties:
-        if isinstance(prop, dict) and "affinity" in prop:
-            affinity_props = prop["affinity"]
-            break
-
-    if affinity_props is None:
-        return chain_df
-
-    binder_chain_id = affinity_props.get("binder")
-    if binder_chain_id is None:
-        logger.warning("Affinity specified but no binder chain ID found.")
-        return chain_df
-
-    binder_chain_id = str(binder_chain_id)
-
-    # --------------------------------------------------
-    # Ensure output columns exist
-    # --------------------------------------------------
-    base_columns = (
-        "affinity_pred_value",
-        "affinity_probability_binary",
-    )
-
-    extended_columns = (
-        "pIC50",
-        "IC50_M",
-        "pIC50_kcal_per_mol",
-    )
-
-    for col in base_columns:
-        if col not in chain_df.columns:
-            chain_df[col] = None
-
-    if extended:
-        for col in extended_columns:
-            if col not in chain_df.columns:
-                chain_df[col] = None
-
-   # --------------------------------------------------
-    # Repeat loop
-    # --------------------------------------------------
-    for repeat in range(1, repeats + 1):
-
-        affinity_path = (
-            raw_dir
-            / f"repeat_{repeat}"
-            / f"boltz_results_{system_name}"
-            / "predictions"
-            / system_name
-            / f"affinity_{system_name}.json"
-        )
-
-        if not affinity_path.exists():
-            logger.warning("Missing affinity file: %s", affinity_path)
-            continue
-
-        affinity_data = read.read_json(affinity_path)
-        if not affinity_data:
-            continue
-
-        affinity_pred_value = affinity_data.get("affinity_pred_value")
-        affinity_probability_binary = affinity_data.get(
-            "affinity_probability_binary"
-        )
-
-        if affinity_pred_value is None or affinity_probability_binary is None:
-            logger.warning(
-                "Affinity values missing in file: %s", affinity_path
-            )
-            continue
-
-        # --------------------------------------------------
-        # Derived conversions (extended metrics only)
-        # --------------------------------------------------
-        if extended:
-            pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(
-                affinity_pred_value
-            )
-            pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(
-                affinity_pred_value
-            )
-
-        # --------------------------------------------------
-        # Assign to chain_df
-        # --------------------------------------------------
-        for idx, row in chain_df.iterrows():
-            if row["repeat"] != repeat:
-                continue
-            if row["CHAIN_ID"] != binder_chain_id:
-                continue
-
-            chain_df.at[idx, "affinity_pred_value"] = affinity_pred_value
-            chain_df.at[idx, "affinity_probability_binary"] = (
-                affinity_probability_binary
-            )
-
-            if extended:
-                chain_df.at[idx, "pIC50"] = pIC50
-                chain_df.at[idx, "IC50_M"] = IC50_M
-                chain_df.at[idx, "pIC50_kcal_per_mol"] = pIC50_kcal_per_mol
-
-            logger.info(
-                "Affinity metrics appended (extended=%s) — chain_df: %d rows",
-                extended,
-                len(chain_df),
-            )
-
-    return chain_df
 
 def assess_numeric_variance(
     values: list[float],

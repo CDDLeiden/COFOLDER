@@ -26,6 +26,7 @@ class Oracle:
         wrk_dir: str,
         system_path: str,
         options_path: str,
+        runner: str = "boltz",
         input_smiles: str | None = None,
         input_mol_file: str | None = None,
         output_metric: str | None = None,
@@ -51,6 +52,7 @@ class Oracle:
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
+        self.runner = str(runner)
 
         self.input_smiles = input_smiles.strip() if input_smiles else None
         self.input_mol_file = Path(input_mol_file) if input_mol_file else None
@@ -116,9 +118,9 @@ class Oracle:
         elif metric in {"sasa", "sasa_norm_heavy"}:
             required_group = {"sasa", "sasa_normalized"}
         elif metric in {"affinity_pred_value", "affinity_probability_binary", "pIC50", "IC50_M", "pIC50_kcal_per_mol"}:
-            required_group = {"boltz_affinity_metrics", "boltz_affinity_metrics_ext"}
+            required_group = {"affinity_metrics", "affinity_metrics_ext"}
         elif metric.startswith("pair_chains_iptm_") or metric in {"chains_ptm", "ptm", "iptm", "confidence_score"}:
-            required_group = {"boltz_confidence_metrics"}
+            required_group = {"confidence_metrics"}
 
         if required_group is None:
             # Unknown metric: skip strict check and defer to runtime extraction.
@@ -151,6 +153,7 @@ class Oracle:
             wrk_dir=str(run_dir),
             system_path=str(row_system_path),
             options_path=str(self.options_path),
+            runner=self.runner,
             **self.validate_kwargs,
         )
         validator.run()

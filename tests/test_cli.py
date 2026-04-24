@@ -1,5 +1,6 @@
 """Tests for cofolder.cli module."""
 import logging
+from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ class TestCLIMain:
         args = [
             "validate",
             "-s", str(sample_system_yaml),
-            "-b", str(sample_options_yaml),
+            "-o", str(sample_options_yaml),
             "-w", str(temp_dir)
         ]
 
@@ -32,7 +33,7 @@ class TestCLIMain:
         args = [
             "validate",
             "-s", str(sample_system_yaml),
-            "-b", str(sample_options_yaml),
+            "-o", str(sample_options_yaml),
             "-w", str(temp_dir),
         ]
 
@@ -61,16 +62,17 @@ class TestCLIMain:
             cli.main(["-v"])
         assert exc_info.value.code == 0
 
-    def test_missing_boltz_dependency_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
+    def test_unavailable_runner_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
         args = [
             "validate",
             "-s", str(sample_system_yaml),
-            "-b", str(sample_options_yaml),
+            "-o", str(sample_options_yaml),
             "-w", str(temp_dir),
         ]
-
-        with patch("cofolder.cli.import_module", side_effect=ModuleNotFoundError("No module named 'boltz'", name="boltz")):
-            with pytest.raises(RuntimeError, match=r'\.\[boltz\]'):
+        fake_runner = MagicMock()
+        fake_runner.is_available.return_value = (False, "install boltz")
+        with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
+            with pytest.raises(RuntimeError, match="install boltz"):
                 cli.main(args)
 
 
@@ -89,7 +91,8 @@ class TestValidateRecipe:
 
         args = validate_parser.parse_args([
             "-s", "system.yaml",
-            "-b", "options.yaml",
+            "-o", "options.yaml",
+            "--runner", "boltz",
             "--reference_path", "reference.pdb",
             "--pocket_coverage_reference", "A2 S8 T10",
             "--reproduction_metrics", "sucos",
@@ -97,6 +100,7 @@ class TestValidateRecipe:
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
+        assert args.runner == "boltz"
         assert args.reference_path == "reference.pdb"
         assert args.pocket_coverage_reference == "A2 S8 T10"
         assert args.reproduction_metrics == ["sucos"]
@@ -108,7 +112,7 @@ class TestValidateRecipe:
         args = [
             "validate",
             "-s", str(sample_system_yaml),
-            "-b", str(sample_options_yaml),
+            "-o", str(sample_options_yaml),
             "-w", str(temp_dir),
         ]
 
@@ -134,7 +138,7 @@ class TestScreenRecipe:
 
         args = screen_parser.parse_args([
             "-s", "system.yaml",
-            "-b", "options.yaml",
+            "-o", "options.yaml",
             "-c", "compounds.csv",
             "--col_id", "id",
             "-v", "sequences,0,ligand,smiles",
@@ -152,7 +156,7 @@ class TestScreenRecipe:
         args = [
             "screen",
             "-s", str(sample_system_yaml),
-            "-b", str(sample_options_yaml),
+            "-o", str(sample_options_yaml),
             "-c", "compounds.csv",
             "--col_id", "id",
             "-v", "sequences,0,ligand,smiles",
@@ -180,7 +184,7 @@ class TestOracleRecipe:
 
         args = oracle_parser.parse_args([
             "-s", "system.yaml",
-            "-b", "options.yaml",
+            "-o", "options.yaml",
             "--input_smiles", "CCO",
             "--output_metric", "affinity_pred_value",
             "--aggregate", "first",

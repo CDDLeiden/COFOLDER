@@ -28,7 +28,7 @@ class TestOracleInit:
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 output_metric="ifp_distance",
-                scoring_functions=["boltz_confidence_metrics"],
+                scoring_functions=["confidence_metrics"],
             )
 
 
@@ -48,7 +48,7 @@ class TestOracleRun:
             input_smiles="CCO",
             output_metric="affinity_pred_value",
             aggregate="first",
-            scoring_functions=["boltz_affinity_metrics"],
+            scoring_functions=["affinity_metrics"],
         )
 
         run_dir = temp_dir / "oracle_run" / "results"
