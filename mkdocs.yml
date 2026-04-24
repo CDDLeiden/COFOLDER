@@ -1,8 +1,8 @@
 site_name: COFOLDER Documentation
 site_description: Collection of tools for performing various co-folding tasks using Cofoloding models (e.g. Boltz)
 site_author: Bola Khalil
-repo_url: https://github.com/CDDLeiden/cofolder
-repo_name: CDDLeiden/cofolder
+repo_url: https://github.com/CDDLeiden/COFOLDER
+repo_name: CDDLeiden/COFOLDER
 
 theme:
   name: material
@@ -102,4 +102,4 @@ extra:
     provider: mike
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/CDDLeiden/cofolder
+      link: https://github.com/CDDLeiden/COFOLDER

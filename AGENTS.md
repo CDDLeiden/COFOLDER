@@ -4,7 +4,7 @@ Guidance for Codex-style coding agents working in this repository.
 
 ## Project Scope
 
-- Repository: `cofolder`
+- Repository: `COFOLDER`
 - Default integration branch: `dev`
 - Main package root: `src/cofolder`
 - Tests root: `tests`
@@ -19,7 +19,7 @@ Guidance for Codex-style coding agents working in this repository.
 
 ## Environment Setup
 
-Use Python 3.10-3.12.
+Use Python 3.11-3.12.
 
 Install for development:
 

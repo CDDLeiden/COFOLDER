@@ -4,7 +4,7 @@
 
 COFOLDER requires:
 
-- Python 3.10, 3.11, or 3.12
+- Python 3.11 or 3.12
 - CUDA-compatible GPU (for Boltz)
 - Git (for installation from source)
 
@@ -14,8 +14,8 @@ The recommended method is to install directly from GitHub:
 
 ```bash
 # Clone the repository
-git clone https://github.com/CDDLeiden/cofolder.git
-cd cofolder
+git clone https://github.com/CDDLeiden/COFOLDER.git
+cd COFOLDER
 
 # Install in editable mode
 pip install -e .

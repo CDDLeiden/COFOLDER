@@ -1,16 +1,42 @@
 # COFOLDER
 
 ## Introduction
-COFOLDER is a collection of command-line utilities for performing various co-folding tasks using Boltz. It provides subcommands for validating single systems, screening ligand/protein libraries, and using Boltz as an oracle.
+COFOLDER is a collection of command-line utilities for performing co-folding workflows through pluggable backends. The default backend is Boltz, which powers the current `validate`, `screen`, and `oracle` workflows in this repository.
+
+COFOLDER can be installed without a backend so the package remains flexible. Additional backends are possible, but they require backend-specific runners and integration code.
+
 Third-party license attributions for vendored code are listed in `THIRD_PARTY_LICENSES.md`.
 
 
 ## Installation
-Install directly from GitHub for newest updates:
+Install directly from GitHub for newest updates. The default setup installs the Boltz backend:
 ```
-git clone https://github.com/CDDLeiden/cofolder.git
-cd cofolder; pip install -e .
+git clone https://github.com/CDDLeiden/COFOLDER.git
+cd COFOLDER
+pip install -e ".[boltz]"
 ```
+
+This is the recommended installation for current prediction workflows.
+
+COFOLDER currently supports Python 3.11 and 3.12.
+
+### Backend-Agnostic Base Install
+If you only want the base COFOLDER package without a backend:
+```bash
+pip install -e .
+```
+
+This installs COFOLDER without Boltz. To run the default prediction workflows later, add the Boltz backend with:
+```bash
+pip install -e ".[boltz]"
+```
+
+The `boltz` extra currently installs `boltz[cuda]`.
+
+### Backend Notes
+- **Default backend**: Boltz
+- **Backend-free install**: supported
+- **Other backends**: possible, but require backend-specific runners and integration work before COFOLDER commands can use them
 
 ### Optional: Bias-Assessment Setup (MMseqs2)
 For protein sequence-similarity bias metrics, install `mmseqs2` in the same environment where you run `cofolder`:
@@ -33,10 +59,13 @@ mmseqs --help
 
 Step-by-step:
 ```bash
-# 1) install cofolder
-git clone https://github.com/CDDLeiden/cofolder.git
-cd cofolder
-pip install -e .
+# 1) install COFOLDER with the default Boltz backend
+git clone https://github.com/CDDLeiden/COFOLDER.git
+cd COFOLDER
+pip install -e ".[boltz]"
+
+# Alternative: install backend-free base package only
+# pip install -e .
 
 # 2) optional for bias assessment: install mmseqs2
 conda install -c conda-forge -c bioconda mmseqs2
@@ -65,9 +94,9 @@ cofolder [-h] [-v] {validate,screen,oracle}
 ```
 
 ### Subcommands
-- **validate**: Co-fold and validate a single system using Boltz.
-- **screen**: Co-fold a library using Boltz for virtual screening.
-- **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) and return one metric value.
+- **validate**: Co-fold and validate a single system using the default Boltz backend.
+- **screen**: Co-fold a library using the default Boltz backend for virtual screening.
+- **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) with the default Boltz backend and return one metric value.
 
 Use the -h flag with any command to see detailed usage:
 ```

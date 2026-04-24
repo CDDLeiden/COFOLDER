@@ -21,9 +21,9 @@ COFOLDER provides a suite of utilities that streamline protein-ligand co-folding
 ## Quick Start
 
 ```bash
-# Install cofolder
-git clone https://github.com/CDDLeiden/cofolder.git
-cd cofolder
+# Install COFOLDER
+git clone https://github.com/CDDLeiden/COFOLDER.git
+cd COFOLDER
 pip install -e .
 
 # Optional for bias assessment: install mmseqs2
@@ -50,7 +50,7 @@ cofolder validate -s system.yaml -b options.yaml
 
 ## Support
 
-For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/CDDLeiden/cofolder).
+For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/CDDLeiden/COFOLDER).
 
 ## Citation
 

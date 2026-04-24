@@ -7,8 +7,8 @@ Thank you for your interest in contributing to COFOLDER! This guide will help yo
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/CDDLeiden/cofolder.git
-   cd cofolder
+   git clone https://github.com/CDDLeiden/COFOLDER.git
+   cd COFOLDER
    ```
 3. Create a feature branch:
    ```bash

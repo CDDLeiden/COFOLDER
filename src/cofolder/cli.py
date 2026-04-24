@@ -3,13 +3,10 @@ import os
 import logging
 import shlex
 import sys
+from importlib import import_module
 from pathlib import Path
 
 from cofolder import __version__
-
-from cofolder.recipes.validate import Validate
-from cofolder.recipes.screen import Screen
-from cofolder.recipes.oracle import Oracle
 
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
@@ -34,6 +31,28 @@ REPRODUCTION_METRICS = [
     "sucos",
     "pocket_coverage",
 ]
+
+
+def _raise_missing_boltz_dependency(exc: ModuleNotFoundError) -> None:
+    missing_root = (exc.name or "").split(".")[0]
+    if missing_root != "boltz":
+        raise exc
+
+    raise RuntimeError(
+        "The default Boltz backend is not installed. COFOLDER can be installed "
+        "without a backend, but the current validate/screen/oracle workflows in "
+        "this repository require Boltz. Install it with "
+        '`pip install "cofolder[boltz]"` or `pip install -e ".[boltz]"`. '
+        "Other backends require backend-specific runners."
+    ) from exc
+
+
+def _load_recipe_class(module_name: str, class_name: str):
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as exc:
+        _raise_missing_boltz_dependency(exc)
+    return getattr(module, class_name)
 
 class BaseRecipe:
     LOGGER_NAME = "cofolder"
@@ -324,7 +343,8 @@ class ValidateRecipe(BaseRecipe):
         logger = ValidateRecipe.setup(args)
         logger.info("Starting COFOLDER validation pipeline.")
 
-        validator = Validate(**BaseRecipe.common_kwargs(args))
+        validate_cls = _load_recipe_class("cofolder.recipes.validate", "Validate")
+        validator = validate_cls(**BaseRecipe.common_kwargs(args))
 
         validator.run()
         logger.info("Validation pipeline completed.")
@@ -370,7 +390,8 @@ class ScreenRecipe(BaseRecipe):
                 f"Got variable={len(args.variable)} col_variable={len(args.col_variable)}."
             )
 
-        screener = Screen(
+        screen_cls = _load_recipe_class("cofolder.recipes.screen", "Screen")
+        screener = screen_cls(
             variable=args.variable,
             variable_csv=args.variable_csv,
             col_variable=args.col_variable,
@@ -422,7 +443,8 @@ class OracleRecipe(BaseRecipe):
         logger = OracleRecipe.setup(args)
         logger.info("Starting COFOLDER oracle pipeline.")
 
-        oracle = Oracle(
+        oracle_cls = _load_recipe_class("cofolder.recipes.oracle", "Oracle")
+        oracle = oracle_cls(
             input_smiles=args.input_smiles,
             input_mol_file=args.input_mol_file,
             output_metric=args.output_metric,

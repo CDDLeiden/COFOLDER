@@ -1,5 +1,6 @@
 """Tests for cofolder.cli module."""
 import logging
+from unittest.mock import Mock
 from unittest.mock import patch
 
 import pytest
@@ -60,6 +61,18 @@ class TestCLIMain:
             cli.main(["-v"])
         assert exc_info.value.code == 0
 
+    def test_missing_boltz_dependency_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
+        args = [
+            "validate",
+            "-s", str(sample_system_yaml),
+            "-b", str(sample_options_yaml),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli.import_module", side_effect=ModuleNotFoundError("No module named 'boltz'", name="boltz")):
+            with pytest.raises(RuntimeError, match=r'\.\[boltz\]'):
+                cli.main(args)
+
 
 class TestValidateRecipe:
     """Tests for ValidateRecipe class."""
@@ -87,6 +100,23 @@ class TestValidateRecipe:
         assert args.reference_path == "reference.pdb"
         assert args.pocket_coverage_reference == "A2 S8 T10"
         assert args.reproduction_metrics == ["sucos"]
+
+    def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, sample_options_yaml, temp_dir):
+        validator = Mock()
+        validate_cls = Mock(return_value=validator)
+
+        args = [
+            "validate",
+            "-s", str(sample_system_yaml),
+            "-b", str(sample_options_yaml),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class", return_value=validate_cls):
+            cli.main(args)
+
+        validate_cls.assert_called_once()
+        validator.run.assert_called_once()
 
 
 class TestScreenRecipe:
