@@ -22,8 +22,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-boltz = [
+boltz1 = [
+    "boltz==1.0.0; python_version < '3.13'",
+]
+boltz2 = [
     "boltz[cuda]; python_version < '3.13'",
+]
+boltz-community = [
+    "boltz-community[cuda] @ git+https://github.com/Novel-Therapeutics/boltz-community.git",
 ]
 test = [
     "pytest>=7.0.0",

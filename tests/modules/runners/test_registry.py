@@ -38,17 +38,25 @@ def test_discover_runners_finds_runner_modules(monkeypatch):
 def test_list_runner_names_returns_sorted_names(monkeypatch):
     monkeypatch.setattr(
         "cofolder.modules.runners.discover_runners",
-        lambda: {"boltz": _FakeRunner("boltz"), "alpha": _FakeRunner("alpha")},
+        lambda: {"boltz2": _FakeRunner("boltz2"), "alpha": _FakeRunner("alpha")},
     )
 
-    assert list_runner_names() == ["alpha", "boltz"]
+    assert list_runner_names() == ["alpha", "boltz2"]
 
 
 def test_get_runner_raises_with_available_names(monkeypatch):
     monkeypatch.setattr(
         "cofolder.modules.runners.discover_runners",
-        lambda: {"boltz": _FakeRunner("boltz")},
+        lambda: {"boltz2": _FakeRunner("boltz2")},
     )
 
-    with pytest.raises(ValueError, match="Available runners: boltz"):
+    with pytest.raises(ValueError, match="Available runners: boltz2"):
         get_runner("missing")
+
+
+def test_discover_real_runners_include_boltz1_boltz2_and_boltz_community():
+    runners = discover_runners()
+
+    assert "boltz1" in runners
+    assert "boltz2" in runners
+    assert "boltz-community" in runners

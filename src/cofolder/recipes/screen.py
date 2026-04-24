@@ -25,7 +25,7 @@ class Screen:
         wrk_dir: str,
         system_path: str,
         options_path: str,
-        runner: str = "boltz",
+        runner: str = "boltz2",
         variable: list[str] | None = None,
         variable_csv: str | None = None,
         col_variable: list[str] | None = None,

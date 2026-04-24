@@ -1,7 +1,7 @@
 # COFOLDER
 
 ## Introduction
-COFOLDER is a collection of command-line utilities for performing co-folding workflows through pluggable runners. The current built-in runner is `boltz`, and the `validate`, `screen`, and `oracle` workflows dispatch through a generic runner interface rather than calling one backend directly.
+COFOLDER is a collection of command-line utilities for performing co-folding workflows through pluggable runners. The current built-in runners are `boltz1`, `boltz2`, and `boltz-community`, and the `validate`, `screen`, and `oracle` workflows dispatch through a generic runner interface rather than calling one backend directly.
 
 COFOLDER can be installed without a backend so the package remains flexible. Additional backends are possible, but they require backend-specific runner implementations and normalization into COFOLDER's canonical output bundle.
 
@@ -9,14 +9,14 @@ Third-party license attributions for vendored code are listed in `THIRD_PARTY_LI
 
 
 ## Installation
-Install directly from GitHub for newest updates. The default setup installs the `boltz` runner:
+Install directly from GitHub for newest updates. The default setup installs the upstream `boltz2` runner:
 ```
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
-pip install -e ".[boltz]"
+pip install -e ".[boltz2]"
 ```
 
-This is the recommended installation for current prediction workflows, because `boltz` is the only runner shipped in the current phase of the model-agnostic architecture.
+This is the recommended installation for current prediction workflows when you want the current upstream Boltz-2 backend.
 
 `pyproject.toml` currently requires Python 3.11+.
 
@@ -26,17 +26,50 @@ If you only want the base COFOLDER package without any runner dependency:
 pip install -e .
 ```
 
-This installs COFOLDER without `boltz`. To run the current prediction workflows later, add the `boltz` runner with:
+This installs COFOLDER without any backend runner. To run prediction workflows later, add one of the shipped runners:
 ```bash
-pip install -e ".[boltz]"
+pip install -e ".[boltz1]"
+pip install -e ".[boltz2]"
+pip install -e ".[boltz-community]"
 ```
 
-The `boltz` extra currently installs `boltz[cuda]`.
+The `boltz1` extra installs the Boltz-1 package line:
+```bash
+pip install -e ".[boltz1]"
+```
+
+That extra resolves to:
+```bash
+pip install "boltz==1.0.0"
+```
+
+The Boltz-1 package line predates the newer affinity outputs, so in COFOLDER it provides runner-native `confidence_metrics` but not the Boltz-2 affinity metric groups.
+
+The `boltz2` extra installs the current upstream Boltz-2 package line:
+```bash
+pip install -e ".[boltz2]"
+```
+
+That extra resolves to:
+```bash
+pip install "boltz[cuda]"
+```
+
+The `boltz-community` extra installs the community-maintained Boltz fork from GitHub with CUDA support:
+```bash
+pip install -e ".[boltz-community]"
+```
+
+That extra resolves to:
+```bash
+pip install "boltz-community[cuda] @ git+https://github.com/Novel-Therapeutics/boltz-community.git"
+```
 
 ### Runner Notes
-- **Shipped runner**: `boltz`
+- **Shipped runners**: `boltz1`, `boltz2`, `boltz-community`
 - **CLI runner selection**: `--runner <name>`
 - **Backend-free install**: supported
+- **Boltz-family environments**: install only one of `boltz1`, `boltz2`, or `boltz-community` in a given environment, because they resolve to mutually exclusive Boltz package lines that provide the same `boltz` CLI/module
 - **Other backends**: possible, but require backend-specific runners before COFOLDER commands can use them
 
 ### Optional: Bias-Assessment Setup (MMseqs2)
@@ -60,10 +93,16 @@ mmseqs --help
 
 Step-by-step:
 ```bash
-# 1) install COFOLDER with the default shipped runner
+# 1) install COFOLDER with the default upstream Boltz-2 runner
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
-pip install -e ".[boltz]"
+pip install -e ".[boltz2]"
+
+# Alternative: install the Boltz-1 package line instead
+# pip install -e ".[boltz1]"
+
+# Alternative: install the community-maintained runner instead
+# pip install -e ".[boltz-community]"
 
 # Alternative: install backend-free base package only
 # pip install -e .
@@ -83,7 +122,7 @@ python scripts/fetch_bias_training_data.py \
 
 # 4) run validate with bias
 cofolder validate ... \
-  --runner boltz \
+  --runner boltz2 \
   --assess_bias \
   --protein_training_data_path /path/to/training_data/protein_training_data.csv \
   --ligand_training_data_path /path/to/training_data/ligand_training_data.csv
@@ -101,7 +140,7 @@ cofolder [-h] [-v] {validate,screen,oracle} ...
 - **oracle**: Run single-input oracle scoring (`--input_smiles` or `--input_mol_file`) with the selected runner and return one metric value.
 
 ### Common Runner Arguments
-- `--runner`: select the cofolding runner. In the current release this is `boltz`.
+- `--runner`: select the cofolding runner. In the current release this is `boltz1`, `boltz2`, or `boltz-community`.
 - `-o` / `--options_path`: path to the runner options YAML.
 - `--scoring_functions`: generic metric groups and analytics, such as `confidence_metrics`, `affinity_metrics`, `affinity_metrics_ext`, `ifp_distance`, `ifp_prolif`, `sasa`, and `sasa_normalized`.
 
@@ -120,7 +159,7 @@ Validate example:
 cofolder validate \
   -s system.yaml \
   -o options.yaml \
-  --runner boltz \
+  --runner boltz2 \
   --scoring_functions confidence_metrics affinity_metrics sasa \
   -w ./validate_out
 ```
@@ -130,7 +169,7 @@ Screening example (CSV -> per-row validate wrapper):
 cofolder screen \
   -s system.yaml \
   -o options.yaml \
-  --runner boltz \
+  --runner boltz-community \
   -c compounds.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles
@@ -142,7 +181,7 @@ Oracle example:
 cofolder oracle \
   -s system.yaml \
   -o options.yaml \
-  --runner boltz \
+  --runner boltz1 \
   --input_smiles "CCO" \
   --output_metric affinity_pred_value \
   --aggregate first
@@ -184,7 +223,10 @@ src/cofolder/
 │   │   └── system.py
 │   ├── runners/
 │   │   ├── base.py
-│   │   └── boltz_runner.py
+│   │   ├── boltz1_runner.py
+│   │   ├── boltz_runner.py
+│   │   ├── boltz_community_runner.py
+│   │   └── boltz2_runner.py
 │   └── utils/
 │       ├── gather.py
 │       ├── helpers.py

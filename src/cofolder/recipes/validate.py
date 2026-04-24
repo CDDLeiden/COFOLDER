@@ -45,7 +45,7 @@ class Validate(object):
         wrk_dir: str,
         system_path: str,
         options_path: str,
-        runner: str = "boltz",
+        runner: str = "boltz2",
         repeats: int = 1,
         seed: int | None = None,
         scoring_functions: list[str] | None = None,

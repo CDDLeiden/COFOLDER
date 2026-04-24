@@ -41,6 +41,16 @@ class BaseRecipe:
     LOGGER_NAME = "cofolder"
 
     @staticmethod
+    def _runner_help_text() -> str:
+        available = list_runner_names()
+        if not available:
+            return "Select the cofolding runner to use."
+        return (
+            "Select the cofolding runner to use. "
+            f"Available runners: {', '.join(available)}."
+        )
+
+    @staticmethod
     def _format_cli_command(args) -> str:
         raw_argv = list(getattr(args, "_cli_argv", []) or [])
         return shlex.join(["cofolder", *raw_argv])
@@ -72,8 +82,8 @@ class BaseRecipe:
             '--runner',
             type=str,
             choices=list_runner_names(),
-            default='boltz',
-            help='Select the cofolding runner to use.'
+            default='boltz2',
+            help=BaseRecipe._runner_help_text()
         )
 
         parser.add_argument(

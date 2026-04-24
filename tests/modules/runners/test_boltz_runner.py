@@ -1,14 +1,17 @@
-"""Tests for Boltz runner timing parsing."""
+"""Tests for Boltz-2 runner timing parsing."""
 
 import json
 from pathlib import Path
+from unittest.mock import patch
+from importlib.metadata import PackageNotFoundError
 
 import pandas as pd
+import yaml
 
 from cofolder.modules.input.command import Command
 from cofolder.modules.runners.base import RunnerRequest
-from cofolder.modules.runners.boltz_runner import BoltzRunner
 from cofolder.modules.runners.boltz_runner import _parse_boltz_stage_timings
+from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 
 
 def test_parse_boltz_stage_timings_with_msa_and_affinity():
@@ -80,10 +83,10 @@ class _MockSystem:
 
 
 def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
-    runner = BoltzRunner()
+    runner = Boltz2Runner()
     repeat_dir = temp_dir / "repeat_1"
     request = RunnerRequest(
-        runner_name="boltz",
+        runner_name="boltz2",
         system_name="system",
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
@@ -137,3 +140,48 @@ def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
     chain_df = pd.read_csv(result.chain_metrics_path)
     assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
     assert {"chains_ptm", "affinity_pred_value", "affinity_probability_binary", "pIC50"}.issubset(chain_df.columns)
+
+
+def test_boltz2_runner_rejects_environment_with_boltz_community_installed():
+    runner = Boltz2Runner()
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=lambda name: "1.0" if name in {"boltz", "boltz-community"} else None,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "same environment" in message
+    assert "boltz-community" in message
+
+
+def test_boltz2_runner_rejects_boltz1_package_line():
+    runner = Boltz2Runner()
+
+    def _fake_version(name):
+        if name == "boltz":
+            return "1.0.0"
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "Boltz-2 package line" in message
+    assert "cofolder[boltz2]" in message
+
+
+def test_boltz2_runner_load_options_forces_boltz2_model(temp_dir):
+    options_path = temp_dir / "options.yaml"
+    options_path.write_text(
+        yaml.safe_dump({"options": [{"cache": "~/.boltz"}, {"diffusion_samples": 1}]}),
+        encoding="utf-8",
+    )
+
+    command = Boltz2Runner().load_options(options_path)
+
+    assert command.find_value(key="model") == "boltz2"

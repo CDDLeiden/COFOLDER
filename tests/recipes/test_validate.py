@@ -60,7 +60,7 @@ def _make_runner_results(system_name: str = "system"):
     )
     manifests = [
         {
-            "runner": "boltz",
+            "runner": "boltz2",
             "runtime_context": {"cache_path": "~/.boltz", "diffusion_samples": 1},
         }
     ]
@@ -68,7 +68,7 @@ def _make_runner_results(system_name: str = "system"):
 
 
 class _FakeRunner:
-    name = "boltz"
+    name = "boltz2"
     capabilities = {"confidence_metrics", "affinity_metrics", "affinity_metrics_ext"}
 
     def __init__(self, system_name: str = "system"):
@@ -117,7 +117,7 @@ class _FakeRunner:
         (structures_dir / f"{request.repeat}_{self.system_name}_model_0.cif").write_text("data", encoding="utf-8")
 
         return RunnerResult(
-            runner_name="boltz",
+            runner_name="boltz2",
             raw_output_dir=request.repeat_dir,
             normalized_dir=normalized_dir,
             structures_dir=structures_dir,
@@ -225,7 +225,7 @@ def _patch_validate_pipeline_no_metrics(monkeypatch, system_name: str = "system"
                     }
                 ]
             ),
-            [{"runner": "boltz", "runtime_context": {"diffusion_samples": 1}}],
+            [{"runner": "boltz2", "runtime_context": {"diffusion_samples": 1}}],
         ),
     )
     monkeypatch.setattr(
@@ -277,7 +277,7 @@ class TestValidateInit:
         assert str(validator.system_path) == str(sample_system_yaml)
         assert str(validator.options_path) == str(sample_options_yaml)
         assert validator.base_system is not None
-        assert validator.runner_name == "boltz"
+        assert validator.runner_name == "boltz2"
         assert validator.scoring_functions == set()
         assert validator.reference_path is None
         assert validator.reproduction_metrics == {

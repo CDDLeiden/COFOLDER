@@ -6,7 +6,6 @@ import logging
 import re
 import shutil
 import subprocess
-from importlib.util import find_spec
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Sequence
@@ -105,9 +104,7 @@ def run_boltz(
     timings: DebugTimingCollector | None = None,
     label_prefix: str | None = None,
 ) -> subprocess.CompletedProcess:
-    """
-    Execute a Boltz command via subprocess and log stdout/stderr in real-time.
-    """
+    """Execute a Boltz command via subprocess and log stdout/stderr in real-time."""
     start_time = perf_counter()
     logger.info("Running: %s", " ".join(cmd))
 
@@ -152,23 +149,20 @@ def run_boltz(
 
 
 class BoltzRunner(BaseRunner):
+    """Shared parent for Boltz-family runners."""
+
     name = "boltz"
     capabilities = {
         "confidence_metrics",
         "affinity_metrics",
         "affinity_metrics_ext",
     }
-
-    def check_availability(self) -> tuple[bool, str | None]:
-        if find_spec("boltz") is None:
-            return False, (
-                "The selected 'boltz' runner is not installed. Install it with "
-                '`pip install "cofolder[boltz]"` or `pip install -e ".[boltz]"`.'
-            )
-        return True, None
+    model_name: str | None = "boltz2"
 
     def load_options(self, options_path: Path) -> Command:
-        return Command(options_path=str(options_path))
+        command = Command(options_path=str(options_path))
+        self._set_command_option(command, "model", self.model_name)
+        return command
 
     def prepare_system(
         self,
@@ -183,6 +177,7 @@ class BoltzRunner(BaseRunner):
         runtime_context = {
             "cache_path": options_obj.find_value(key="cache") or "~/.boltz",
             "diffusion_samples": options_obj.find_value(key="diffusion_samples") or 1,
+            "boltz_model": self.model_name,
         }
 
         if conformers:
@@ -249,6 +244,7 @@ class BoltzRunner(BaseRunner):
         runtime_context = {
             "cache_path": options_obj.find_value(key="cache") or "~/.boltz",
             "diffusion_samples": diffusion_samples,
+            "boltz_model": self.model_name,
         }
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
@@ -405,6 +401,32 @@ class BoltzRunner(BaseRunner):
         }
 
     @staticmethod
+    def _set_command_option(command: Command, key: str, value: Any | None) -> None:
+        options = command.options.setdefault("options", [])
+        found = False
+        cleaned_options = []
+
+        for item in options:
+            if not isinstance(item, dict):
+                cleaned_options.append(item)
+                continue
+
+            if key in item:
+                found = True
+                if value is not None:
+                    item[key] = value
+                else:
+                    item = {k: v for k, v in item.items() if k != key}
+
+            if item:
+                cleaned_options.append(item)
+
+        if not found and value is not None:
+            cleaned_options.append({key: value})
+
+        command.options["options"] = cleaned_options
+
+    @staticmethod
     def _resolve_binder_chain_id(system_obj: Any) -> int | None:
         properties = system_obj.find_value(key="properties") or []
         for prop in properties:
@@ -439,6 +461,3 @@ class BoltzRunner(BaseRunner):
                 chain_ids = [chain_ids]
             ordered_chain_ids.extend([str(cid) for cid in chain_ids])
         return ordered_chain_ids
-
-
-RUNNER = BoltzRunner()

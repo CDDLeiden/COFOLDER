@@ -46,6 +46,7 @@ cofolder validate -s system.yaml -b options.yaml
 - **[Getting Started](getting-started/installation.md)**: Installation and basic setup
 - **[User Guide](user-guide/overview.md)**: Detailed guides for each command
 - **[Tutorials](tutorials/basic.md)**: Step-by-step tutorials and examples
+- **[Adding New Runners](tutorials/runners.md)**: Build a new backend runner and normalize its outputs for COFOLDER analytics
 - **[API Reference](api/recipes/validate.md)**: Complete API documentation
 
 ## Support

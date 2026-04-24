@@ -84,6 +84,7 @@ nav:
       - Virtual Screening: tutorials/screening.md
       - Ligand Handling: tutorials/ligands.md
       - Advanced Features: tutorials/advanced.md
+      - Adding New Runners: tutorials/runners.md
   - API Reference:
       - Recipes:
           - Validate: api/recipes/validate.md

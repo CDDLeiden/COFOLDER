@@ -26,7 +26,7 @@ class Oracle:
         wrk_dir: str,
         system_path: str,
         options_path: str,
-        runner: str = "boltz",
+        runner: str = "boltz2",
         input_smiles: str | None = None,
         input_mol_file: str | None = None,
         output_metric: str | None = None,

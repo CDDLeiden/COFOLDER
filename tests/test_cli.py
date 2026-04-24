@@ -106,7 +106,7 @@ class TestValidateRecipe:
         args = validate_parser.parse_args([
             "-s", "system.yaml",
             "-o", "options.yaml",
-            "--runner", "boltz",
+            "--runner", "boltz2",
             "--reference_path", "reference.pdb",
             "--pocket_coverage_reference", "A2 S8 T10",
             "--reproduction_metrics", "sucos",
@@ -114,10 +114,27 @@ class TestValidateRecipe:
 
         assert args.system_path == "system.yaml"
         assert args.options_path == "options.yaml"
-        assert args.runner == "boltz"
+        assert args.runner == "boltz2"
         assert args.reference_path == "reference.pdb"
         assert args.pocket_coverage_reference == "A2 S8 T10"
         assert args.reproduction_metrics == ["sucos"]
+
+    def test_runner_help_lists_available_runners(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparser = parser.add_subparsers()
+        validate_parser = subparser.add_parser("validate")
+
+        cli.ValidateRecipe.add_arguments(validate_parser)
+
+        help_text = validate_parser.format_help()
+
+        assert "--runner" in help_text
+        assert "Available runners:" in help_text
+        assert "boltz1" in help_text
+        assert "boltz2" in help_text
+        assert "boltz-community" in help_text
 
     def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Mock()
