@@ -9,6 +9,12 @@ The key idea is:
 - COFOLDER handles workflow orchestration, input mutation, repeats, result gathering, and analytics.
 - A runner handles backend-specific dependency checks, option loading, optional backend-specific system preparation, execution, and normalization into COFOLDER's canonical bundle.
 
+## Acceptance Before Promotion
+
+When runner work is ready for review, do not rely on unit tests alone.
+
+Before promoting runner-, backend-, or shared CLI-adjacent changes toward `main`, run the manual backend acceptance lane documented in [Backend Acceptance Tutorial](backend-acceptance.md). That lane verifies clean-install behavior and exercises the real `validate`, `screen`, and `oracle` CLI workflows in separate backend environments.
+
 ## Where Runners Live
 
 Runner modules are discovered from `src/cofolder/modules/runners/`.

@@ -55,17 +55,25 @@ graph TD
 
 All commands require:
 1. System YAML file defining the molecular system
-2. Boltz options YAML file for prediction parameters
+2. Runner options YAML file for prediction parameters
 
 ### Output Organization
 
+`validate` writes its main outputs directly in the working directory:
+
 ```
 output/
-├── predictions.cif          # Predicted structure
-├── confidence_model_0.json  # Confidence scores
-├── logs/                    # Log files
-└── metadata/                # Additional metadata
+├── raw/                     # Runner-owned raw execution artifacts
+├── results/
+│   ├── system_metrics.csv   # Merged system-level metrics
+│   ├── chain_metrics.csv    # Merged chain-level metrics
+│   └── structures/          # Gathered structure files
+└── log.log                  # Workflow log file
 ```
+
+`screen` uses that same per-run layout inside each row-specific subdirectory and also writes top-level screening summaries such as `screen_results.csv` and `screen_results_with_scores.csv`.
+
+`oracle` writes its wrapped `validate` run under `oracle_run/` and adds a top-level `oracle_result.csv` summary.
 
 ### Error Handling
 

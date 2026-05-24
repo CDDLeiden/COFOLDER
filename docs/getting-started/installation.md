@@ -17,16 +17,30 @@ The recommended method is to install directly from GitHub:
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
 
-# Install in editable mode
+# Install the base package
 pip install -e .
 ```
 
-This will install COFOLDER along with all required dependencies, including:
+This installs the base COFOLDER package and its core dependencies, including:
 
-- `boltz[cuda]` - The core Boltz package with CUDA support
 - `rdkit` - For molecular structure handling
 - `matplotlib` - For plotting and visualization
 - `seaborn` - For enhanced visualizations
+
+Backend runners are installed separately through optional extras:
+
+```bash
+# Boltz 1 runner
+pip install -e ".[boltz1]"
+
+# Boltz 2 runner
+pip install -e ".[boltz2]"
+
+# Boltz Community runner
+pip install -e ".[boltz-community]"
+```
+
+For clean-install backend acceptance in fresh environments, see the [Backend Acceptance Tutorial](../tutorials/backend-acceptance.md).
 
 ## Verify Installation
 
@@ -64,7 +78,7 @@ which mmseqs
 mmseqs --version
 ```
 
-Step-by-step bias setup after `pip install -e .`:
+Step-by-step bias setup after installing the base package and the backend you plan to use:
 
 ```bash
 # 1) fetch CCD + mmseqs DB
@@ -107,6 +121,12 @@ For development work, install with all optional dependencies:
 
 ```bash
 pip install -e ".[docs,test]"
+```
+
+Add the backend extra you need in the same environment, for example:
+
+```bash
+pip install -e ".[boltz2]"
 ```
 
 ## Troubleshooting

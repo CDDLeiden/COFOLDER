@@ -250,7 +250,11 @@ def predict_with_tmpdir(compound):
         result = run_prediction(compound, work_dir=tmpdir)
 
         # Copy only essential results
-        shutil.copy(f"{tmpdir}/predictions.cif", "output/")
+        shutil.copytree(
+            f"{tmpdir}/results/structures",
+            "output/structures",
+            dirs_exist_ok=True,
+        )
 
     return result
 ```

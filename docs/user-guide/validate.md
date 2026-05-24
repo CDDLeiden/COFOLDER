@@ -5,7 +5,7 @@ The `validate` command performs co-folding of a single protein-ligand system.
 ## Basic Usage
 
 ```bash
-cofolder validate -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -o options.yaml
 ```
 
 ## Arguments
@@ -13,7 +13,7 @@ cofolder validate -s system.yaml -b options.yaml
 ### Required Arguments
 
 - `-s, --system_path`: Path to system YAML file
-- `-b, --boltz_options_path`: Path to Boltz options YAML file
+- `-o, --options_path`: Path to runner options YAML file
 
 ### Optional Arguments
 
@@ -29,7 +29,7 @@ cofolder validate -s system.yaml -b options.yaml
 ```bash
 cofolder validate \
   -s examples/system.yaml \
-  -b examples/options.yaml \
+  -o examples/options.yaml \
   -w ./output
 ```
 
@@ -38,7 +38,7 @@ cofolder validate \
 ```bash
 cofolder validate \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   --conformers 3D
 ```
 
@@ -47,7 +47,7 @@ cofolder validate \
 ```bash
 cofolder validate \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   -d
 ```
 
@@ -77,9 +77,11 @@ sequences:
 
 The command creates:
 
-- `predictions.cif` - Predicted structure
-- `confidence_model_0.json` - Confidence scores
-- Log files in the working directory
+- `raw/` - runner-owned raw execution artifacts
+- `results/system_metrics.csv` - merged system-level metrics
+- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/structures/` - gathered output structures
+- log files in the working directory
 
 ## Tips
 

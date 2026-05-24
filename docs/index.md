@@ -25,6 +25,7 @@ COFOLDER provides a suite of utilities that streamline protein-ligand co-folding
 git clone https://github.com/CDDLeiden/COFOLDER.git
 cd COFOLDER
 pip install -e .
+pip install -e ".[boltz2]"
 
 # Optional for bias assessment: install mmseqs2
 conda install -c conda-forge -c bioconda mmseqs2
@@ -38,7 +39,7 @@ which mmseqs
 mmseqs --version
 
 # Run a simple prediction
-cofolder validate -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -o options.yaml
 ```
 
 ## Navigation
@@ -47,6 +48,7 @@ cofolder validate -s system.yaml -b options.yaml
 - **[User Guide](user-guide/overview.md)**: Detailed guides for each command
 - **[Tutorials](tutorials/basic.md)**: Step-by-step tutorials and examples
 - **[Adding New Runners](tutorials/runners.md)**: Authoritative guide for building a new backend runner and normalizing its outputs for COFOLDER analytics
+- **[Backend Acceptance Tutorial](tutorials/backend-acceptance.md)**: Clean-install, real-backend validation lane for runner and CLI changes
 - **[API Reference](api/recipes/validate.md)**: Complete API documentation
 
 ## Support

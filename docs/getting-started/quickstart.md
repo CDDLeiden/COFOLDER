@@ -19,9 +19,9 @@ sequences:
       ccd: "IBP"
 ```
 
-### 2. Configure Boltz Options
+### 2. Configure Runner Options
 
-Create a Boltz options file (`options.yaml`):
+Create a runner options file (`options.yaml`):
 
 ```yaml
 out_dir: output
@@ -36,35 +36,37 @@ diffusion_samples: 1
 Execute the validation workflow:
 
 ```bash
-cofolder validate -s system.yaml -b options.yaml -w ./output
+cofolder validate -s system.yaml -o options.yaml -w ./output
 ```
 
 ## Output Files
 
 After successful execution, you'll find:
 
-- `predictions.cif` - Predicted structure in CIF format
-- `confidence_model_0.json` - Confidence metrics for the prediction
-- Logs and additional metadata
+- `raw/` - runner-owned raw execution artifacts
+- `results/system_metrics.csv` - merged system-level metrics
+- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/structures/` - gathered output structures
+- logs and additional metadata in the working directory
 
 ## Common Commands
 
 ### Validate a Single System
 
 ```bash
-cofolder validate -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -o options.yaml
 ```
 
 ### Screen a Library
 
 ```bash
-cofolder screen -s system.yaml -b options.yaml -c compounds.csv --col_id compound_id --variable sequences,0,ligand,smiles --col_variable smiles
+cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --variable sequences,1,ligand,smiles --col_variable smiles
 ```
 
 ### Use as Oracle
 
 ```bash
-cofolder oracle -s system.yaml -b options.yaml --input_smiles "CCO" --output_metric affinity_pred_value
+cofolder oracle -s system.yaml -o options.yaml --input_smiles "CCO" --output_metric affinity_pred_value
 ```
 
 ## Getting Help

@@ -59,7 +59,7 @@ diffusion_samples: 1
 ```bash
 cofolder screen \
   -s system_template.yaml \
-  -b screening_options.yaml \
+  -o screening_options.yaml \
   -c library.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles \
@@ -72,7 +72,7 @@ cofolder screen \
 The screen command will process each compound sequentially. Monitor with:
 
 ```bash
-tail -f screening_output/screening.log
+tail -f screening_output/log.log
 ```
 
 ## Step 6: Analyze Results
@@ -82,13 +82,13 @@ Results are saved in a CSV file:
 ```python
 import pandas as pd
 
-results = pd.read_csv('screening_output/screening_results.csv')
+results = pd.read_csv("screening_output/screen_results_with_scores.csv")
 
-# Sort by confidence score
-top_hits = results.sort_values('confidence', ascending=False).head(10)
+# Sort by a system-level confidence metric
+top_hits = results.sort_values("system__confidence_score", ascending=False).head(10)
 
 print("Top 10 Compounds:")
-print(top_hits[['compound_id', 'confidence', 'mw', 'logp']])
+print(top_hits[["compound_id", "system__confidence_score", "mw", "logp"]])
 ```
 
 ## Step 7: Visualize Top Hits
@@ -99,7 +99,7 @@ import seaborn as sns
 
 # Plot confidence distribution
 plt.figure(figsize=(10, 6))
-sns.histplot(results['confidence'], bins=30)
+sns.histplot(results["system__confidence_score"].dropna(), bins=30)
 plt.xlabel('Confidence Score')
 plt.ylabel('Count')
 plt.title('Screening Confidence Distribution')
@@ -114,12 +114,12 @@ Split library and run parallel jobs:
 
 ```bash
 # GPU 0
-cofolder screen -s system.yaml -b options.yaml \
+cofolder screen -s system.yaml -o options.yaml \
   -c library_part1.csv --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles
 
 # GPU 1 (in parallel)
-cofolder screen -s system.yaml -b options.yaml \
+cofolder screen -s system.yaml -o options.yaml \
   -c library_part2.csv --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles
 ```
@@ -131,7 +131,7 @@ Update multiple fields in one run:
 ```bash
 cofolder screen \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   -c library.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles \

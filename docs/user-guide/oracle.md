@@ -8,7 +8,7 @@ and returns **one scalar value** selected from validate outputs.
 ```bash
 cofolder oracle \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   --input_smiles "CCO" \
   --output_metric affinity_pred_value \
   --aggregate first
@@ -17,7 +17,7 @@ cofolder oracle \
 ## Required Arguments
 
 - `-s, --system_path`: Path to system YAML file
-- `-b, --boltz_options_path`: Path to Boltz options YAML file
+- `-o, --options_path`: Path to runner options YAML file
 - exactly one input:
   - `--input_smiles <smiles>`
   - `--input_mol_file <path>`

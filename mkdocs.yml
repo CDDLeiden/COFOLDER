@@ -85,6 +85,7 @@ nav:
       - Ligand Handling: tutorials/ligands.md
       - Advanced Features: tutorials/advanced.md
       - Adding New Runners: tutorials/runners.md
+      - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
       - Recipes:
           - Validate: api/recipes/validate.md

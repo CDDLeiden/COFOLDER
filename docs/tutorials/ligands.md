@@ -56,8 +56,8 @@ Fast generation of 2D coordinates:
 ```bash
 cofolder validate \
   -s system.yaml \
-  -b options.yaml \
-  --generate_conformers 2D
+  -o options.yaml \
+  --conformers 2D
 ```
 
 ### 3D Conformers
@@ -67,8 +67,8 @@ Generate 3D conformers using ETKDG + UFF:
 ```bash
 cofolder validate \
   -s system.yaml \
-  -b options.yaml \
-  --generate_conformers 3D
+  -o options.yaml \
+  --conformers 3D
 ```
 
 ## Programmatic Ligand Handling

@@ -9,7 +9,7 @@ and writes a screening summary file.
 ```bash
 cofolder screen \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   --variable_csv compounds.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles
@@ -22,7 +22,7 @@ Use repeated `--variable` / `--col_variable` pairs in the same order:
 ```bash
 cofolder screen \
   -s system.yaml \
-  -b options.yaml \
+  -o options.yaml \
   --variable_csv compounds.csv \
   --col_id compound_id \
   --variable sequences,1,ligand,smiles --col_variable smiles \
@@ -32,7 +32,7 @@ cofolder screen \
 ## Required Arguments
 
 - `-s, --system_path`: Path to system YAML file
-- `-b, --boltz_options_path`: Path to Boltz options YAML file
+- `-o, --options_path`: Path to runner options YAML file
 - `-c, --variable_csv`: Path to CSV file
 - `--col_id`: Column containing row IDs
 - `--variable`: Repeatable YAML path to update (comma-separated)
