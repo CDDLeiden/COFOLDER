@@ -237,3 +237,117 @@ def drop_and_log_nans(df: pd.DataFrame, cols: list, context: str = "") -> pd.Dat
         logging.info(f"Removed {nan_count} rows with NaN in {cols} {f'for {context}' if context else ''}.")
     return df.dropna(subset=cols)
 
+
+def read_yaml(path: str):
+    """Compatibility wrapper for YAML loading helpers."""
+    from cofolder.modules.utils import read
+
+    return read.read_yaml(path)
+
+
+def read_csv(path: str, columns):
+    """Compatibility wrapper for CSV loading helpers."""
+    from cofolder.modules.utils import read
+
+    return read.read_csv(path, columns)
+
+
+def read_sdf(path: str):
+    """Compatibility wrapper for SDF loading helpers."""
+    from cofolder.modules.utils import read
+
+    return read.read_sdf(path)
+
+
+def delete_last_line(file_path: str) -> None:
+    """Compatibility wrapper for file mutation helpers."""
+    from cofolder.modules.utils import write
+
+    write.delete_last_line(file_path)
+
+
+def parse_censored_affinity(affinity_series: pd.Series, keep_sign: bool = True) -> pd.DataFrame:
+    """Compatibility wrapper for affinity dataset helpers."""
+    from cofolder.modules.analytics import dataset
+
+    return dataset.parse_censored_affinity(affinity_series, keep_sign=keep_sign)
+
+
+def remove_censored_affinity(df: pd.DataFrame, cols: list) -> pd.DataFrame:
+    """Compatibility wrapper for affinity dataset helpers."""
+    from cofolder.modules.analytics import dataset
+
+    return dataset.remove_censored_affinity(df, cols)
+
+
+def strip_censoring_signs(df: pd.DataFrame, cols: list) -> pd.DataFrame:
+    """Compatibility wrapper for affinity dataset helpers."""
+    from cofolder.modules.analytics import dataset
+
+    return dataset.strip_censoring_signs(df, cols)
+
+
+def prepare_affinity_dataframe(
+    df: pd.DataFrame,
+    cols: list,
+    censoring: str = "remove",
+) -> pd.DataFrame:
+    """Compatibility wrapper for affinity dataset helpers."""
+    from cofolder.modules.analytics import dataset
+
+    return dataset.prepare_affinity_dataframe(df, cols, censoring=censoring)
+
+
+def convert_boltz_affinity_to_ic50(
+    df: pd.DataFrame,
+    affinity_col: str = "affinity_pred_value",
+    output_path: str | None = None,
+) -> pd.DataFrame:
+    """Compatibility wrapper for affinity statistics helpers."""
+    from cofolder.modules.analytics import stats
+
+    return stats.convert_boltz_affinity_to_ic50(
+        df,
+        affinity_col=affinity_col,
+        output_path=output_path,
+    )
+
+
+def calculate_affinity_correlations(
+    df: pd.DataFrame,
+    pred_col: str,
+    exp_col: str,
+    sample_size: int | None = None,
+    censoring: str = "strip",
+) -> dict:
+    """Compatibility wrapper for affinity statistics helpers."""
+    from cofolder.modules.analytics import stats
+
+    return stats.calculate_affinity_correlations(
+        df,
+        pred_col,
+        exp_col,
+        sample_size=sample_size,
+        censoring=censoring,
+    )
+
+
+def plot_affinity_correlation(
+    df: pd.DataFrame,
+    pred_col: str,
+    exp_col: str,
+    sample_size: int | None = None,
+    censoring: str = "strip",
+    output_path: str | None = None,
+):
+    """Compatibility wrapper for affinity plotting helpers."""
+    from cofolder.modules.analytics import plots
+
+    return plots.plot_affinity_correlation(
+        df,
+        pred_col,
+        exp_col,
+        sample_size=sample_size,
+        censoring=censoring,
+        output_path=output_path,
+    )

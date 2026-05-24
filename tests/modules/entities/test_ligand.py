@@ -1,5 +1,6 @@
 """Tests for cofolder.modules.entities.ligand module."""
 
+import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -162,6 +163,18 @@ class TestCsvToSdf:
         mol1 = mols[0]
         assert mol1.HasProp("id")
         assert mol1.HasProp("mw")
+
+    def test_csv_to_sdf_missing_file_raises(self, temp_dir):
+        """Missing CSV paths should fail explicitly."""
+        missing_csv = temp_dir / "missing.csv"
+        output_sdf = temp_dir / "output.sdf"
+
+        with pytest.raises(FileNotFoundError, match="CSV file not found"):
+            ligand.csv_to_sdf(
+                csv_path=str(missing_csv),
+                smiles_col="smiles",
+                output_sdf_path=str(output_sdf),
+            )
 
 
 class TestIterateSdfRecords:

@@ -5,6 +5,7 @@ configurations, including proteins, ligands, and their properties.
 """
 import logging
 from cofolder.modules.utils import read
+from cofolder.modules.utils import write
 
 import logging
 
@@ -250,3 +251,7 @@ class System:
             if len(found) > 1:
                 raise ValueError(f"Key '{key}' appears multiple times; use path instead.")
             return found[0]
+
+    def save_system_to_yaml(self, path):
+        """Persist the current system dictionary to YAML."""
+        write.write_yaml(self, path)

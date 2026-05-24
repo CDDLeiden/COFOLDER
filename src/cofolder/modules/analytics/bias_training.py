@@ -262,10 +262,10 @@ def _split_bias_build_phase_timings(
             break
 
     if protein_start is None:
-        return total_elapsed, 0.0
+        return round(total_elapsed, 10), 0.0
 
-    ligand_elapsed = max(protein_start, 0.0)
-    protein_elapsed = max(total_elapsed - protein_start, 0.0)
+    ligand_elapsed = round(max(protein_start, 0.0), 10)
+    protein_elapsed = round(max(total_elapsed - protein_start, 0.0), 10)
     return ligand_elapsed, protein_elapsed
 
 

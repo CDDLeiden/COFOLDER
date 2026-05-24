@@ -433,30 +433,6 @@ def smiles_to_sdf(
         For CSV: column names to preserve as SDF properties
     """
 
-    # --- Case 1: SMILES input ---
-    if isinstance(data, str) or (isinstance(data, list) and all(isinstance(s, str) for s in data)):
-        smiles_list = [data] if isinstance(data, str) else list(data)
-        if output_sdf_path is None:
-            output_sdf_path = "output.sdf"
-
-        # Normalize property_cols for SMILES
-        if property_cols is None:
-            props_list = [{}] * len(smiles_list)
-        elif isinstance(property_cols, dict):
-            props_list = [property_cols] * len(smiles_list)
-        elif isinstance(property_cols, list) and all(isinstance(p, dict) for p in property_cols):
-            props_list = property_cols
-            if len(props_list) < len(smiles_list):
-                props_list.extend([{}] * (len(smiles_list) - len(props_list)))
-        else:
-            # Single list of property names (values will be None)
-            props_list = [{str(k): None for k in property_cols}] * len(smiles_list)
-
-        mols = mols_from_smiles(smiles_list, props_list)
-        write.write_sdf(mols, output_sdf_path)
-        logger.info(f"Wrote {len(mols)} molecules to {output_sdf_path}")
-        return
-
     # --- Case 2: CSV input ---
     if isinstance(data, str) and os.path.exists(data):
         if smiles_col is None:
@@ -487,7 +463,49 @@ def smiles_to_sdf(
         logger.info(f"Wrote {len(mols)} molecules to {output_sdf_path}")
         return
 
+    # --- Case 1: SMILES input ---
+    if isinstance(data, str) or (isinstance(data, list) and all(isinstance(s, str) for s in data)):
+        smiles_list = [data] if isinstance(data, str) else list(data)
+        if output_sdf_path is None:
+            output_sdf_path = "output.sdf"
+
+        # Normalize property_cols for SMILES
+        if property_cols is None:
+            props_list = [{}] * len(smiles_list)
+        elif isinstance(property_cols, dict):
+            props_list = [property_cols] * len(smiles_list)
+        elif isinstance(property_cols, list) and all(isinstance(p, dict) for p in property_cols):
+            props_list = property_cols
+            if len(props_list) < len(smiles_list):
+                props_list.extend([{}] * (len(smiles_list) - len(props_list)))
+        else:
+            # Single list of property names (values will be None)
+            props_list = [{str(k): None for k in property_cols}] * len(smiles_list)
+
+        mols = mols_from_smiles(smiles_list, props_list)
+        write.write_sdf(mols, output_sdf_path)
+        logger.info(f"Wrote {len(mols)} molecules to {output_sdf_path}")
+        return
+
     raise ValueError("Invalid input for smiles_or_csv_to_sdf: must be SMILES string, list of SMILES, or CSV file path.")
+
+
+def csv_to_sdf(
+    csv_path: str,
+    smiles_col: str,
+    output_sdf_path: str | None = None,
+    property_cols: Optional[Union[dict, List[dict], str, List[str]]] = None,
+) -> None:
+    """Compatibility wrapper that preserves the older CSV-specific API."""
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    return smiles_to_sdf(
+        data=csv_path,
+        smiles_col=smiles_col,
+        output_sdf_path=output_sdf_path,
+        property_cols=property_cols,
+    )
 
 # Adapted from jacktday/boltztools (MIT License).
 # See THIRD_PARTY_LICENSES.md for attribution and full license text.
