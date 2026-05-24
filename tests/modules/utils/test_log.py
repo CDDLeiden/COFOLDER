@@ -60,6 +60,23 @@ class TestSetupRootLogger:
         # Check that the message was logged
         assert "Test message" in caplog.text
 
+    def test_reconfigure_preserves_caplog_after_handler_clear(self, temp_dir, caplog):
+        """Repeated root logger setup should preserve pytest capture visibility."""
+        logger = logging.getLogger()
+        logger.handlers.clear()
+
+        setup_root_logger(logging.INFO)
+
+        log_file = temp_dir / "test.log"
+        with caplog.at_level(logging.DEBUG):
+            logger.handlers.clear()
+            setup_root_logger(logging.DEBUG, log_file=str(log_file))
+            logger.debug("Debug message after reconfigure")
+
+        assert "Debug message after reconfigure" in caplog.text
+        assert log_file.exists()
+        assert "Debug message after reconfigure" in log_file.read_text()
+
     def test_reconfigure_existing_handlers_enables_debug_and_file(self, temp_dir):
         """Repeated setup should upgrade level and add the requested file handler."""
         logger = logging.getLogger()
