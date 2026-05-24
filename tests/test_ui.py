@@ -6,9 +6,12 @@ Validates that all UI components work correctly
 import sys
 import os
 from pathlib import Path
+import pytest
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / 'src'))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# Add repo src to path
+sys.path.insert(0, str(REPO_ROOT / 'src'))
 
 def test_imports():
     """Test that all required modules can be imported."""
@@ -18,19 +21,17 @@ def test_imports():
         print("  ✓ streamlit")
         import yaml
         print("  ✓ yaml")
-        from boltz_eval.ui import app
-        print("  ✓ boltz_eval.ui.app")
-        return True
+        from cofolder.ui import app
+        print("  ✓ cofolder.ui.app")
     except ImportError as e:
-        print(f"  ✗ Import failed: {e}")
-        return False
+        pytest.fail(f"Import failed: {e}")
 
 
 def test_default_options():
     """Test that default options are properly configured."""
     print("\nTesting default options...")
     try:
-        from boltz_eval.ui.app import DEFAULT_OPTIONS, OPTION_GROUPS, OPTION_INFO
+        from cofolder.ui.app import DEFAULT_OPTIONS, OPTION_GROUPS, OPTION_INFO
 
         # Check that DEFAULT_OPTIONS is a dict
         assert isinstance(DEFAULT_OPTIONS, dict), "DEFAULT_OPTIONS should be a dict"
@@ -51,10 +52,8 @@ def test_default_options():
                 if opt not in DEFAULT_OPTIONS:
                     print(f"  ⚠ {opt} in {group} but not in DEFAULT_OPTIONS")
 
-        return True
     except Exception as e:
-        print(f"  ✗ Error: {e}")
-        return False
+        pytest.fail(f"Error: {e}")
 
 
 def test_yaml_operations():
@@ -92,17 +91,15 @@ def test_yaml_operations():
         # Cleanup
         os.unlink(temp_file)
 
-        return True
     except Exception as e:
-        print(f"  ✗ Error: {e}")
-        return False
+        pytest.fail(f"Error: {e}")
 
 
 def test_ui_structure():
     """Test that UI has all required components."""
     print("\nTesting UI structure...")
     try:
-        from boltz_eval.ui import app
+        from cofolder.ui import app
 
         # Check that main functions exist
         required_functions = [
@@ -124,17 +121,15 @@ def test_ui_structure():
             assert hasattr(app, func_name), f"Missing function: {func_name}"
             print(f"  ✓ {func_name}")
 
-        return True
     except Exception as e:
-        print(f"  ✗ Error: {e}")
-        return False
+        pytest.fail(f"Error: {e}")
 
 
 def test_file_structure():
     """Test that all required UI files exist."""
     print("\nTesting file structure...")
     try:
-        ui_dir = Path(__file__).parent / 'src' / 'boltz_eval' / 'ui'
+        ui_dir = REPO_ROOT / 'src' / 'cofolder' / 'ui'
 
         required_files = [
             '__init__.py',
@@ -147,26 +142,24 @@ def test_file_structure():
             print(f"  ✓ {file_name}")
 
         # Check config files
-        config_file = Path(__file__).parent / '.streamlit' / 'config.toml'
+        config_file = REPO_ROOT / '.streamlit' / 'config.toml'
         assert config_file.exists(), "Missing .streamlit/config.toml"
         print(f"  ✓ .streamlit/config.toml")
 
-        # Check documentation
-        doc_file = Path(__file__).parent / 'UI_GUIDE.md'
-        assert doc_file.exists(), "Missing UI_GUIDE.md"
-        print(f"  ✓ UI_GUIDE.md")
+        # Check launcher script
+        launcher_file = REPO_ROOT / 'run_ui.sh'
+        assert launcher_file.exists(), "Missing run_ui.sh"
+        print(f"  ✓ run_ui.sh")
 
-        return True
     except Exception as e:
-        print(f"  ✗ Error: {e}")
-        return False
+        pytest.fail(f"Error: {e}")
 
 
 def test_recipes_configuration():
     """Test that all recipes have proper configuration."""
     print("\nTesting recipes configuration...")
     try:
-        from boltz_eval.ui.app import DEFAULT_OPTIONS
+        from cofolder.ui.app import DEFAULT_OPTIONS
 
         recipes = ['validate', 'screen', 'oracle']
         print(f"  ✓ Found {len(recipes)} recipes: {', '.join(recipes)}")
@@ -177,16 +170,14 @@ def test_recipes_configuration():
             assert opt in DEFAULT_OPTIONS, f"Missing common option: {opt}"
         print(f"  ✓ All common options present")
 
-        return True
     except Exception as e:
-        print(f"  ✗ Error: {e}")
-        return False
+        pytest.fail(f"Error: {e}")
 
 
 def main():
     """Run all tests."""
     print("=" * 60)
-    print("Boltz-Eval UI Test Suite")
+    print("COFOLDER UI Test Suite")
     print("=" * 60)
 
     tests = [
@@ -201,9 +192,9 @@ def main():
     results = []
     for test_func in tests:
         try:
-            result = test_func()
-            results.append(result)
-        except Exception as e:
+            test_func()
+            results.append(True)
+        except BaseException as e:
             print(f"\n✗ Test {test_func.__name__} failed: {e}")
             results.append(False)
 
@@ -218,7 +209,7 @@ def main():
         print("\nTo start the UI, run:")
         print("  ./run_ui.sh")
         print("  # or")
-        print("  streamlit run src/boltz_eval/ui/app.py")
+        print("  streamlit run src/cofolder/ui/app.py")
         return 0
     else:
         print("\n❌ Some tests failed. Please check the output above.")
