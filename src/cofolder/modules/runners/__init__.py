@@ -1,10 +1,27 @@
+"""Runner discovery and public import surface.
+
+New code should author against the explicit contract types imported from
+`cofolder.modules.runners.contracts`. Legacy alias names remain exportable for
+import compatibility, but they are not the recommended surface for new runner
+implementations or contributor docs.
+"""
+
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from typing import Any
 
 from cofolder.modules.runners.base import BaseRunner, Runner, RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.contracts import (
+    RunnerExecutionRequest,
+    RunnerExecutionResult,
+    RunnerMetricOutcome,
+    RunnerNormalizedBundle,
+    RunnerPreparationResult,
+    RunnerRuntime,
+    merge_runner_runtime,
+)
+from cofolder.modules.runners.validators import RunnerBundleValidationError, validate_runner_bundle
 
 
 def discover_runners() -> dict[str, Runner]:
@@ -37,10 +54,19 @@ def get_runner(name: str) -> Runner:
 __all__ = [
     "Runner",
     "BaseRunner",
+    "RunnerExecutionRequest",
+    "RunnerExecutionResult",
+    "RunnerMetricOutcome",
+    "RunnerNormalizedBundle",
     "RunnerPreparation",
+    "RunnerPreparationResult",
     "RunnerRequest",
     "RunnerResult",
+    "RunnerRuntime",
+    "RunnerBundleValidationError",
     "discover_runners",
     "get_runner",
     "list_runner_names",
+    "merge_runner_runtime",
+    "validate_runner_bundle",
 ]

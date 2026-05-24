@@ -8,13 +8,20 @@ import shutil
 import subprocess
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any, Collection, Sequence
 
 import pandas as pd
 
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
-from cofolder.modules.runners.base import BaseRunner, RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.base import BaseRunner
+from cofolder.modules.runners.contracts import (
+    RunnerExecutionRequest,
+    RunnerExecutionResult,
+    RunnerMetricOutcome,
+    RunnerPreparationResult,
+    RunnerRuntime,
+)
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -172,13 +179,13 @@ class BoltzRunner(BaseRunner):
         conformers: str | None,
         sdf_file: Path | None,
         logger: logging.Logger,
-    ) -> RunnerPreparation:
+    ) -> RunnerPreparationResult:
         warnings: list[str] = []
-        runtime_context = {
-            "cache_path": options_obj.find_value(key="cache") or "~/.boltz",
-            "diffusion_samples": options_obj.find_value(key="diffusion_samples") or 1,
-            "boltz_model": self.model_name,
-        }
+        runtime = RunnerRuntime(
+            cache_path=options_obj.find_value(key="cache") or "~/.boltz",
+            diffusion_samples=int(options_obj.find_value(key="diffusion_samples") or 1),
+            model_name=self.model_name,
+        )
 
         if conformers:
             from cofolder.modules.entities import ligand
@@ -192,14 +199,14 @@ class BoltzRunner(BaseRunner):
                 logger=logger,
             )
 
-        return RunnerPreparation(
+        return RunnerPreparationResult(
             system_obj=system_obj,
             options_obj=options_obj,
             warnings=warnings,
-            runtime_context=runtime_context,
+            runtime=runtime,
         )
 
-    def run(self, request: RunnerRequest) -> RunnerResult:
+    def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:
         options_obj = Command(options=copy.deepcopy(request.options_obj.options))
         options_obj.seed = request.seed
         options_obj.out_dir = request.repeat_dir
@@ -241,11 +248,12 @@ class BoltzRunner(BaseRunner):
         system_df.to_csv(system_metrics_path, index=False)
         chain_df.to_csv(chain_metrics_path, index=False)
 
-        runtime_context = {
-            "cache_path": options_obj.find_value(key="cache") or "~/.boltz",
-            "diffusion_samples": diffusion_samples,
-            "boltz_model": self.model_name,
-        }
+        runtime = RunnerRuntime(
+            cache_path=options_obj.find_value(key="cache") or "~/.boltz",
+            diffusion_samples=diffusion_samples,
+            model_name=self.model_name,
+        )
+        metric_outcomes = self._build_metric_outcomes(system_df=system_df, chain_df=chain_df)
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
             "runner": self.name,
@@ -257,13 +265,17 @@ class BoltzRunner(BaseRunner):
             "chain_metrics_path": str(chain_metrics_path),
             "structures_dir": str(structures_dir),
             "diffusion_samples": diffusion_samples,
-            "runtime_context": runtime_context,
+            "runtime_context": {
+                "cache_path": runtime.cache_path,
+                "diffusion_samples": runtime.diffusion_samples,
+                "boltz_model": runtime.model_name,
+            },
             "warnings": [],
             "sample_records": sample_records,
         }
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-        return RunnerResult(
+        return RunnerExecutionResult(
             runner_name=self.name,
             raw_output_dir=raw_output_dir,
             normalized_dir=normalized_dir,
@@ -274,8 +286,9 @@ class BoltzRunner(BaseRunner):
             diffusion_samples=diffusion_samples,
             capabilities=set(self.capabilities),
             warnings=[],
-            runtime_context=runtime_context,
+            runtime=runtime,
             sample_records=sample_records,
+            metric_outcomes=metric_outcomes,
         )
 
     def _copy_structures(
@@ -313,12 +326,16 @@ class BoltzRunner(BaseRunner):
     def _normalize_metrics(
         self,
         raw_output_dir: Path,
-        request: RunnerRequest,
+        request: RunnerExecutionRequest,
         diffusion_samples: int,
     ) -> tuple[pd.DataFrame, pd.DataFrame]:
         system_rows: list[dict[str, Any]] = []
         chain_rows: list[dict[str, Any]] = []
-        affinity_payload = self._read_affinity_payload(raw_output_dir, request.system_name)
+        affinity_payload = self._read_affinity_payload(
+            raw_output_dir,
+            request.system_name,
+            supported_metric_groups=self.capabilities,
+        )
         binder_chain_id = self._resolve_binder_chain_id(request.system_obj)
 
         for sample_idx in range(diffusion_samples):
@@ -377,9 +394,102 @@ class BoltzRunner(BaseRunner):
         chain_df = pd.DataFrame(chain_rows)
         return system_df, chain_df
 
+    def _build_metric_outcomes(
+        self,
+        system_df: pd.DataFrame,
+        chain_df: pd.DataFrame,
+    ) -> dict[str, RunnerMetricOutcome]:
+        return {
+            "confidence_metrics": self._build_metric_outcome(
+                group_name="confidence_metrics",
+                required_columns=(
+                    "system_metrics.ptm",
+                    "system_metrics.iptm",
+                    "system_metrics.confidence_score",
+                    "chain_metrics.chains_ptm",
+                ),
+                column_presence=(
+                    "ptm" in system_df.columns,
+                    "iptm" in system_df.columns,
+                    "confidence_score" in system_df.columns,
+                    "chains_ptm" in chain_df.columns,
+                ),
+                supported="confidence_metrics" in self.capabilities,
+            ),
+            "affinity_metrics": self._build_metric_outcome(
+                group_name="affinity_metrics",
+                required_columns=(
+                    "chain_metrics.affinity_pred_value",
+                    "chain_metrics.affinity_probability_binary",
+                ),
+                column_presence=(
+                    "affinity_pred_value" in chain_df.columns,
+                    "affinity_probability_binary" in chain_df.columns,
+                ),
+                supported="affinity_metrics" in self.capabilities,
+            ),
+            "affinity_metrics_ext": self._build_metric_outcome(
+                group_name="affinity_metrics_ext",
+                required_columns=(
+                    "chain_metrics.pIC50",
+                    "chain_metrics.IC50_M",
+                    "chain_metrics.pIC50_kcal_per_mol",
+                ),
+                column_presence=(
+                    "pIC50" in chain_df.columns,
+                    "IC50_M" in chain_df.columns,
+                    "pIC50_kcal_per_mol" in chain_df.columns,
+                ),
+                supported="affinity_metrics_ext" in self.capabilities,
+            ),
+        }
+
     @staticmethod
-    def _read_affinity_payload(raw_output_dir: Path, system_name: str) -> dict[str, Any] | None:
+    def _build_metric_outcome(
+        *,
+        group_name: str,
+        required_columns: tuple[str, ...],
+        column_presence: tuple[bool, ...],
+        supported: bool,
+    ) -> RunnerMetricOutcome:
+        if not supported:
+            return RunnerMetricOutcome(state="unsupported")
+
+        if all(column_presence):
+            return RunnerMetricOutcome(
+                state="computed",
+                required_columns=required_columns,
+            )
+
+        return RunnerMetricOutcome(
+            state="missing",
+            required_columns=tuple(
+                column
+                for column, present in zip(required_columns, column_presence, strict=False)
+                if not present
+            ),
+            message=f"Boltz normalized output is missing required columns for {group_name}.",
+        )
+
+    @staticmethod
+    def _read_affinity_payload(
+        raw_output_dir: Path,
+        system_name: str,
+        *,
+        supported_metric_groups: Collection[str],
+    ) -> dict[str, Any] | None:
         affinity_path = raw_output_dir / f"affinity_{system_name}.json"
+        supports_affinity = "affinity_metrics" in supported_metric_groups
+        supports_affinity_ext = "affinity_metrics_ext" in supported_metric_groups
+        if not supports_affinity and not supports_affinity_ext:
+            if affinity_path.exists():
+                raise ValueError(
+                    "Boltz emitted affinity payload even though this runner does not declare "
+                    "affinity capabilities. This contradictory backend output must be handled "
+                    "before normalization can continue."
+                )
+            return None
+
         if not affinity_path.exists():
             return None
 
@@ -389,16 +499,27 @@ class BoltzRunner(BaseRunner):
         if affinity_pred_value is None or affinity_probability_binary is None:
             return None
 
-        pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(affinity_pred_value)
-        pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(affinity_pred_value)
+        payload: dict[str, Any] = {}
+        if supports_affinity:
+            payload.update(
+                {
+                    "affinity_pred_value": affinity_pred_value,
+                    "affinity_probability_binary": affinity_probability_binary,
+                }
+            )
 
-        return {
-            "affinity_pred_value": affinity_pred_value,
-            "affinity_probability_binary": affinity_probability_binary,
-            "pIC50": pIC50,
-            "IC50_M": IC50_M,
-            "pIC50_kcal_per_mol": pIC50_kcal_per_mol,
-        }
+        if supports_affinity_ext:
+            pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(affinity_pred_value)
+            pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(affinity_pred_value)
+            payload.update(
+                {
+                    "pIC50": pIC50,
+                    "IC50_M": IC50_M,
+                    "pIC50_kcal_per_mol": pIC50_kcal_per_mol,
+                }
+            )
+
+        return payload or None
 
     @staticmethod
     def _set_command_option(command: Command, key: str, value: Any | None) -> None:

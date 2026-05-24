@@ -7,6 +7,11 @@ class BoltzCommunityRunner(BoltzRunner):
     """Runner for the community-maintained Boltz fork."""
 
     name = "boltz-community"
+    capabilities = {
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+    }
     model_name = "boltz2"
 
     def check_availability(self) -> tuple[bool, str | None]:

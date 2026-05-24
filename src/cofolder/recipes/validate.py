@@ -10,7 +10,13 @@ from cofolder.modules.analytics.bias_training import run_build_bias_training_dat
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.input import system
-from cofolder.modules.runners import RunnerRequest, get_runner
+from cofolder.modules.runners import (
+    RunnerExecutionRequest,
+    RunnerRuntime,
+    get_runner,
+    merge_runner_runtime,
+)
+from cofolder.modules.runners.validators import validate_runner_bundle
 from cofolder.modules.utils import gather, helpers, read, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -189,6 +195,7 @@ class Validate(object):
                     sdf_file=self.sdf_file,
                     logger=self.logger,
                 )
+            preparation_runtime = preparation.runtime
             self.sys = preparation.system_obj
             runner_options = preparation.options_obj
             for warning in preparation.warnings:
@@ -208,7 +215,7 @@ class Validate(object):
                     seed,
                     self.runner_name,
                 )
-                request = RunnerRequest(
+                request = RunnerExecutionRequest(
                     runner_name=self.runner_name,
                     system_name=self.system_path.stem,
                     system_path=Path(yaml_path),
@@ -222,8 +229,17 @@ class Validate(object):
                     logger=self.logger,
                     timings=self.timings,
                     label_prefix=f"repeat_{i}",
+                    runtime=preparation_runtime,
                 )
                 runner_results.append(self.runner.run(request))
+
+            requested_runner_metric_groups = self.scoring_functions & RUNNER_METRIC_GROUPS
+            with self._debug_timer("runner.bundle_validation"):
+                for result in runner_results:
+                    validate_runner_bundle(
+                        result,
+                        requested_metric_groups=requested_runner_metric_groups,
+                    )
 
             with self._debug_timer("structures.gather"):
                 gather.gather_structures(
@@ -234,7 +250,7 @@ class Validate(object):
                 )
 
             with self._debug_timer("results.merge_runner_outputs"):
-                system_df, chain_df, manifests = gather.merge_runner_results(
+                system_df, chain_df, _manifests = gather.merge_runner_results(
                     raw_dir=self.raw_dir,
                     repeats=self.repeats,
                     logger=self.logger,
@@ -290,24 +306,25 @@ class Validate(object):
                     logger=self.logger,
                 )
 
-            runtime_context = dict(preparation.runtime_context)
-            for result in runner_results:
-                runtime_context.update(result.runtime_context)
-            for manifest in manifests:
-                runtime_context.update((manifest.get("runtime_context") or {}))
+            # Story 2.4 retires recipe-side runtime reconstruction from manifest/runtime_context
+            # fallbacks. Shared workflow behavior now depends only on typed runner metadata.
+            runtime = merge_runner_runtime(
+                preparation_runtime,
+                *(result.runtime for result in runner_results),
+            )
 
             if self.assess_bias:
                 system_df, chain_df = self._apply_bias_metrics(
                     system_df=system_df,
                     chain_df=chain_df,
-                    runtime_context=runtime_context,
+                    runtime=runtime,
                 )
 
             with self._debug_timer("results.write.system_chain"):
                 write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
                 write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
 
-            diffusion_samples = self._resolve_diffusion_samples(system_df, runtime_context)
+            diffusion_samples = self._resolve_diffusion_samples(system_df, runtime)
             if self.assess_robustness and (self.repeats > 1 or diffusion_samples > 1):
                 with self._debug_timer("scores.robustness_metrics"):
                     results_df = gather.gather_robustness_results(
@@ -348,7 +365,7 @@ class Validate(object):
 
         return system_df, chain_df
 
-    def _apply_bias_metrics(self, system_df, chain_df, runtime_context: dict[str, object]):
+    def _apply_bias_metrics(self, system_df, chain_df, runtime: RunnerRuntime):
         protein_metrics_path = self.protein_training_data_path
         ligand_metrics_path = self.ligand_training_data_path
         if self.build_bias_training_data:
@@ -469,7 +486,7 @@ class Validate(object):
                     release_cutoff=self.bias_release_cutoff,
                     bias_chains=self.bias_chains,
                     protein_top_n=100,
-                    boltz_cache_path=runtime_context.get("cache_path") or "~/.boltz",
+                    boltz_cache_path=runtime.cache_path or "~/.boltz",
                     output_dir=self.wrk_dir / "results" / "bias_train",
                     logger=self.logger,
                     timings=self.timings,
@@ -494,14 +511,14 @@ class Validate(object):
         return system_df, chain_df
 
     @staticmethod
-    def _resolve_diffusion_samples(system_df, runtime_context: dict[str, object]) -> int:
+    def _resolve_diffusion_samples(system_df, runtime: RunnerRuntime) -> int:
         if not system_df.empty and "diffusion_sample" in system_df.columns:
             try:
                 return int(system_df["diffusion_sample"].max()) + 1
             except Exception:
                 pass
         try:
-            return int(runtime_context.get("diffusion_samples") or 1)
+            return int(runtime.diffusion_samples or 1)
         except Exception:
             return 1
 

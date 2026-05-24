@@ -2,51 +2,20 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
 from typing import Any, Protocol
 
+from cofolder.modules.runners.contracts import (
+    RunnerExecutionRequest,
+    RunnerExecutionResult,
+    RunnerPreparationResult,
+    RunnerRuntime,
+)
 
-@dataclass
-class RunnerPreparation:
-    system_obj: Any
-    options_obj: Any
-    warnings: list[str] = field(default_factory=list)
-    runtime_context: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class RunnerRequest:
-    runner_name: str
-    system_name: str
-    system_path: Path
-    system_obj: Any
-    options_path: Path
-    options_obj: Any
-    repeat: int
-    seed: int
-    repeat_dir: Path
-    raw_dir: Path
-    logger: logging.Logger
-    timings: Any | None = None
-    label_prefix: str | None = None
-
-
-@dataclass
-class RunnerResult:
-    runner_name: str
-    raw_output_dir: Path
-    normalized_dir: Path
-    structures_dir: Path
-    system_metrics_path: Path
-    chain_metrics_path: Path
-    manifest_path: Path
-    diffusion_samples: int = 1
-    capabilities: set[str] = field(default_factory=set)
-    warnings: list[str] = field(default_factory=list)
-    runtime_context: dict[str, Any] = field(default_factory=dict)
-    sample_records: list[dict[str, Any]] = field(default_factory=list)
+RunnerPreparation = RunnerPreparationResult
+RunnerRequest = RunnerExecutionRequest
+RunnerResult = RunnerExecutionResult
 
 
 class BaseRunner(ABC):
@@ -101,6 +70,30 @@ class BaseRunner(ABC):
             return
         raise RuntimeError(message or f"Runner '{self.name}' is not available.")
 
+    def prepare_system(
+        self,
+        system_obj: Any,
+        options_obj: Any,
+        wrk_dir: Path,
+        conformers: str | None,
+        sdf_file: Path | None,
+        logger: logging.Logger | None,
+    ) -> RunnerPreparationResult:
+        """Default no-op preparation path for simple runners."""
+
+        return RunnerPreparationResult(
+            system_obj=system_obj,
+            options_obj=options_obj,
+        )
+
+    @abstractmethod
+    def load_options(self, options_path: Path):
+        """Load any runner-specific options from disk."""
+
+    @abstractmethod
+    def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:
+        """Execute the backend and return canonical normalized outputs."""
+
 
 class Runner(Protocol):
     name: str
@@ -122,9 +115,9 @@ class Runner(Protocol):
         wrk_dir: Path,
         conformers: str | None,
         sdf_file: Path | None,
-        logger: logging.Logger,
-    ) -> RunnerPreparation:
+        logger: logging.Logger | None,
+    ) -> RunnerPreparationResult:
         ...
 
-    def run(self, request: RunnerRequest) -> RunnerResult:
+    def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:
         ...
