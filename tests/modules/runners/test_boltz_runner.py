@@ -9,7 +9,7 @@ import pandas as pd
 import yaml
 
 from cofolder.modules.input.command import Command
-from cofolder.modules.runners.base import RunnerRequest
+from cofolder.modules.runners.contracts import RunnerExecutionRequest
 from cofolder.modules.runners.boltz_runner import _parse_boltz_stage_timings
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 
@@ -85,7 +85,7 @@ class _MockSystem:
 def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
     runner = Boltz2Runner()
     repeat_dir = temp_dir / "repeat_1"
-    request = RunnerRequest(
+    request = RunnerExecutionRequest(
         runner_name="boltz2",
         system_name="system",
         system_path=temp_dir / "system.yaml",
@@ -140,6 +140,63 @@ def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
     chain_df = pd.read_csv(result.chain_metrics_path)
     assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
     assert {"chains_ptm", "affinity_pred_value", "affinity_probability_binary", "pIC50"}.issubset(chain_df.columns)
+    assert result.metric_outcomes["confidence_metrics"].state == "computed"
+    assert result.metric_outcomes["affinity_metrics"].state == "computed"
+    assert result.metric_outcomes["affinity_metrics_ext"].state == "computed"
+
+
+def test_boltz_runner_reports_mixed_metric_outcomes_without_affinity_payload(monkeypatch, temp_dir):
+    runner = Boltz2Runner()
+    repeat_dir = temp_dir / "repeat_1"
+    request = RunnerExecutionRequest(
+        runner_name="boltz2",
+        system_name="system",
+        system_path=temp_dir / "system.yaml",
+        system_obj=_MockSystem(),
+        options_path=temp_dir / "options.yaml",
+        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        repeat=1,
+        seed=123,
+        repeat_dir=repeat_dir,
+        raw_dir=temp_dir,
+        logger=None,
+        timings=None,
+        label_prefix="repeat_1",
+    )
+
+    def _fake_run_boltz(cmd, check=True, timings=None, label_prefix=None):
+        prediction_dir = repeat_dir / "boltz_results_system" / "predictions" / "system"
+        prediction_dir.mkdir(parents=True, exist_ok=True)
+        (prediction_dir / "system_model_0.cif").write_text("data_test", encoding="utf-8")
+        (prediction_dir / "confidence_system_model_0.json").write_text(
+            json.dumps(
+                {
+                    "ptm": 0.8,
+                    "iptm": 0.7,
+                    "confidence_score": 0.9,
+                    "chains_ptm": {"0": 0.85, "1": 0.65},
+                    "pair_chains_iptm": {"0": {"1": 0.55}, "1": {"0": 0.55}},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz)
+
+    result = runner.run(request)
+
+    assert result.metric_outcomes["confidence_metrics"].state == "computed"
+    assert result.metric_outcomes["affinity_metrics"].state == "missing"
+    assert result.metric_outcomes["affinity_metrics"].required_columns == (
+        "chain_metrics.affinity_pred_value",
+        "chain_metrics.affinity_probability_binary",
+    )
+    assert result.metric_outcomes["affinity_metrics_ext"].state == "missing"
+    assert result.metric_outcomes["affinity_metrics_ext"].required_columns == (
+        "chain_metrics.pIC50",
+        "chain_metrics.IC50_M",
+        "chain_metrics.pIC50_kcal_per_mol",
+    )
 
 
 def test_boltz2_runner_rejects_environment_with_boltz_community_installed():

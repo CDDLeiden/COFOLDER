@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
+import cofolder.modules.runners as runner_exports
 from cofolder.modules.runners import discover_runners, get_runner, list_runner_names
+from cofolder.modules.runners.contracts import (
+    RunnerExecutionRequest,
+    RunnerExecutionResult,
+    RunnerPreparationResult,
+)
 
 
 class _FakeRunner:
@@ -60,3 +66,12 @@ def test_discover_real_runners_include_boltz1_boltz2_and_boltz_community():
     assert "boltz1" in runners
     assert "boltz2" in runners
     assert "boltz-community" in runners
+
+
+def test_runner_module_keeps_legacy_aliases_as_compatibility_exports():
+    assert runner_exports.RunnerExecutionRequest is RunnerExecutionRequest
+    assert runner_exports.RunnerExecutionResult is RunnerExecutionResult
+    assert runner_exports.RunnerPreparationResult is RunnerPreparationResult
+    assert runner_exports.RunnerRequest is RunnerExecutionRequest
+    assert runner_exports.RunnerResult is RunnerExecutionResult
+    assert runner_exports.RunnerPreparation is RunnerPreparationResult

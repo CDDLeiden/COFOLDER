@@ -1,12 +1,13 @@
 """Tests for the boltz-community runner."""
 
 import json
+from importlib.metadata import PackageNotFoundError
 from unittest.mock import patch
 
 import pandas as pd
 
 from cofolder.modules.input.command import Command
-from cofolder.modules.runners.base import RunnerRequest
+from cofolder.modules.runners.contracts import RunnerExecutionRequest
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
 
 
@@ -28,10 +29,33 @@ class _MockSystem:
         return None
 
 
+def test_boltz_community_runner_accepts_installed_package_line():
+    runner = BoltzCommunityRunner()
+
+    def _fake_version(name):
+        if name == "boltz-community":
+            return "0.6.0"
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is True
+    assert message is None
+    assert runner.capabilities == {
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+    }
+
+
 def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch, temp_dir):
     runner = BoltzCommunityRunner()
     repeat_dir = temp_dir / "repeat_1"
-    request = RunnerRequest(
+    request = RunnerExecutionRequest(
         runner_name="boltz-community",
         system_name="system",
         system_path=temp_dir / "system.yaml",
@@ -89,6 +113,9 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
     assert {"chains_ptm", "affinity_pred_value", "affinity_probability_binary", "pIC50"}.issubset(
         chain_df.columns
     )
+    assert result.metric_outcomes["confidence_metrics"].state == "computed"
+    assert result.metric_outcomes["affinity_metrics"].state == "computed"
+    assert result.metric_outcomes["affinity_metrics_ext"].state == "computed"
 
 
 def test_boltz_community_runner_rejects_environment_with_boltz_installed():

@@ -136,6 +136,22 @@ class TestValidateRecipe:
         assert "boltz2" in help_text
         assert "boltz-community" in help_text
 
+    def test_runner_defaults_to_boltz2(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparser = parser.add_subparsers()
+        validate_parser = subparser.add_parser("validate")
+
+        cli.ValidateRecipe.add_arguments(validate_parser)
+
+        args = validate_parser.parse_args([
+            "-s", "system.yaml",
+            "-o", "options.yaml",
+        ])
+
+        assert args.runner == "boltz2"
+
     def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Mock()
         validate_cls = Mock(return_value=validator)

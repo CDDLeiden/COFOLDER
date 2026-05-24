@@ -1,4 +1,5 @@
 """Tests for cofolder.recipes.screen module."""
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pandas as pd
@@ -63,6 +64,63 @@ class TestScreenInit:
 
 
 class TestScreenRun:
+    @patch("cofolder.recipes.screen.Validate")
+    def test_run_uses_boltz2_as_default_runner(
+        self,
+        mock_validate_cls,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        mock_validator = MagicMock()
+        mock_validate_cls.return_value = mock_validator
+
+        screener = Screen(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+        )
+
+        screener.run()
+
+        first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
+        assert first_call_kwargs["runner"] == "boltz2"
+        assert mock_validator.run.call_count == 2
+
+    @patch("cofolder.recipes.screen.Validate")
+    def test_run_passes_explicit_boltz_community_runner(
+        self,
+        mock_validate_cls,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        mock_validator = MagicMock()
+        mock_validate_cls.return_value = mock_validator
+
+        screener = Screen(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            runner="boltz-community",
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+        )
+
+        screener.run()
+
+        first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
+        assert first_call_kwargs["runner"] == "boltz-community"
+        assert mock_validator.run.call_count == 2
+
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_invalid_smiles_warns_and_continues(
         self,

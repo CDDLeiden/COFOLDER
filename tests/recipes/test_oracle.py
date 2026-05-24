@@ -1,5 +1,6 @@
 """Tests for cofolder.recipes.oracle module."""
 
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pandas as pd
@@ -33,6 +34,65 @@ class TestOracleInit:
 
 
 class TestOracleRun:
+    @patch("cofolder.recipes.oracle.Validate")
+    def test_run_uses_boltz2_as_default_runner(
+        self,
+        mock_validate_cls,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        mock_validator = MagicMock()
+        mock_validate_cls.return_value = mock_validator
+
+        oracle = Oracle(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            input_smiles="CCO",
+            output_metric="affinity_pred_value",
+            scoring_functions=["affinity_metrics"],
+        )
+
+        run_dir = temp_dir / "oracle_run" / "results"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"affinity_pred_value": 6.4}]).to_csv(run_dir / "chain_metrics.csv", index=False)
+
+        oracle.run()
+
+        assert mock_validate_cls.call_args.kwargs["runner"] == "boltz2"
+        mock_validator.run.assert_called_once()
+
+    @patch("cofolder.recipes.oracle.Validate")
+    def test_run_passes_explicit_boltz_community_runner(
+        self,
+        mock_validate_cls,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        mock_validator = MagicMock()
+        mock_validate_cls.return_value = mock_validator
+
+        oracle = Oracle(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            runner="boltz-community",
+            input_smiles="CCO",
+            output_metric="affinity_pred_value",
+            scoring_functions=["affinity_metrics"],
+        )
+
+        run_dir = temp_dir / "oracle_run" / "results"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"affinity_pred_value": 6.4}]).to_csv(run_dir / "chain_metrics.csv", index=False)
+
+        oracle.run()
+
+        assert mock_validate_cls.call_args.kwargs["runner"] == "boltz-community"
+        mock_validator.run.assert_called_once()
+
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_run_returns_single_value_and_writes_output(
         self,
