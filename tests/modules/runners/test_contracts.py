@@ -8,6 +8,7 @@ import pytest
 
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
+    RunnerCompanionArtifact,
     RunnerExecutionRequest,
     RunnerExecutionResult,
     RunnerMetricOutcome,
@@ -148,11 +149,26 @@ def test_execution_result_exposes_authoritative_normalized_bundle():
         runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=2, model_name="boltz2"),
         sample_records=[{"repeat": 1, "diffusion_sample": 0, "cif_file": "1_system_model_0.cif"}],
         metric_outcomes={
-            "confidence_metrics": RunnerMetricOutcome(state="computed"),
+            "confidence_metrics": RunnerMetricOutcome(
+                state="computed",
+                required_artifacts=("companion_artifacts.pae",),
+            ),
         },
+        companion_artifacts=[
+            RunnerCompanionArtifact(
+                label="pae",
+                relative_path="artifacts/pae.npy",
+                kind="matrix",
+            )
+        ],
     )
 
     assert isinstance(result.normalized_bundle, RunnerNormalizedBundle)
     assert result.normalized_bundle.runner_name == "simple"
     assert result.normalized_bundle.capabilities == {"confidence_metrics"}
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
+    assert result.metric_outcomes["confidence_metrics"].required_artifacts == (
+        "companion_artifacts.pae",
+    )
+    assert result.companion_artifacts[0].label == "pae"
+    assert result.normalized_bundle.companion_artifacts[0].relative_path == "artifacts/pae.npy"

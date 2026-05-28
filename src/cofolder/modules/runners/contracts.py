@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 from typing import Any
 from typing import Mapping
+from typing import Sequence
 
 
 @dataclass(slots=True)
@@ -26,7 +27,18 @@ class RunnerMetricOutcome:
 
     state: RunnerMetricState
     required_columns: tuple[str, ...] = ()
+    required_artifacts: tuple[str, ...] = ()
     message: str | None = None
+
+
+@dataclass(slots=True)
+class RunnerCompanionArtifact:
+    """Normalized non-tabular artifact exposed alongside CSV outputs."""
+
+    label: str
+    relative_path: str
+    kind: str | None = None
+    description: str | None = None
 
 
 @dataclass(slots=True)
@@ -45,6 +57,7 @@ class RunnerNormalizedBundle:
     runtime: RunnerRuntime = field(default_factory=RunnerRuntime)
     sample_records: list[dict[str, Any]] = field(default_factory=list)
     metric_outcomes: dict[str, RunnerMetricOutcome] = field(default_factory=dict)
+    companion_artifacts: list[RunnerCompanionArtifact] = field(default_factory=list)
 
 
 def merge_runner_runtime(*values: RunnerRuntime | None) -> RunnerRuntime:
@@ -82,7 +95,36 @@ def copy_metric_outcomes(
         copied[str(group_name)] = RunnerMetricOutcome(
             state=outcome.state,
             required_columns=tuple(outcome.required_columns),
+            required_artifacts=tuple(outcome.required_artifacts),
             message=outcome.message,
+        )
+    return copied
+
+
+def copy_companion_artifacts(
+    companion_artifacts: Sequence[RunnerCompanionArtifact] | None,
+) -> list[RunnerCompanionArtifact]:
+    """Copy normalized companion-artifact metadata into bundle-owned storage."""
+
+    copied: list[RunnerCompanionArtifact] = []
+    if companion_artifacts is None:
+        return copied
+
+    for artifact in companion_artifacts:
+        if not isinstance(artifact, RunnerCompanionArtifact):
+            raise TypeError(
+                "companion_artifacts values must be RunnerCompanionArtifact instances, "
+                f"got {type(artifact)!r}."
+            )
+        copied.append(
+            RunnerCompanionArtifact(
+                label=str(artifact.label),
+                relative_path=str(artifact.relative_path),
+                kind=None if artifact.kind is None else str(artifact.kind),
+                description=None
+                if artifact.description is None
+                else str(artifact.description),
+            )
         )
     return copied
 
@@ -156,6 +198,7 @@ class RunnerExecutionResult:
         runtime: RunnerRuntime | None = None,
         sample_records: list[dict[str, Any]] | None = None,
         metric_outcomes: Mapping[str, RunnerMetricOutcome] | None = None,
+        companion_artifacts: Sequence[RunnerCompanionArtifact] | None = None,
     ) -> None:
         self.runner_name = runner_name
         self.raw_output_dir = raw_output_dir
@@ -182,8 +225,13 @@ class RunnerExecutionResult:
             runtime=self.runtime,
             sample_records=list(self.sample_records),
             metric_outcomes=copy_metric_outcomes(metric_outcomes),
+            companion_artifacts=copy_companion_artifacts(companion_artifacts),
         )
 
     @property
     def metric_outcomes(self) -> dict[str, RunnerMetricOutcome]:
         return self.normalized_bundle.metric_outcomes
+
+    @property
+    def companion_artifacts(self) -> list[RunnerCompanionArtifact]:
+        return self.normalized_bundle.companion_artifacts

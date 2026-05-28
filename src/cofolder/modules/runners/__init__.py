@@ -13,6 +13,7 @@ import pkgutil
 
 from cofolder.modules.runners.base import BaseRunner, Runner, RunnerPreparation, RunnerRequest, RunnerResult
 from cofolder.modules.runners.contracts import (
+    RunnerCompanionArtifact,
     RunnerExecutionRequest,
     RunnerExecutionResult,
     RunnerMetricOutcome,
@@ -54,6 +55,7 @@ def get_runner(name: str) -> Runner:
 __all__ = [
     "Runner",
     "BaseRunner",
+    "RunnerCompanionArtifact",
     "RunnerExecutionRequest",
     "RunnerExecutionResult",
     "RunnerMetricOutcome",
