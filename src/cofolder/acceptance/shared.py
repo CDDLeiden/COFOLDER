@@ -14,7 +14,7 @@ from cofolder.modules.runners import get_runner
 
 PACKAGE_NAME = "cofolder.acceptance"
 DATA_PACKAGE = f"{PACKAGE_NAME}.data"
-SUPPORTED_BACKENDS = ("boltz1", "boltz2", "boltz-community")
+SUPPORTED_BACKENDS = ("boltz1", "boltz2", "boltz-community", "openfold3")
 AFFINITY_COLUMNS = (
     "affinity_pred_value",
     "affinity_probability_binary",
@@ -24,6 +24,36 @@ AFFINITY_COLUMNS = (
 )
 SCREEN_AFFINITY_COLUMNS = tuple(f"ligand_B__{column}" for column in AFFINITY_COLUMNS)
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
+_BACKEND_INSTALL_COMMANDS = {
+    "boltz1": 'pip install "cofolder[acceptance,boltz1]"',
+    "boltz2": 'pip install "cofolder[acceptance,boltz2]"',
+    "boltz-community": 'pip install "cofolder[acceptance,boltz-community]"',
+    "openfold3": 'python -m pip install -e ".[acceptance,openfold3]"',
+}
+_BACKEND_ORACLE_METRICS = {
+    "boltz1": "confidence_score",
+    "boltz2": "affinity_pred_value",
+    "boltz-community": "affinity_pred_value",
+    "openfold3": "sample_ranking_score",
+}
+_BACKEND_ORACLE_SCORING = {
+    "boltz1": ["confidence_metrics"],
+    "boltz2": ["affinity_metrics"],
+    "boltz-community": ["affinity_metrics"],
+    "openfold3": ["confidence_metrics"],
+}
+_BACKEND_ACCEPTANCE_SCORING = {
+    "boltz1": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "boltz2": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "boltz-community": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "openfold3": ["confidence_metrics"],
+}
+_BACKEND_OPTIONS_RESOURCES = {
+    "boltz1": "options_acceptance.yaml",
+    "boltz2": "options_acceptance.yaml",
+    "boltz-community": "options_acceptance.yaml",
+    "openfold3": "options_openfold3_acceptance.yaml",
+}
 
 
 @dataclass(frozen=True)
@@ -36,31 +66,38 @@ class AcceptanceInputs:
 
 def install_command_for_backend(runner: str) -> str:
     _validate_runner(runner)
-    return f'pip install "cofolder[acceptance,{runner}]"'
+    return _BACKEND_INSTALL_COMMANDS[runner]
 
 
 def oracle_metric_for_runner(runner: str) -> str:
-    if runner == "boltz1":
-        return "confidence_score"
-    return "affinity_pred_value"
+    _validate_runner(runner)
+    return _BACKEND_ORACLE_METRICS[runner]
 
 
 def oracle_scoring_functions_for_runner(runner: str) -> list[str]:
-    if runner == "boltz1":
-        return ["confidence_metrics"]
-    return ["affinity_metrics"]
+    _validate_runner(runner)
+    return list(_BACKEND_ORACLE_SCORING[runner])
 
 
 def scoring_functions_for_backend_acceptance(runner: str) -> list[str]:
     _validate_runner(runner)
-    return ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"]
+    return list(_BACKEND_ACCEPTANCE_SCORING[runner])
 
 
-def materialize_acceptance_inputs(target_dir: Path) -> AcceptanceInputs:
+def options_resource_for_backend(runner: str) -> str:
+    _validate_runner(runner)
+    return _BACKEND_OPTIONS_RESOURCES[runner]
+
+
+def materialize_acceptance_inputs(
+    target_dir: Path,
+    *,
+    options_resource: str = "options_acceptance.yaml",
+) -> AcceptanceInputs:
     target_dir.mkdir(parents=True, exist_ok=True)
     system_path = _write_package_file("system.yaml", target_dir / "system.yaml")
     system_screen_path = _write_package_file("system_screen.yaml", target_dir / "system_screen.yaml")
-    options_path = _write_package_file("options_acceptance.yaml", target_dir / "options_acceptance.yaml")
+    options_path = _write_package_file(options_resource, target_dir / "options_acceptance.yaml")
     ligand_csv_path = _write_package_file("ligand_screen.csv", target_dir / "ligand_screen.csv")
     return AcceptanceInputs(
         system_path=system_path,
@@ -100,7 +137,7 @@ def run_cli(
         raise RuntimeError(
             f"Command failed with exit code {completed.returncode}: {format_command(command)}\n"
             f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
-    )
+        )
     return completed
 
 
@@ -129,6 +166,22 @@ def assert_runner_available(runner: str) -> str:
             f"Expected a clean {runner} environment before running expensive acceptance cells. {detail}"
         )
     return message or f"Runner '{runner}' is available."
+
+
+def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None) -> str:
+    _validate_runner(runner)
+    if runner != "openfold3":
+        return f"Runner '{runner}' does not require additional setup."
+
+    from cofolder.modules.runners.openfold3_runner import check_openfold3_setup_ready
+
+    ready, message = check_openfold3_setup_ready(env)
+    if not ready:
+        detail = message or f"Runner '{runner}' setup is incomplete."
+        raise AssertionError(
+            f"Expected {runner} setup to be ready before running expensive acceptance cells. {detail}"
+        )
+    return message or f"Runner '{runner}' setup is ready."
 
 
 def build_validate_command(

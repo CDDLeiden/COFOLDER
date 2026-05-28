@@ -193,7 +193,8 @@ The merge step is implemented in `src/cofolder/modules/utils/gather.py`.
 
 ## Canonical CSV Expectations
 
-At minimum, the normalized CSVs should include these common columns:
+At minimum, the normalized CSVs should include these common columns. Treat them as the
+shared contract floor, not as the complete set of scores your backend may expose.
 
 ### `system_metrics.csv`
 
@@ -207,6 +208,9 @@ Optional runner-native metrics can then be added, for example:
 - `ptm`
 - `iptm`
 - `confidence_score`
+- `sample_ranking_score`
+- `avg_plddt`
+- `has_clash`
 
 ### `chain_metrics.csv`
 
@@ -229,6 +233,70 @@ If your runner supports affinity outputs, add the normalized chain-level columns
 - `pIC50`
 - `IC50_M`
 - `pIC50_kcal_per_mol`
+
+Backend-native chain metrics that are not part of the shared minimum contract may also
+be added explicitly, for example `chain_pair_iptm_A_B`.
+
+## Score Semantics
+
+The normalized CSV contract is intentionally conservative:
+
+- Canonical columns are the minimum shared interface that downstream COFOLDER code may rely on.
+- Backend-native extra columns are encouraged when they preserve useful meaning that does not fit an existing canonical column.
+- Alias mapping into a canonical column is only acceptable when the backend-native field is truly semantically equivalent.
+
+Current guidance for confidence-like outputs:
+
+- Shared validation is intentionally backend-agnostic for `confidence_metrics`. If your runner returns an explicit `confidence_metrics` outcome, shared code treats that outcome as authoritative instead of enforcing backend-specific confidence column names or counts.
+- This means each `x_runner.py` owns its own confidence completeness rules, confidence naming, and any decision to preserve backend-native confidence fields as scalar columns or companion artifacts.
+- If your runner declares `required_columns` or `required_artifacts` on `confidence_metrics`, keep those references aligned with the actual normalized bundle so contradictory outputs still fail fast.
+- Alias mapping into a canonical confidence column is still only acceptable when the backend-native field is truly semantically equivalent. If it is not, keep the backend-native score explicit rather than inventing equivalence.
+- OpenFold3 is a motivating example: fields such as `sample_ranking_score`, `avg_plddt`, `gpde`, `chain_pair_iptm_*`, and `bespoke_iptm_*` should remain runner-owned confidence outputs unless the runner can honestly justify a narrower alias.
+
+This distinction matters because COFOLDER treats validation metrics, model-derived confidence
+metrics, and affinity-related outputs as different concepts.
+
+## Companion Artifacts
+
+Some confidence outputs are not scalar CSV values. Per-atom or pairwise arrays such as
+`plddt`, `pae`, or `pde` should be preserved as normalized companion artifacts instead of
+being silently dropped or squeezed into a scalar column.
+
+For backends such as OpenFold3, these companion artifacts may be part of the
+runner's `confidence_metrics` surface rather than optional debugging extras. Shared
+validation only verifies that declared companion artifacts are well-formed and exist
+inside `normalized/`; the runner decides which of them belong to confidence semantics.
+By contrast, runtime or provenance files such as `timing.json` remain runtime metadata
+and should not be modeled as confidence artifacts unless the backend has a separate,
+explicit reason to expose them that way.
+
+Recommended pattern:
+
+- place non-tabular artifacts under `normalized/artifacts/`
+- reference them in `manifest.json` under `companion_artifacts`
+- return the same metadata through `RunnerExecutionResult(companion_artifacts=[...])`
+
+Each companion artifact entry should include:
+
+- `label`: stable backend-facing name such as `pae` or `plddt`
+- `relative_path`: path relative to `normalized/`
+- optional `kind`: short shape hint such as `matrix` or `per_atom`
+- optional `description`: concise human-readable explanation
+
+Example manifest fragment:
+
+```json
+{
+  "companion_artifacts": [
+    {
+      "label": "pae",
+      "relative_path": "artifacts/pae.npy",
+      "kind": "matrix",
+      "description": "Predicted aligned error matrix."
+    }
+  ]
+}
+```
 
 ## Capabilities
 
@@ -291,7 +359,7 @@ class MyRunner(BaseRunner):
 
         # 1. Run your backend here.
         # 2. Copy normalized structure files into normalized/structures/.
-        # 3. Build canonical CSVs.
+        # 3. Build canonical CSVs and preserve any backend-native extras.
         structure_name = f"{request.repeat}_{request.system_name}_model_0.cif"
         (structures_dir / structure_name).write_text("data_demo", encoding="utf-8")
 
@@ -360,7 +428,15 @@ class MyRunner(BaseRunner):
             runtime=RunnerRuntime(diffusion_samples=1),
             sample_records=sample_records,
             metric_outcomes={
-                "confidence_metrics": RunnerMetricOutcome(state="computed"),
+                "confidence_metrics": RunnerMetricOutcome(
+                    state="computed",
+                    required_columns=(
+                        "system_metrics.ptm",
+                        "system_metrics.iptm",
+                        "system_metrics.confidence_score",
+                        "chain_metrics.chains_ptm",
+                    ),
+                ),
             },
         )
 
@@ -404,6 +480,8 @@ The existing runner tests are good templates:
 
 - Prefer normalizing backend-specific output inside the runner, not in `validate`.
 - Keep raw backend artifacts inside the runner-owned repeat directory and expose them through `manifest.json`.
+- Keep normalized companion artifacts under `normalized/` and declare them consistently in both the manifest and `RunnerExecutionResult`.
+- If you declare runner-authored `required_columns` or `required_artifacts`, make sure they point only to payload entries that actually exist in the normalized bundle.
 - If your backend does not support a metric group, do not fake support. Let COFOLDER handle the warning and empty-column behavior.
 - If your backend line has version-specific behavior, encode that directly in `check_availability()`, as the current Boltz runners do.
 

@@ -1,0 +1,4 @@
+cache_path: ./cache/.openfold3
+samples_per_seed: 1
+extra_args:
+  - --use-msa-server=False

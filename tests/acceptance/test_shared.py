@@ -18,6 +18,10 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) ->
 class TestInstallAndRunnerSelection:
     def test_install_command_for_backend(self):
         assert shared.install_command_for_backend("boltz2") == 'pip install "cofolder[acceptance,boltz2]"'
+        assert (
+            shared.install_command_for_backend("openfold3")
+            == 'python -m pip install -e ".[acceptance,openfold3]"'
+        )
 
     @pytest.mark.parametrize(
         ("runner", "metric", "groups"),
@@ -25,6 +29,7 @@ class TestInstallAndRunnerSelection:
             ("boltz1", "confidence_score", ["confidence_metrics"]),
             ("boltz2", "affinity_pred_value", ["affinity_metrics"]),
             ("boltz-community", "affinity_pred_value", ["affinity_metrics"]),
+            ("openfold3", "sample_ranking_score", ["confidence_metrics"]),
         ],
     )
     def test_oracle_runner_settings(self, runner: str, metric: str, groups: list[str]):
@@ -53,6 +58,25 @@ class TestInstallAndRunnerSelection:
 
         with pytest.raises(AssertionError, match="clean boltz1 environment"):
             shared.assert_runner_available("boltz1")
+
+    def test_assert_runner_setup_ready_uses_openfold3_specific_preflight(self, monkeypatch):
+        monkeypatch.setattr(
+            "cofolder.modules.runners.openfold3_runner.check_openfold3_setup_ready",
+            lambda env=None: (True, "setup ready"),
+        )
+
+        message = shared.assert_runner_setup_ready("openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"})
+
+        assert message == "setup ready"
+
+    def test_assert_runner_setup_ready_surfaces_openfold3_preflight_failure(self, monkeypatch):
+        monkeypatch.setattr(
+            "cofolder.modules.runners.openfold3_runner.check_openfold3_setup_ready",
+            lambda env=None: (False, "run setup first"),
+        )
+
+        with pytest.raises(AssertionError, match="run setup first"):
+            shared.assert_runner_setup_ready("openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"})
 
 
 class TestCommandBuilders:
@@ -118,6 +142,17 @@ class TestFixtureMaterialization:
         assert inputs.options_path.exists()
         assert inputs.ligand_csv_path.exists()
         assert "diffusion_samples: 1" in inputs.options_path.read_text(encoding="utf-8")
+
+    def test_materialize_acceptance_inputs_supports_openfold3_options_fixture(self, temp_dir):
+        inputs = shared.materialize_acceptance_inputs(
+            temp_dir / "fixtures-openfold3",
+            options_resource=shared.options_resource_for_backend("openfold3"),
+        )
+
+        assert inputs.options_path.exists()
+        text = inputs.options_path.read_text(encoding="utf-8")
+        assert "cache_path: ./cache/.openfold3" in text
+        assert "--use-msa-server=False" in text
 
     def test_reset_work_dir_recreates_clean_directory(self, temp_dir):
         work_dir = temp_dir / "workspace"

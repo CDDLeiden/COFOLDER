@@ -38,7 +38,32 @@ pip install -e ".[boltz2]"
 
 # Boltz Community runner
 pip install -e ".[boltz-community]"
+
+# OpenFold3 runner
+pip install -e ".[openfold3]"
 ```
+
+The integrated `openfold3` runner still has a second setup step after installation because the upstream model cache, checkpoints, and CCD need to be prepared:
+
+```bash
+# Install the COFOLDER package with the OpenFold3 backend extra
+pip install -e ".[openfold3]"
+
+# Prepare the upstream cache, parameters, and CCD in the standard location
+scripts/setup_openfold3.sh
+```
+
+Notes for OpenFold3:
+
+- The COFOLDER `openfold3` extra installs the upstream `openfold3` package.
+- `scripts/setup_openfold3.sh` defaults `OPENFOLD_CACHE` to `~/.openfold3`, which matches the upstream standard cache location.
+- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions and selects parameter download choice `1` by default so the ambiguous interactive default is removed.
+- `scripts/setup_openfold3.sh` answers the upstream integration-test prompt with `no` by default so bootstrap does not hang in an unexpected interactive test path. If you intentionally want those tests, run `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh`.
+- If you want all published checkpoints instead of the default checkpoint only, run `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh`.
+- If you want a different cache root, set `OPENFOLD_CACHE` before running the setup script, for example `OPENFOLD_CACHE=/scratch/$USER/.openfold3 scripts/setup_openfold3.sh`.
+- Upstream docs note that first inference can also download default model parameters into `$HOME/.openfold3`, but this project prefers the explicit setup script so readiness is established before prediction runs.
+- The current OpenFold3 integration is confidence-only: it exposes OpenFold3-native confidence outputs and keeps affinity groups unsupported unless a future code change intentionally widens that capability.
+- For clean-install manual acceptance in a fresh environment, see the [Backend Acceptance Tutorial](../tutorials/backend-acceptance.md).
 
 For clean-install backend acceptance in fresh environments, see the [Backend Acceptance Tutorial](../tutorials/backend-acceptance.md).
 
@@ -127,6 +152,13 @@ Add the backend extra you need in the same environment, for example:
 
 ```bash
 pip install -e ".[boltz2]"
+```
+
+If you are developing against OpenFold3 instead, keep the same development environment and install the matching COFOLDER backend extra plus the setup script:
+
+```bash
+pip install -e ".[openfold3]"
+scripts/setup_openfold3.sh
 ```
 
 ## Troubleshooting

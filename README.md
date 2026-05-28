@@ -23,6 +23,7 @@ COFOLDER itself requires Python 3.11+. The current built-in backend extras split
 - `boltz1`: packaged for Python `<3.13`
 - `boltz2`: packaged for Python `<3.13`
 - `boltz-community`: installed from Git and not currently version-gated in `pyproject.toml`
+- `openfold3`: installs the upstream `openfold3` package through a COFOLDER extra
 
 ### Backend-Agnostic Base Install
 If you only want the base COFOLDER package without a backend:
@@ -35,7 +36,18 @@ This installs COFOLDER without a co-folding backend. On Python 3.11 or 3.12, you
 pip install -e ".[boltz2]"
 ```
 
-Available backend extras are `boltz1`, `boltz2`, and `boltz-community`.
+Available backend extras are `boltz1`, `boltz2`, `boltz-community`, and `openfold3`.
+
+COFOLDER also includes an integrated `openfold3` runner. Install it through the project extra, then prepare the standard OpenFold3 cache before first use:
+
+```bash
+pip install -e ".[openfold3]"
+scripts/setup_openfold3.sh
+```
+
+The setup script defaults `OPENFOLD_CACHE` to `~/.openfold3`, feeds that path explicitly into the upstream setup prompts, selects download choice `1` by default so the interactive checkpoint menu is no longer ambiguous, and answers the upstream integration-test prompt with `no` unless you opt in. Set `OPENFOLD_CACHE` first if you need that cache somewhere else, set `OPENFOLD3_PARAMETER_CHOICE=2` if you want the wrapper to request all published checkpoints instead, or set `OPENFOLD3_RUN_INTEGRATION_TESTS=yes` if you intentionally want the upstream integration tests to run. Upstream docs also note that first inference can download default model parameters automatically, but this repository prefers the explicit setup script so the environment is prepared before OpenFold3 runs.
+
+This OpenFold3 path is confidence-only in the current integration surface. It does not imply that structural-confidence outputs are affinity metrics or binding-affinity proxies.
 
 ### Backend Notes
 - **Default backend**: `boltz2`
@@ -45,6 +57,12 @@ Available backend extras are `boltz1`, `boltz2`, and `boltz-community`.
   - `boltz2`: Python `<3.13`
   - `boltz-community`: no Python version marker currently declared in `pyproject.toml`
 - **Other backends**: possible, but require backend-specific runners and integration work before COFOLDER commands can use them
+- **Integrated OpenFold3 runner**: available through the `openfold3` COFOLDER extra, with a follow-up cache/bootstrap step via `scripts/setup_openfold3.sh`
+
+For full backend-specific setup details and the manual fresh-environment validation lane, see:
+
+- [docs/getting-started/installation.md](docs/getting-started/installation.md)
+- [docs/tutorials/backend-acceptance.md](docs/tutorials/backend-acceptance.md)
 
 ### Optional: Bias-Assessment Setup (MMseqs2)
 For protein sequence-similarity bias metrics, install `mmseqs2` in the same environment where you run `cofolder`:
@@ -136,6 +154,7 @@ src/cofolder/
 │   │   ├── boltz_community_runner.py
 │   │   ├── boltz_runner.py
 │   │   ├── contracts.py
+│   │   ├── openfold3_runner.py
 │   │   └── validators.py
 │   └── utils/
 │       ├── gather.py
@@ -148,6 +167,7 @@ src/cofolder/
 scripts/
 ├── fetch_bias_training_data.py
 ├── build_bias_training_data.py
+├── setup_openfold3.sh
 ├── install_mmseqs_vendor.sh
 └── fetch_bias_training_data_tmp_mmseqs_env.sh
 
