@@ -60,12 +60,13 @@ def test_get_runner_raises_with_available_names(monkeypatch):
         get_runner("missing")
 
 
-def test_discover_real_runners_include_boltz1_boltz2_and_boltz_community():
+def test_discover_real_runners_include_boltz_family_and_openfold3():
     runners = discover_runners()
 
     assert "boltz1" in runners
     assert "boltz2" in runners
     assert "boltz-community" in runners
+    assert "openfold3" in runners
 
 
 def test_runner_module_keeps_legacy_aliases_as_compatibility_exports():

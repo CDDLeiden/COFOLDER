@@ -5,6 +5,8 @@ __pycache__/
 # Local test and packaging artifacts present in this checkout
 .pytest_cache/
 *.egg-info/
+.openfold3-cache/
+__marimo__/
 
 # Local BMAD and agent artifacts present in this checkout
 .agents/
