@@ -77,7 +77,13 @@ def _make_request(temp_dir: Path, *, system_obj: System, samples_per_seed: int =
     )
 
 
-def _write_openfold3_sample_outputs(output_dir: Path, *, system_name: str, seed: int) -> None:
+def _write_openfold3_sample_outputs(
+    output_dir: Path,
+    *,
+    system_name: str,
+    seed: int,
+    pair_map_style: str = "nested",
+) -> None:
     seed_dir = output_dir / system_name / f"seed_{seed}"
     seed_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,6 +100,25 @@ def _write_openfold3_sample_outputs(output_dir: Path, *, system_name: str, seed:
             ),
             encoding="utf-8",
         )
+        if pair_map_style == "nested":
+            chain_pair_iptm = {
+                "A": {"A": 0.91, "B": 0.61},
+                "B": {"A": 0.61, "B": 0.88},
+            }
+            bespoke_iptm = {
+                "A": {"B": 0.58},
+                "B": {"A": 0.58},
+            }
+        elif pair_map_style == "tuple_keys":
+            chain_pair_iptm = {
+                "(A, B)": 0.61,
+            }
+            bespoke_iptm = {
+                "(A, B)": 0.58,
+            }
+        else:
+            raise ValueError(f"Unsupported pair_map_style {pair_map_style!r}")
+
         (seed_dir / f"{prefix}_confidences_aggregated.json").write_text(
             json.dumps(
                 {
@@ -105,14 +130,8 @@ def _write_openfold3_sample_outputs(output_dir: Path, *, system_name: str, seed:
                     "has_clash": 0.0,
                     "sample_ranking_score": 0.83,
                     "chain_ptm": {"A": 0.85, "B": 0.65},
-                    "chain_pair_iptm": {
-                        "A": {"A": 0.91, "B": 0.61},
-                        "B": {"A": 0.61, "B": 0.88},
-                    },
-                    "bespoke_iptm": {
-                        "A": {"B": 0.58},
-                        "B": {"A": 0.58},
-                    },
+                    "chain_pair_iptm": chain_pair_iptm,
+                    "bespoke_iptm": bespoke_iptm,
                 }
             ),
             encoding="utf-8",
@@ -294,6 +313,41 @@ def test_openfold3_runner_uses_ccd_codes_when_smiles_is_absent(monkeypatch, temp
     assert result.runtime.model_name == "openfold3"
     assert result.runtime.cache_path == "/tmp/openfold3-cache"
     assert result.diffusion_samples == 2
+
+
+def test_openfold3_runner_accepts_tuple_key_pair_confidence_maps(
+    monkeypatch,
+    temp_dir,
+):
+    runner = OpenFold3Runner()
+    request = _make_request(temp_dir, system_obj=_make_system(smiles="CCO", ccd="ETH"))
+
+    def _fake_run_openfold3(*, query_json_path, runner_yaml_path, output_dir, diffusion_samples, options, timings, label_prefix):
+        _write_openfold3_sample_outputs(
+            output_dir,
+            system_name="system",
+            seed=123,
+            pair_map_style="tuple_keys",
+        )
+
+    monkeypatch.setattr(
+        "cofolder.modules.runners.openfold3_runner.run_openfold3",
+        _fake_run_openfold3,
+    )
+
+    result = runner.run(request)
+    bundle = validate_runner_bundle(
+        result,
+        requested_metric_groups={"confidence_metrics"},
+    )
+    chain_df = pd.read_csv(result.chain_metrics_path)
+
+    assert result.metric_outcomes["confidence_metrics"].state == "computed"
+    assert "chain_pair_iptm_A_B" in chain_df.columns
+    assert "bespoke_iptm_A_B" in chain_df.columns
+    assert chain_df["chain_pair_iptm_A_B"].dropna().tolist() == [0.61, 0.61]
+    assert chain_df["bespoke_iptm_A_B"].dropna().tolist() == [0.58, 0.58]
+    assert bundle.metric_outcomes["confidence_metrics"].state == "computed"
 
 
 def test_openfold3_runner_marks_confidence_failed_when_any_sample_is_incomplete(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import logging
@@ -586,8 +587,12 @@ class OpenFold3Runner(BaseRunner):
                 )
 
             chain_ptm = aggregated.get("chain_ptm") or {}
-            chain_pair_iptm = aggregated.get("chain_pair_iptm") or {}
-            bespoke_iptm = aggregated.get("bespoke_iptm") or {}
+            chain_pair_iptm = self._normalize_pair_confidence_map(
+                aggregated.get("chain_pair_iptm"),
+            )
+            bespoke_iptm = self._normalize_pair_confidence_map(
+                aggregated.get("bespoke_iptm"),
+            )
             if not chain_ptm:
                 confidence_issues.append(
                     f"sample {sample_number} is missing chain_ptm values"
@@ -740,6 +745,55 @@ class OpenFold3Runner(BaseRunner):
             elif ids is not None:
                 chain_ids.append(str(ids))
         return chain_ids
+
+    @staticmethod
+    def _normalize_pair_confidence_map(raw_value: Any) -> dict[str, dict[str, Any]]:
+        if not isinstance(raw_value, dict):
+            return {}
+
+        normalized: dict[str, dict[str, Any]] = {}
+        for raw_key, raw_entry in raw_value.items():
+            if isinstance(raw_entry, dict):
+                source_chain = str(raw_key)
+                row = normalized.setdefault(source_chain, {})
+                for other_chain, value in raw_entry.items():
+                    row[str(other_chain)] = value
+                continue
+
+            pair = OpenFold3Runner._parse_pair_confidence_key(raw_key)
+            if pair is None:
+                continue
+            source_chain, other_chain = pair
+            normalized.setdefault(source_chain, {})[other_chain] = raw_entry
+
+        return normalized
+
+    @staticmethod
+    def _parse_pair_confidence_key(raw_key: Any) -> tuple[str, str] | None:
+        if isinstance(raw_key, (tuple, list)) and len(raw_key) == 2:
+            return str(raw_key[0]), str(raw_key[1])
+        if not isinstance(raw_key, str):
+            return None
+
+        stripped = raw_key.strip()
+        if not stripped:
+            return None
+
+        tuple_match = re.fullmatch(
+            r"\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)",
+            stripped,
+        )
+        if tuple_match:
+            return tuple_match.group(1), tuple_match.group(2)
+
+        try:
+            parsed = ast.literal_eval(stripped)
+        except (SyntaxError, ValueError):
+            return None
+
+        if isinstance(parsed, (tuple, list)) and len(parsed) == 2:
+            return str(parsed[0]), str(parsed[1])
+        return None
 
 
 RUNNER = OpenFold3Runner()
