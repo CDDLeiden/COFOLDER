@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import pickle
 import re
+import importlib
 
 # Third-party libraries
 import numpy as np
@@ -17,10 +18,31 @@ from Bio.PDB import MMCIFParser
 from Bio.PDB.SASA import ShrakeRupley
 import MDAnalysis as mda
 import prolif as plf
-from pdb2pqr.main import run_pdb2pqr
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _run_pdb2pqr(args: list[str]) -> None:
+    """Run pdb2pqr across the supported programmatic APIs."""
+    module = importlib.import_module("pdb2pqr.main")
+
+    legacy_runner = getattr(module, "run_pdb2pqr", None)
+    if legacy_runner is not None:
+        legacy_runner(args)
+        return
+
+    parser_factory = getattr(module, "build_main_parser", None)
+    main_driver = getattr(module, "main_driver", None)
+    if parser_factory is None or main_driver is None:
+        raise ImportError(
+            "Unable to locate a supported pdb2pqr programmatic entrypoint. "
+            "Expected either 'run_pdb2pqr' or the 'build_main_parser'/'main_driver' pair."
+        )
+
+    parser = parser_factory()
+    namespace = parser.parse_args(args)
+    main_driver(namespace)
 
 
 class Structure:
@@ -512,7 +534,7 @@ class Structure:
             "--with-ph", str(ph),
             "--pdb-output", str(output_pdb),
         ]
-        run_pdb2pqr(args)
+        _run_pdb2pqr(args)
         return output_pdb        
 
     def _remove_overbonding_hydrogens(self, u_protein):

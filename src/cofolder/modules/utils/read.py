@@ -49,7 +49,8 @@ def read_csv(path, columns):
 def read_json(path):
     """Read and parse a JSON file.
 
-    Loads a JSON file and logs its contents for debugging purposes.
+    Loads a JSON file and logs its presence at INFO level.
+    Full contents are logged only at DEBUG level.
 
     Parameters
     ----------
@@ -76,13 +77,14 @@ def read_json(path):
     try:
         with open(path, "r") as file:
             data = json.load(file)
-            logging.info("%s loaded successfully. Contents:", path)
+            logging.info("%s loaded successfully.", path)
 
             if isinstance(data, dict):
+                logger.debug("%s contents:", path)
                 for key, value in data.items():
-                    logging.info("\t%s: %s", key, value)
+                    logger.debug("\t%s: %s", key, value)
             else:
-                logging.info("\t<Non-dict JSON root of type %s>", type(data).__name__)
+                logger.debug("\t<Non-dict JSON root of type %s>", type(data).__name__)
 
             return data
 
