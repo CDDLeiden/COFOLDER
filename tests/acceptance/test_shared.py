@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cofolder.acceptance import shared
+from cofolder.modules.runners.openfold3_runner import OpenFold3Runner
 
 
 def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
@@ -77,6 +78,72 @@ class TestInstallAndRunnerSelection:
 
         with pytest.raises(AssertionError, match="run setup first"):
             shared.assert_runner_setup_ready("openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"})
+
+
+class TestOpenFold3NotebookCacheHelpers:
+    def test_resolve_openfold3_notebook_cache_prefers_environment_default(self):
+        cache = shared.resolve_openfold3_notebook_cache(
+            env={"OPENFOLD_CACHE": "/tmp/openfold3-cache"},
+            override="/tmp/openfold3-cache",
+        )
+
+        assert cache.configured_cache == Path("/tmp/openfold3-cache")
+        assert cache.source == "environment default"
+        assert cache.env["OPENFOLD_CACHE"] == "/tmp/openfold3-cache"
+
+    def test_resolve_openfold3_notebook_cache_starts_unconfigured_when_empty(self):
+        cache = shared.resolve_openfold3_notebook_cache(
+            env={},
+            override="",
+        )
+
+        assert cache.configured_cache is None
+        assert cache.source == "not configured"
+        assert "OPENFOLD_CACHE" not in cache.env
+
+        status = shared.inspect_openfold3_notebook_setup(cache)
+
+        assert status.ready is False
+        assert "No OpenFold3 cache path is configured" in status.message
+
+    def test_resolve_openfold3_notebook_cache_allows_manual_override(self):
+        cache = shared.resolve_openfold3_notebook_cache(
+            env={"OPENFOLD_CACHE": "/tmp/original-cache"},
+            override="/tmp/override-cache",
+        )
+
+        assert cache.configured_cache == Path("/tmp/override-cache")
+        assert cache.source == "manual notebook override"
+        assert cache.env["OPENFOLD_CACHE"] == "/tmp/override-cache"
+
+    def test_resolve_openfold3_notebook_cache_normalizes_relative_paths(self, monkeypatch, temp_dir):
+        monkeypatch.chdir(temp_dir)
+
+        cache = shared.resolve_openfold3_notebook_cache(
+            env={},
+            override="./relative-cache",
+        )
+
+        expected = (temp_dir / "relative-cache").resolve()
+        assert cache.configured_cache == expected
+        assert cache.env["OPENFOLD_CACHE"] == str(expected)
+
+    def test_inspect_openfold3_notebook_setup_surfaces_unprepared_cache(self, monkeypatch):
+        monkeypatch.setattr(
+            shared,
+            "assert_runner_setup_ready",
+            lambda runner, env=None: (_ for _ in ()).throw(AssertionError("run setup first")),
+        )
+        cache = shared.resolve_openfold3_notebook_cache(
+            env={},
+            override="/tmp/unprepared-cache",
+        )
+
+        status = shared.inspect_openfold3_notebook_setup(cache)
+
+        assert status.ready is False
+        assert status.cache.env["OPENFOLD_CACHE"] == "/tmp/unprepared-cache"
+        assert "run setup first" in status.message
 
 
 class TestCommandBuilders:
@@ -153,6 +220,20 @@ class TestFixtureMaterialization:
         text = inputs.options_path.read_text(encoding="utf-8")
         assert "cache_path: ./cache/.openfold3" in text
         assert "--use-msa-server=False" in text
+
+    def test_rewrite_openfold3_options_cache_path_keeps_fixture_truthful(self, temp_dir):
+        inputs = shared.materialize_acceptance_inputs(
+            temp_dir / "fixtures-openfold3",
+            options_resource=shared.options_resource_for_backend("openfold3"),
+        )
+
+        selected_cache = (temp_dir / "selected-cache").resolve()
+        shared.rewrite_openfold3_options_cache_path(inputs.options_path, selected_cache)
+
+        text = inputs.options_path.read_text(encoding="utf-8")
+        assert f"cache_path: {selected_cache}" in text
+        assert "--use-msa-server=False" in text
+        assert OpenFold3Runner().load_options(inputs.options_path).cache_path == str(selected_cache)
 
     def test_reset_work_dir_recreates_clean_directory(self, temp_dir):
         work_dir = temp_dir / "workspace"

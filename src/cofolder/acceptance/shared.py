@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import os
 import shlex
 import shutil
 import subprocess
@@ -8,6 +9,9 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 from typing import Iterable
+from typing import Mapping
+
+import yaml
 
 from cofolder.modules.runners import get_runner
 
@@ -62,6 +66,20 @@ class AcceptanceInputs:
     system_screen_path: Path
     options_path: Path
     ligand_csv_path: Path
+
+
+@dataclass(frozen=True)
+class OpenFold3NotebookCacheConfig:
+    configured_cache: Path | None
+    source: str
+    env: dict[str, str]
+
+
+@dataclass(frozen=True)
+class OpenFold3NotebookSetupStatus:
+    cache: OpenFold3NotebookCacheConfig
+    ready: bool
+    message: str
 
 
 def install_command_for_backend(runner: str) -> str:
@@ -184,6 +202,78 @@ def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None)
     return message or f"Runner '{runner}' setup is ready."
 
 
+def resolve_openfold3_notebook_cache(
+    *,
+    env: Mapping[str, str] | None = None,
+    override: str | None = None,
+) -> OpenFold3NotebookCacheConfig:
+    base_env = dict(os.environ if env is None else env)
+    env_default = base_env.get("OPENFOLD_CACHE", "").strip()
+    requested = (override or "").strip()
+
+    if not requested:
+        base_env.pop("OPENFOLD_CACHE", None)
+        return OpenFold3NotebookCacheConfig(
+            configured_cache=None,
+            source="not configured",
+            env=base_env,
+        )
+
+    configured_cache = _resolve_notebook_path(requested)
+    base_env["OPENFOLD_CACHE"] = str(configured_cache)
+    source = (
+        "environment default"
+        if env_default and configured_cache == _resolve_notebook_path(env_default)
+        else "manual notebook override"
+    )
+    return OpenFold3NotebookCacheConfig(
+        configured_cache=configured_cache,
+        source=source,
+        env=base_env,
+    )
+
+
+def inspect_openfold3_notebook_setup(
+    cache_config: OpenFold3NotebookCacheConfig,
+) -> OpenFold3NotebookSetupStatus:
+    if cache_config.configured_cache is None:
+        return OpenFold3NotebookSetupStatus(
+            cache=cache_config,
+            ready=False,
+            message=(
+                "No OpenFold3 cache path is configured for this notebook session. "
+                "Set `OPENFOLD_CACHE` before launching Marimo or enter a cache path below."
+            ),
+        )
+
+    try:
+        message = assert_runner_setup_ready("openfold3", env=cache_config.env)
+    except AssertionError as exc:
+        return OpenFold3NotebookSetupStatus(
+            cache=cache_config,
+            ready=False,
+            message=str(exc),
+        )
+    return OpenFold3NotebookSetupStatus(
+        cache=cache_config,
+        ready=True,
+        message=message,
+    )
+
+
+def rewrite_openfold3_options_cache_path(options_path: Path, cache_path: Path) -> None:
+    settings = yaml.safe_load(options_path.read_text(encoding="utf-8"))
+    if not isinstance(settings, dict):
+        raise AssertionError(
+            f"Expected a mapping in {options_path}, but found {type(settings)!r}."
+        )
+    settings["cache_path"] = str(cache_path)
+    options_path.write_text(
+        yaml.safe_dump(settings, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def build_validate_command(
     *,
     runner: str,
@@ -209,6 +299,13 @@ def build_validate_command(
         "--scoring_functions",
         *scoring_functions,
     ]
+
+
+def _resolve_notebook_path(raw_path: str) -> Path:
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = (Path.cwd() / path).resolve()
+    return path
 
 
 def build_screen_command(

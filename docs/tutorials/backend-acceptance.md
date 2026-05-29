@@ -143,7 +143,9 @@ Each notebook opens safely by default:
 - the packaged options file is rewritten per run so the backend cache points into that run's temporary workspace
 - command output streams live to the notebook console while the command runs
 
-For `openfold3`, the notebook uses a dedicated OpenFold3 options fixture and points `OPENFOLD_CACHE` at a notebook-local path, but you still need to run `scripts/setup_openfold3.sh` against that path before triggering the expensive workflow cells.
+For `openfold3`, the notebook uses a dedicated OpenFold3 options fixture and now requires an explicit cache path. Set `OPENFOLD_CACHE` before launching `marimo`, or enter the cache path in the notebook setup field before enabling any expensive workflow cell. The notebook will block `validate`, `screen`, and `oracle` until the selected cache path is setup-ready.
+
+Changing `OPENFOLD_CACHE` in your shell after `marimo` has already started does not update the running notebook session; restart `marimo` or use the notebook cache-path override field.
 
 ## What The Notebooks Exercise
 

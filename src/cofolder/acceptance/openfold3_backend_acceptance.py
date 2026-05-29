@@ -14,7 +14,6 @@ def _():
     import marimo as mo
 
     from cofolder.acceptance.shared import (
-        assert_runner_setup_ready,
         assert_csv_columns_have_values,
         assert_file_exists,
         assert_runner_available,
@@ -23,11 +22,14 @@ def _():
         build_validate_command,
         format_command,
         install_command_for_backend,
+        inspect_openfold3_notebook_setup,
         materialize_acceptance_inputs,
         options_resource_for_backend,
         oracle_metric_for_runner,
         oracle_scoring_functions_for_runner,
         reset_work_dir,
+        resolve_openfold3_notebook_cache,
+        rewrite_openfold3_options_cache_path,
         scoring_functions_for_backend_acceptance,
     )
 
@@ -69,12 +71,12 @@ def _():
         assert_csv_columns_have_values,
         assert_file_exists,
         assert_runner_available,
-        assert_runner_setup_ready,
         build_oracle_command,
         build_screen_command,
         build_validate_command,
         format_command,
         install_command_for_backend,
+        inspect_openfold3_notebook_setup,
         materialize_acceptance_inputs,
         mo,
         options_resource_for_backend,
@@ -82,6 +84,8 @@ def _():
         oracle_scoring_functions_for_runner,
         os,
         reset_work_dir,
+        resolve_openfold3_notebook_cache,
+        rewrite_openfold3_options_cache_path,
         scoring_functions_for_backend_acceptance,
         stream_cli_in_notebook,
         tempfile,
@@ -102,7 +106,7 @@ def _(mo):
     This is a dedicated OpenFold3 lane. Before running the expensive cells:
 
     - prepare the OpenFold3 cache and model data with `scripts/setup_openfold3.sh`
-    - keep `OPENFOLD_CACHE` pointed at a deliberate location for this environment when you want something other than the standard `~/.openfold3`
+    - launch this notebook with `OPENFOLD_CACHE` already set, or enter the cache path in the notebook before enabling any expensive step
     - treat this lane as confidence-only: it requests `confidence_metrics`, not affinity groups
     - keep MSA/template experiments separate unless you are deliberately testing them
 
@@ -112,6 +116,104 @@ def _(mo):
     - the final captured output is also shown in the rendered notebook output after completion
     """)
     return
+
+
+@app.cell
+def _(
+    Path,
+    assert_runner_available,
+    install_command_for_backend,
+    materialize_acceptance_inputs,
+    options_resource_for_backend,
+    os,
+    tempfile,
+):
+    runner = "openfold3"
+    workspace = Path(tempfile.mkdtemp(prefix="cofolder-openfold3-acceptance-"))
+    fixtures = materialize_acceptance_inputs(
+        workspace / "fixtures",
+        options_resource=options_resource_for_backend(runner),
+    )
+    cache_path_default = os.environ.get("OPENFOLD_CACHE", "").strip()
+    install_command = install_command_for_backend(runner)
+    availability_message = assert_runner_available(runner)
+    return (
+        availability_message,
+        cache_path_default,
+        fixtures,
+        install_command,
+        runner,
+        workspace,
+    )
+
+
+@app.cell
+def _(cache_path_default, mo):
+    cache_path_input = mo.ui.text(
+        value=cache_path_default,
+        placeholder="/absolute/path/to/.openfold3-cache",
+        label="OpenFold3 cache root",
+        full_width=True,
+    )
+    cache_path_input
+    return (cache_path_input,)
+
+
+@app.cell
+def _(
+    availability_message,
+    cache_path_input,
+    fixtures,
+    install_command,
+    inspect_openfold3_notebook_setup,
+    mo,
+    os,
+    resolve_openfold3_notebook_cache,
+    rewrite_openfold3_options_cache_path,
+):
+    cache_config = resolve_openfold3_notebook_cache(
+        env=os.environ,
+        override=cache_path_input.value,
+    )
+    setup_status = inspect_openfold3_notebook_setup(cache_config)
+    env = cache_config.env
+    openfold_cache = cache_config.configured_cache
+    cache_source = cache_config.source
+    setup_ready = setup_status.ready
+    setup_message = setup_status.message
+    openfold_cache_display = str(openfold_cache) if openfold_cache is not None else "(not configured)"
+    export_target = openfold_cache_display if openfold_cache is not None else "$PWD/.openfold3-cache"
+    if openfold_cache is not None:
+        rewrite_openfold3_options_cache_path(
+            fixtures.options_path,
+            openfold_cache,
+        )
+    mo.md(f"""
+    **Verified install command:** `{install_command}`
+
+    **Availability check:** `{availability_message}`
+
+    **Setup requirement:** choose a cache path and run `scripts/setup_openfold3.sh` against that path before starting any expensive workflow cell.
+
+    **OPENFOLD_CACHE for this notebook:** `{openfold_cache_display}`
+
+    **Cache source:** `{cache_source}`
+
+    **Setup status:** `{"ready" if setup_ready else "not ready"}`
+
+    **Setup detail:** `{setup_message}`
+
+    Use the commands below when you need to prepare or repair the selected cache path:
+
+    ```bash
+    export OPENFOLD_CACHE="{export_target}"
+    scripts/setup_openfold3.sh
+    ```
+
+    The OpenFold3 extra installs the backend package, while the setup script prepares the cache, checkpoints, and CCD in the chosen cache root.
+    Changing `OPENFOLD_CACHE` in your shell after Marimo has already started does not update this running notebook session; change the text field above or restart Marimo from a shell with the right environment.
+    """)
+    return (cache_source, env, openfold_cache, openfold_cache_display, setup_message, setup_ready)
 
 
 @app.cell
@@ -137,65 +239,10 @@ def _(mo):
 
 @app.cell
 def _(
-    Path,
-    assert_runner_available,
-    install_command_for_backend,
-    materialize_acceptance_inputs,
-    options_resource_for_backend,
-    os,
-    tempfile,
-):
-    runner = "openfold3"
-    workspace = Path(tempfile.mkdtemp(prefix="cofolder-openfold3-acceptance-"))
-    fixtures = materialize_acceptance_inputs(
-        workspace / "fixtures",
-        options_resource=options_resource_for_backend(runner),
-    )
-    openfold_cache = workspace / ".openfold3"
-    openfold_cache.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
-    env["OPENFOLD_CACHE"] = str(openfold_cache)
-    install_command = install_command_for_backend(runner)
-    availability_message = assert_runner_available(runner)
-    return (
-        availability_message,
-        env,
-        fixtures,
-        install_command,
-        openfold_cache,
-        runner,
-        workspace,
-    )
-
-
-@app.cell
-def _(availability_message, install_command, mo, openfold_cache):
-    mo.md(f"""
-    **Verified install command:** `{install_command}`
-
-    **Availability check:** `{availability_message}`
-
-    **Setup requirement:** run `scripts/setup_openfold3.sh` against the cache path below before starting any expensive workflow cell.
-
-    **OPENFOLD_CACHE for this notebook:** `{openfold_cache}`
-
-    Before triggering the expensive steps below, run upstream setup in the same environment, for example:
-
-    ```bash
-    export OPENFOLD_CACHE="{openfold_cache}"
-    scripts/setup_openfold3.sh
-    ```
-
-    The OpenFold3 extra installs the backend package, while the setup script prepares the cache, checkpoints, and CCD in the chosen cache root.
-    """)
-    return
-
-
-@app.cell
-def _(
     fixtures,
     format_command,
     mo,
+    openfold_cache_display,
     runner,
     scoring_functions_for_backend_acceptance,
     workspace,
@@ -205,7 +252,7 @@ def _(
         f"""
         **Workspace:** `{workspace}`
 
-        **OPENFOLD_CACHE:** `{workspace / ".openfold3"}`
+        **OPENFOLD_CACHE:** `{openfold_cache_display}`
 
         **Validate scoring groups:** `{', '.join(scoring)}`
 
@@ -225,7 +272,6 @@ def _(
 def _(
     assert_csv_columns_have_values,
     assert_file_exists,
-    assert_runner_setup_ready,
     build_validate_command,
     env,
     fixtures,
@@ -234,6 +280,8 @@ def _(
     run_validate,
     runner,
     scoring,
+    setup_message,
+    setup_ready,
     stream_cli_in_notebook,
     workspace,
 ):
@@ -241,7 +289,13 @@ def _(
         not run_validate.value,
         mo.md("Enable `Run validate acceptance step` above before starting the expensive validate run."),
     )
-    assert_runner_setup_ready(runner, env=env)
+    mo.stop(
+        not setup_ready,
+        mo.md(
+            "OpenFold3 setup is not ready for this notebook session. "
+            f"Resolve the setup status shown above before starting validate.\n\nCurrent detail: `{setup_message}`"
+        ),
+    )
     validate_dir = reset_work_dir(workspace / "validate")
     validate_command = build_validate_command(
         runner=runner,
@@ -275,7 +329,6 @@ def _(mo, validate_output):
 def _(
     assert_csv_columns_have_values,
     assert_file_exists,
-    assert_runner_setup_ready,
     build_screen_command,
     env,
     fixtures,
@@ -284,6 +337,8 @@ def _(
     run_screen,
     runner,
     scoring,
+    setup_message,
+    setup_ready,
     stream_cli_in_notebook,
     workspace,
 ):
@@ -291,7 +346,13 @@ def _(
         not run_screen.value,
         mo.md("Enable `Run screen acceptance step` above before starting the expensive screen run."),
     )
-    assert_runner_setup_ready(runner, env=env)
+    mo.stop(
+        not setup_ready,
+        mo.md(
+            "OpenFold3 setup is not ready for this notebook session. "
+            f"Resolve the setup status shown above before starting screen.\n\nCurrent detail: `{setup_message}`"
+        ),
+    )
     screen_dir = reset_work_dir(workspace / "screen")
     screen_command = build_screen_command(
         runner=runner,
@@ -325,7 +386,6 @@ def _(mo, screen_output):
 def _(
     assert_csv_columns_have_values,
     assert_file_exists,
-    assert_runner_setup_ready,
     build_oracle_command,
     env,
     fixtures,
@@ -335,6 +395,8 @@ def _(
     reset_work_dir,
     run_oracle,
     runner,
+    setup_message,
+    setup_ready,
     stream_cli_in_notebook,
     workspace,
 ):
@@ -342,7 +404,13 @@ def _(
         not run_oracle.value,
         mo.md("Enable `Run oracle acceptance step` above before starting the expensive oracle run."),
     )
-    assert_runner_setup_ready(runner, env=env)
+    mo.stop(
+        not setup_ready,
+        mo.md(
+            "OpenFold3 setup is not ready for this notebook session. "
+            f"Resolve the setup status shown above before starting oracle.\n\nCurrent detail: `{setup_message}`"
+        ),
+    )
     oracle_dir = reset_work_dir(workspace / "oracle")
     oracle_metric = oracle_metric_for_runner(runner)
     oracle_command = build_oracle_command(
