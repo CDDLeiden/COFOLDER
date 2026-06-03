@@ -3,6 +3,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from cofolder.modules.analytics.bias import _load_ligand_training, apply_bias_metrics
 
@@ -75,7 +76,6 @@ def test_apply_bias_metrics_ccd_multi_ligands_and_cutoff(temp_dir):
         "1ABC,2022-01-01,MAAA,99\n"
         "2XYZ,2024-01-01,QQQQ,100\n"
     )
-    # ccd-like ligand_id stored in lower case to verify case-insensitive mapping.
     ligand_ref.write_text(
         "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
         "1ABC,2022-01-01,edo,CCO,0.6\n"
@@ -108,7 +108,6 @@ def test_apply_bias_metrics_ccd_multi_ligands_and_cutoff(temp_dir):
         release_cutoff="2023-06-01",
     )
 
-    # Cutoff excludes 2024 rows, so matches must come from 1ABC only.
     prot_val = float(out_chain.loc[out_chain["CHAIN_ID"] == "A", "bias_prot_sim_train"].iloc[0])
     lig_b = float(out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0])
     lig_c = float(out_chain.loc[out_chain["CHAIN_ID"] == "C", "bias_lig_sim_train"].iloc[0])
@@ -117,6 +116,69 @@ def test_apply_bias_metrics_ccd_multi_ligands_and_cutoff(temp_dir):
     assert lig_b == 1.0
     assert lig_c == 1.0
     assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
+
+
+def test_apply_bias_metrics_resolves_ccd_from_components_cif(temp_dir):
+    protein_ref = temp_dir / "protein_training.csv"
+    ligand_ref = temp_dir / "ligand_training.csv"
+    components_cif = temp_dir / "components.cif"
+
+    protein_ref.write_text(
+        "pdb_id,release_date,sequence,sequence_similarity\n"
+        "1ABC,2022-01-01,MAAA,99\n",
+        encoding="utf-8",
+    )
+    ligand_ref.write_text(
+        "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+        "1ABC,2022-01-01,NOTEDO,CCO,0.6\n",
+        encoding="utf-8",
+    )
+    components_cif.write_text(
+        "\n".join(
+            [
+                "data_EDO",
+                "_chem_comp.id EDO",
+                "loop_",
+                "_pdbx_chem_comp_descriptor.comp_id",
+                "_pdbx_chem_comp_descriptor.type",
+                "_pdbx_chem_comp_descriptor.program",
+                "_pdbx_chem_comp_descriptor.descriptor",
+                "EDO SMILES_CANONICAL RDKit CCO",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    system_df = pd.DataFrame(
+        [{"model_name": "system", "repeat": 1, "diffusion_sample": 0}]
+    )
+    chain_df = pd.DataFrame(
+        [
+            {"CHAIN_ID": "A", "ENTITY_TYPE": "protein"},
+            {"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ligand_molecule_id": "EDO"},
+        ]
+    )
+    sys_obj = _MockSystem(
+        sequences=[
+            {"protein": {"id": "A", "sequence": "MAAA"}},
+            {"ligand": {"id": "B", "ccd": "EDO"}},
+        ]
+    )
+
+    out_system, out_chain = apply_bias_metrics(
+        system_df=system_df,
+        chain_df=chain_df,
+        sys_obj=sys_obj,
+        protein_training_data_path=protein_ref,
+        ligand_training_data_path=ligand_ref,
+        release_cutoff="2023-06-01",
+        components_cif_path=components_cif,
+        strict_query_resolution=True,
+    )
+
+    assert float(out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0]) == 1.0
     assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
 
 
@@ -219,3 +281,145 @@ def test_apply_bias_metrics_with_empty_ligand_csv_no_crash(temp_dir):
     assert prot_val == 100.0
     assert pd.isna(lig_val)
     assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+
+
+def test_apply_bias_metrics_rejects_unresolved_ccd_when_strict(monkeypatch, temp_dir):
+    home_dir = temp_dir / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+
+    protein_ref = temp_dir / "protein_training.csv"
+    ligand_ref = temp_dir / "ligand_training.csv"
+
+    protein_ref.write_text(
+        "pdb_id,release_date,sequence\n"
+        "1ABC,2022-01-01,MAAA\n",
+        encoding="utf-8",
+    )
+    ligand_ref.write_text(
+        "pdb_id,release_date,ligand_id,smiles\n"
+        "1ABC,2022-01-01,NOTEDO,CCO\n",
+        encoding="utf-8",
+    )
+
+    system_df = pd.DataFrame(
+        [{"model_name": "system", "repeat": 1, "diffusion_sample": 0}]
+    )
+    chain_df = pd.DataFrame(
+        [{"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ligand_molecule_id": "EDO"}]
+    )
+    sys_obj = _MockSystem(
+        sequences=[{"ligand": {"id": "B", "ccd": "EDO"}}]
+    )
+
+    with pytest.raises(ValueError, match="Could not resolve SMILES for CCD-backed ligand chain"):
+        apply_bias_metrics(
+            system_df=system_df,
+            chain_df=chain_df,
+            sys_obj=sys_obj,
+            protein_training_data_path=protein_ref,
+            ligand_training_data_path=ligand_ref,
+            release_cutoff="2023-06-01",
+            strict_query_resolution=True,
+        )
+
+
+def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(temp_dir):
+    protein_ref = temp_dir / "protein_training.csv"
+    ligand_ref = temp_dir / "ligand_training.csv"
+    custom_protein = temp_dir / "custom_protein.csv"
+    custom_ligand = temp_dir / "custom_ligand.csv"
+
+    protein_ref.write_text(
+        "pdb_id,release_date,sequence,sequence_similarity\n"
+        "1PUB,2022-01-01,MKRAAS,83.0\n",
+        encoding="utf-8",
+    )
+    ligand_ref.write_text(
+        "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+        "1PUB,2022-01-01,LIG,CCN,0.4\n",
+        encoding="utf-8",
+    )
+    custom_protein.write_text(
+        "sequence,dataset_name\n"
+        "MKRAAT,private_proteins\n",
+        encoding="utf-8",
+    )
+    custom_ligand.write_text(
+        "smiles,dataset_name\n"
+        "CCO,private_ligands\n",
+        encoding="utf-8",
+    )
+
+    system_df = pd.DataFrame([{"model_name": "system", "repeat": 1, "diffusion_sample": 0}])
+    chain_df = pd.DataFrame(
+        [
+            {"CHAIN_ID": "A", "ENTITY_TYPE": "protein"},
+            {"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ligand_molecule_id": "LIG"},
+        ]
+    )
+    sys_obj = _MockSystem(
+        sequences=[
+            {"protein": {"id": "A", "sequence": "MKRAAT"}},
+            {"ligand": {"id": "B", "smiles": "CCO"}},
+        ]
+    )
+
+    apply_bias_metrics(
+        system_df=system_df,
+        chain_df=chain_df,
+        sys_obj=sys_obj,
+        protein_training_data_path=protein_ref,
+        ligand_training_data_path=ligand_ref,
+        custom_protein_reference_path=custom_protein,
+        custom_ligand_reference_path=custom_ligand,
+        release_cutoff="2023-06-01",
+        output_dir=temp_dir / "results",
+    )
+
+    protein_view = pd.read_csv(temp_dir / "results" / "protein_training_data.csv")
+    ligand_view = pd.read_csv(temp_dir / "results" / "ligand_training_data_B.csv")
+    summary = pd.read_csv(temp_dir / "results" / "reference_landscape_summary.csv")
+
+    assert set(protein_view["source"]) == {"public", "custom"}
+    assert "dataset_name" in protein_view.columns
+    assert set(ligand_view["source"]) == {"public", "custom"}
+    assert set(summary["nearest_overall_source"]) == {"custom"}
+    assert summary["custom_changes_nearest_reference"].tolist() == [True, True]
+
+
+def test_apply_bias_metrics_rejects_missing_custom_provenance_paths(temp_dir):
+    protein_ref = temp_dir / "protein_training.csv"
+    ligand_ref = temp_dir / "ligand_training.csv"
+    custom_protein = temp_dir / "custom_protein.csv"
+
+    protein_ref.write_text(
+        "pdb_id,release_date,sequence\n"
+        "1ABC,2022-01-01,MAAA\n",
+        encoding="utf-8",
+    )
+    ligand_ref.write_text(
+        "pdb_id,release_date,ligand_id,smiles\n"
+        "1ABC,2022-01-01,LIG,CCO\n",
+        encoding="utf-8",
+    )
+    custom_protein.write_text(
+        "sequence,source_structure_path\n"
+        "MAAA,missing_reference.pdb\n",
+        encoding="utf-8",
+    )
+
+    system_df = pd.DataFrame([{"model_name": "system", "repeat": 1, "diffusion_sample": 0}])
+    chain_df = pd.DataFrame([{"CHAIN_ID": "A", "ENTITY_TYPE": "protein"}])
+    sys_obj = _MockSystem(sequences=[{"protein": {"id": "A", "sequence": "MAAA"}}])
+
+    with pytest.raises(ValueError, match="source_structure_path"):
+        apply_bias_metrics(
+            system_df=system_df,
+            chain_df=chain_df,
+            sys_obj=sys_obj,
+            protein_training_data_path=protein_ref,
+            ligand_training_data_path=ligand_ref,
+            custom_protein_reference_path=custom_protein,
+            release_cutoff="2023-06-01",
+        )

@@ -82,7 +82,6 @@ OpenFold3 now installs through a COFOLDER optional extra. Use a fresh environmen
 
 ```bash
 conda create -n cofolder-acceptance-openfold3 python=3.12
-conda activate cofolder-acceptance-openfold3
 python -m pip install -e ".[acceptance,openfold3]"
 export OPENFOLD_CACHE="$PWD/.openfold3-cache"
 scripts/setup_openfold3.sh

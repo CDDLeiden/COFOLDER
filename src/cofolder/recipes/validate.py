@@ -5,8 +5,6 @@ import logging
 import os
 from pathlib import Path
 
-from cofolder.modules.analytics.bias import apply_bias_metrics
-from cofolder.modules.analytics.bias_training import run_build_bias_training_data
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.input import system
@@ -17,6 +15,7 @@ from cofolder.modules.runners import (
     merge_runner_runtime,
 )
 from cofolder.modules.runners.validators import validate_runner_bundle
+from cofolder.recipes.bias import BiasAssessmentWorkflow
 from cofolder.modules.utils import gather, helpers, read, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -366,149 +365,26 @@ class Validate(object):
         return system_df, chain_df
 
     def _apply_bias_metrics(self, system_df, chain_df, runtime: RunnerRuntime):
-        protein_metrics_path = self.protein_training_data_path
-        ligand_metrics_path = self.ligand_training_data_path
-        if self.build_bias_training_data:
-            if self.protein_training_data_path is None:
-                raise ValueError(
-                    "--build_bias_training_data requires --protein_training_data_path."
-                )
-            if ligand_metrics_path is None:
-                ligand_metrics_path = (
-                    self.wrk_dir / "results" / "bias_train" / "ligand_training_data.csv"
-                )
-                ligand_metrics_path.parent.mkdir(parents=True, exist_ok=True)
-            components_cif = self.bias_training_components_cif
-            if components_cif is None:
-                components_cif = self.protein_training_data_path.parent / "ccd" / "components.cif"
-            if not components_cif.exists():
-                raise ValueError(
-                    f"components.cif not found for in-validate bias build: {components_cif}. "
-                    "Provide --bias_training_components_cif or prepare training data root."
-                )
-            self.logger.info(
-                "Building bias training data in validate(): components_cif=%s protein_csv=%s ligand_csv=%s",
-                components_cif,
-                self.protein_training_data_path,
-                ligand_metrics_path,
-            )
-            available_protein_chains = {
-                str(row["CHAIN_ID"]).strip().upper()
-                for _, row in chain_df.iterrows()
-                if str(row.get("ENTITY_TYPE")) == "protein"
-                and str(row.get("CHAIN_ID", "")).strip()
-            }
-            available_ligand_chains = {
-                str(row["CHAIN_ID"]).strip().upper()
-                for _, row in chain_df.iterrows()
-                if str(row.get("ENTITY_TYPE")) == "ligand"
-                and str(row.get("CHAIN_ID", "")).strip()
-            }
-            selected_chains = (
-                {str(x).strip().upper() for x in self.bias_chains}
-                if self.bias_chains
-                else None
-            )
-            selected_protein_chains = (
-                (available_protein_chains & selected_chains)
-                if selected_chains is not None
-                else available_protein_chains
-            )
-            selected_ligand_chains = (
-                (available_ligand_chains & selected_chains)
-                if selected_chains is not None
-                else available_ligand_chains
-            )
-            invalid_smiles_chains = self._find_invalid_ligand_smiles_chain_ids()
-            invalid_selected_ligand_chains = selected_ligand_chains & invalid_smiles_chains
-            if invalid_selected_ligand_chains:
-                self.logger.warning(
-                    "Invalid ligand SMILES detected for chains=%s. "
-                    "Skipping ligand ECFP protocol for this bias-build run.",
-                    sorted(invalid_selected_ligand_chains),
-                )
-                selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
-            run_protein_protocol = bool(selected_protein_chains)
-            run_ligand_protocol = bool(selected_ligand_chains)
-            build_protein_training_path = self.protein_training_data_path
-            if not run_protein_protocol:
-                build_protein_training_path = (
-                    self.wrk_dir / "results" / "bias_train" / "_protein_training_data_build_tmp.csv"
-                )
-                build_protein_training_path.parent.mkdir(parents=True, exist_ok=True)
-            self.logger.info(
-                "Bias build protocol selection: run_protein=%s chains=%s | run_ligand=%s chains=%s | "
-                "protein_build_csv=%s | ligand_build_csv=%s",
-                run_protein_protocol,
-                sorted(selected_protein_chains),
-                run_ligand_protocol,
-                sorted(selected_ligand_chains),
-                build_protein_training_path,
-                ligand_metrics_path,
-            )
-            with self._debug_timer("bias.training_data.build"):
-                run_build_bias_training_data(
-                    system_path=self.system_path,
-                    components_cif=components_cif,
-                    output_protein_csv=build_protein_training_path,
-                    output_ligand_csv=ligand_metrics_path,
-                    release_cutoff=self.bias_release_cutoff,
-                    ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
-                    overwrite=True,
-                    skip_bias_csv=True,
-                    skip_protein_mmseqs=(not run_protein_protocol),
-                    skip_ligand_ecfp=(not run_ligand_protocol),
-                    ligand_chains=selected_ligand_chains if run_ligand_protocol else None,
-                    timings=self.timings,
-                )
-            if run_protein_protocol:
-                protein_metrics_path = build_protein_training_path
-
-        protein_ok = (
-            protein_metrics_path is not None
-            and protein_metrics_path.exists()
-            and protein_metrics_path.is_file()
+        workflow = BiasAssessmentWorkflow(
+            wrk_dir=self.wrk_dir,
+            system_path=self.system_path,
+            sys_obj=self.sys,
+            protein_training_data_path=self.protein_training_data_path,
+            ligand_training_data_path=self.ligand_training_data_path,
+            bias_release_cutoff=self.bias_release_cutoff,
+            bias_ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
+            bias_chains=self.bias_chains,
+            build_bias_training_data=self.build_bias_training_data,
+            bias_training_components_cif=self.bias_training_components_cif,
+            logger=self.logger,
+            timings=self.timings,
+            strict_training_data=False,
         )
-        ligand_ok = (
-            ligand_metrics_path is not None
-            and ligand_metrics_path.exists()
-            and ligand_metrics_path.is_file()
+        return workflow.apply(
+            system_df=system_df,
+            chain_df=chain_df,
+            boltz_cache_path=runtime.cache_path or "~/.boltz",
         )
-
-        if protein_ok and ligand_ok:
-            with self._debug_timer("scores.bias_metrics.total"):
-                system_df, chain_df = apply_bias_metrics(
-                    system_df=system_df,
-                    chain_df=chain_df,
-                    sys_obj=self.sys,
-                    protein_training_data_path=protein_metrics_path,
-                    ligand_training_data_path=ligand_metrics_path,
-                    release_cutoff=self.bias_release_cutoff,
-                    bias_chains=self.bias_chains,
-                    protein_top_n=100,
-                    boltz_cache_path=runtime.cache_path or "~/.boltz",
-                    output_dir=self.wrk_dir / "results" / "bias_train",
-                    logger=self.logger,
-                    timings=self.timings,
-                )
-        else:
-            self.logger.warning(
-                "Bias assessment requested but training data files are missing/unavailable "
-                "(protein=%s, ligand=%s). Skipping bias metrics. "
-                "To bootstrap bias references, run: "
-                "`python scripts/fetch_bias_training_data.py "
-                "--output_root <bias_data_dir>` then "
-                "`python scripts/build_bias_training_data.py "
-                "--system_path <system.yaml> "
-                "--components_cif <bias_data_dir>/ccd/components.cif "
-                "--output_protein_csv <protein_training.csv> "
-                "--output_ligand_csv <ligand_training.csv> "
-                "--release_cutoff %s`",
-                protein_metrics_path,
-                ligand_metrics_path,
-                self.bias_release_cutoff,
-            )
-        return system_df, chain_df
 
     @staticmethod
     def _resolve_diffusion_samples(system_df, runtime: RunnerRuntime) -> int:
@@ -521,30 +397,3 @@ class Validate(object):
             return int(runtime.diffusion_samples or 1)
         except Exception:
             return 1
-
-    def _find_invalid_ligand_smiles_chain_ids(self) -> set[str]:
-        try:
-            from rdkit import Chem
-        except Exception:
-            return set()
-
-        invalid: set[str] = set()
-        sequences = self.sys.find_value(key="sequences") or []
-        for entry in sequences:
-            if not isinstance(entry, dict) or "ligand" not in entry:
-                continue
-            ligand_data = entry.get("ligand") or {}
-            smiles = str(ligand_data.get("smiles", "")).strip()
-            if not smiles:
-                continue
-            if Chem.MolFromSmiles(smiles) is not None:
-                continue
-            chain_ids = ligand_data.get("id")
-            if chain_ids is None:
-                continue
-            if isinstance(chain_ids, list):
-                for cid in chain_ids:
-                    invalid.add(str(cid).strip().upper())
-            else:
-                invalid.add(str(chain_ids).strip().upper())
-        return {c for c in invalid if c}

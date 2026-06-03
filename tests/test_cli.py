@@ -89,6 +89,41 @@ class TestCLIMain:
             with pytest.raises(RuntimeError, match="install boltz first"):
                 cli.main(args)
 
+    def test_bias_command_does_not_require_options_or_runner(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence\n"
+            "1ABC,2022-01-01,MKRAAT\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles\n"
+            "1ABC,2022-01-01,ETH,CCO\n",
+            encoding="utf-8",
+        )
+
+        bias_runner = Mock()
+        bias_cls = Mock(return_value=bias_runner)
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--protein_training_data_path", str(protein_ref),
+            "--ligand_training_data_path", str(ligand_ref),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli.get_runner", side_effect=AssertionError("runner lookup should not happen")):
+            with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+                cli.main(args)
+
+        bias_cls.assert_called_once()
+        bias_runner.run.assert_called_once()
 
 class TestValidateRecipe:
     """Tests for ValidateRecipe class."""
@@ -242,3 +277,175 @@ class TestOracleRecipe:
         assert args.input_smiles == "CCO"
         assert args.output_metric == "affinity_pred_value"
         assert args.aggregate == "first"
+
+
+class TestBiasRecipe:
+    """Tests for BiasRecipe class."""
+
+    def test_add_arguments(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparser = parser.add_subparsers()
+        bias_parser = subparser.add_parser("bias")
+
+        cli.BiasRecipe.add_arguments(bias_parser)
+
+        args = bias_parser.parse_args([
+            "-s", "system.yaml",
+            "--protein_training_data_path", "protein_training.csv",
+            "--ligand_training_data_path", "ligand_training.csv",
+            "--custom_protein_reference_path", "custom_protein.csv",
+            "--custom_ligand_reference_path", "custom_ligand.csv",
+            "--bias_chains", "A", "B",
+        ])
+
+        assert args.system_path == "system.yaml"
+        assert args.protein_training_data_path == "protein_training.csv"
+        assert args.ligand_training_data_path == "ligand_training.csv"
+        assert args.custom_protein_reference_path == "custom_protein.csv"
+        assert args.custom_ligand_reference_path == "custom_ligand.csv"
+        assert args.bias_chains == ["A", "B"]
+
+    def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, temp_dir):
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence\n"
+            "1ABC,2022-01-01,MKRAAT\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles\n"
+            "1ABC,2022-01-01,ETH,CCO\n",
+            encoding="utf-8",
+        )
+
+        bias_runner = Mock()
+        bias_cls = Mock(return_value=bias_runner)
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--protein_training_data_path", str(protein_ref),
+            "--ligand_training_data_path", str(ligand_ref),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
+
+        bias_cls.assert_called_once()
+        bias_runner.run.assert_called_once()
+
+    def test_main_requires_ligand_training_data_without_build_flag(
+        self,
+        temp_dir,
+    ):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            "sequences:\n"
+            "  - protein:\n"
+            "      id: A\n"
+            "      sequence: MKRAAT\n"
+            "  - ligand:\n"
+            "      id: B\n"
+            "      smiles: CCO\n",
+            encoding="utf-8",
+        )
+        protein_ref = temp_dir / "protein_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence\n"
+            "1ABC,2022-01-01,MKRAAT\n",
+            encoding="utf-8",
+        )
+
+        args = [
+            "bias",
+            "-s", str(system_path),
+            "--protein_training_data_path", str(protein_ref),
+            "-w", str(temp_dir),
+        ]
+
+        with pytest.raises(ValueError, match="at least one public or custom reference input"):
+            cli.main(["bias", "-s", str(system_path), "-w", str(temp_dir)])
+
+        with pytest.raises(ValueError, match="missing required reference sources"):
+            cli.main(args)
+
+    def test_main_accepts_build_mode_with_fresh_output_paths(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        components_cif = temp_dir / "components.cif"
+        components_cif.write_text("data_components\n", encoding="utf-8")
+        protein_output = temp_dir / "generated" / "protein_training.csv"
+
+        bias_runner = Mock()
+        bias_cls = Mock(return_value=bias_runner)
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--build_bias_training_data",
+            "--protein_training_data_path", str(protein_output),
+            "--bias_training_components_cif", str(components_cif),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
+
+        bias_cls.assert_called_once()
+        assert bias_cls.call_args.kwargs["protein_training_data_path"] == str(protein_output)
+        bias_runner.run.assert_called_once()
+
+    def test_main_accepts_custom_only_reference_inputs(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        custom_protein = temp_dir / "custom_protein.csv"
+        custom_ligand = temp_dir / "custom_ligand.csv"
+        custom_protein.write_text("sequence,dataset_name\nMKRAAT,private_set\n", encoding="utf-8")
+        custom_ligand.write_text("smiles,dataset_name\nCCO,private_set\n", encoding="utf-8")
+
+        bias_runner = Mock()
+        bias_cls = Mock(return_value=bias_runner)
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--custom_protein_reference_path", str(custom_protein),
+            "--custom_ligand_reference_path", str(custom_ligand),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
+
+        assert bias_cls.call_args.kwargs["custom_protein_reference_path"] == str(custom_protein)
+        assert bias_cls.call_args.kwargs["custom_ligand_reference_path"] == str(custom_ligand)
+        bias_runner.run.assert_called_once()
+
+    def test_main_rejects_invalid_custom_ligand_file_type(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        custom_protein = temp_dir / "custom_protein.csv"
+        custom_ligand = temp_dir / "custom_ligand.txt"
+        custom_protein.write_text("sequence\nMKRAAT\n", encoding="utf-8")
+        custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="--custom_ligand_reference_path must use one of these file types"):
+            cli.main(
+                [
+                    "bias",
+                    "-s", str(sample_system_yaml),
+                    "--custom_protein_reference_path", str(custom_protein),
+                    "--custom_ligand_reference_path", str(custom_ligand),
+                    "-w", str(temp_dir),
+                ]
+            )

@@ -56,7 +56,7 @@ class BaseRecipe:
         return shlex.join(["cofolder", *raw_argv])
 
     @staticmethod
-    def add_common_arguments(parser):
+    def add_workdir_and_system_arguments(parser):
         parser.add_argument(
             '-w', '--wrk_dir',
             type=str,
@@ -70,6 +70,10 @@ class BaseRecipe:
             required=True,
             help='Path to system YAML file.'
         )
+
+    @staticmethod
+    def add_common_arguments(parser):
+        BaseRecipe.add_workdir_and_system_arguments(parser)
 
         parser.add_argument(
             '-o', '--options_path',
@@ -127,60 +131,7 @@ class BaseRecipe:
             default=False,
             help='Assess bias against training data references (default: False).'
         )
-        parser.add_argument(
-            '--protein_training_data_path',
-            type=str,
-            default=None,
-            help='Path to protein training reference CSV (requires release_date, pdb_id, sequence).'
-        )
-        parser.add_argument(
-            '--ligand_training_data_path',
-            type=str,
-            default=None,
-            help=(
-                "Path to ligand training reference CSV/SDF "
-                "(requires release_date, pdb_id, smiles) when --no-build_bias_training_data is used. "
-                "When --build_bias_training_data is enabled, this is treated as output path for generated "
-                "ligand training data. If omitted in build mode, defaults to "
-                "<wrk_dir>/results/bias_train/ligand_training_data.csv."
-            )
-        )
-        parser.add_argument(
-            '--bias_release_cutoff',
-            type=str,
-            default='2023-06-01',
-            help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
-        )
-        parser.add_argument(
-            '--bias_ligand_similarity_threshold',
-            type=float,
-            default=0.35,
-            help='Ligand ECFP/Tanimoto threshold used while building bias training data.'
-        )
-        parser.add_argument(
-            '--bias_chains',
-            nargs='+',
-            default=None,
-            help=(
-                "Optional chain IDs to restrict bias assessment to. "
-                "Example: --bias_chains A F"
-            )
-        )
-        parser.add_argument(
-            '--build_bias_training_data',
-            action=argparse.BooleanOptionalAction,
-            default=False,
-            help='Build bias training CSVs inside validate() before assessing bias (default: False).'
-        )
-        parser.add_argument(
-            '--bias_training_components_cif',
-            type=str,
-            default=None,
-            help=(
-                "Path to components.cif used by in-validate bias training build. "
-                "Default: <protein_training_data_path parent>/ccd/components.cif"
-            ),
-        )
+        BaseRecipe.add_bias_arguments(parser)
 
         parser.add_argument(
             '--conformers',
@@ -231,6 +182,88 @@ class BaseRecipe:
         )
 
     @staticmethod
+    def add_bias_arguments(parser):
+        parser.add_argument(
+            '--protein_training_data_path',
+            type=str,
+            default=None,
+            help='Path to protein training reference CSV (requires release_date, pdb_id, sequence).'
+        )
+        parser.add_argument(
+            '--ligand_training_data_path',
+            type=str,
+            default=None,
+            help=(
+                "Path to ligand training reference CSV/SDF "
+                "(requires release_date, pdb_id, smiles) when --no-build_bias_training_data is used. "
+                "When --build_bias_training_data is enabled, this is treated as output path for generated "
+                "ligand training data. If omitted in build mode, defaults to "
+                "<wrk_dir>/results/bias_train/ligand_training_data.csv."
+            )
+        )
+        parser.add_argument(
+            '--bias_release_cutoff',
+            type=str,
+            default='2023-06-01',
+            help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
+        )
+        parser.add_argument(
+            '--bias_ligand_similarity_threshold',
+            type=float,
+            default=0.35,
+            help='Ligand ECFP/Tanimoto threshold used while building bias training data.'
+        )
+        parser.add_argument(
+            '--bias_chains',
+            nargs='+',
+            default=None,
+            help=(
+                "Optional chain IDs to restrict bias assessment to. "
+                "Example: --bias_chains A F"
+            )
+        )
+        parser.add_argument(
+            '--build_bias_training_data',
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help='Build bias training CSVs before assessing bias (default: False).'
+        )
+        parser.add_argument(
+            '--bias_training_components_cif',
+            type=str,
+            default=None,
+            help=(
+                "Path to components.cif used by the bias-training build. "
+                "Default: <protein_training_data_path parent>/ccd/components.cif"
+            ),
+        )
+
+    @staticmethod
+    def add_custom_bias_arguments(parser):
+        parser.add_argument(
+            '--custom_protein_reference_path',
+            type=str,
+            default=None,
+            help=(
+                "Path to a custom protein reference CSV. "
+                "Required column: sequence. Optional columns: pdb_id, release_date, "
+                "source, dataset_name, source_structure_path, source_reference_path, "
+                "sequence_similarity."
+            ),
+        )
+        parser.add_argument(
+            '--custom_ligand_reference_path',
+            type=str,
+            default=None,
+            help=(
+                "Path to a custom ligand reference CSV or SDF. "
+                "Required CSV column: smiles. Optional columns/properties: ligand_id, "
+                "pdb_id, release_date, source, dataset_name, source_structure_path, "
+                "source_reference_path, ecfp_similarity."
+            ),
+        )
+
+    @staticmethod
     def add_final_arguments(parser):
         parser.add_argument(
             '--log_name',
@@ -272,6 +305,49 @@ class BaseRecipe:
         )
 
     @staticmethod
+    def bias_kwargs(args):
+        return dict(
+            wrk_dir=args.wrk_dir,
+            system_path=args.system_path,
+            protein_training_data_path=args.protein_training_data_path,
+            ligand_training_data_path=args.ligand_training_data_path,
+            custom_protein_reference_path=getattr(args, "custom_protein_reference_path", None),
+            custom_ligand_reference_path=getattr(args, "custom_ligand_reference_path", None),
+            bias_release_cutoff=args.bias_release_cutoff,
+            bias_ligand_similarity_threshold=args.bias_ligand_similarity_threshold,
+            bias_chains=args.bias_chains,
+            build_bias_training_data=args.build_bias_training_data,
+            bias_training_components_cif=args.bias_training_components_cif,
+        )
+
+    @staticmethod
+    def _validate_existing_file_arg(value, flag_name):
+        path = Path(value)
+        if not path.exists():
+            raise ValueError(f'{flag_name} does not exist: {path}')
+        if not path.is_file():
+            raise ValueError(f'{flag_name} is not a file: {path}')
+        return path
+
+    @staticmethod
+    def _validate_system_path(args):
+        return BaseRecipe._validate_existing_file_arg(
+            args.system_path,
+            '--system_path',
+        )
+
+    @staticmethod
+    def _validate_file_suffix(value, flag_name, allowed_suffixes):
+        path = BaseRecipe._validate_existing_file_arg(value, flag_name)
+        suffix = path.suffix.lower()
+        if suffix not in allowed_suffixes:
+            allowed = ", ".join(sorted(allowed_suffixes))
+            raise ValueError(
+                f'{flag_name} must use one of these file types: {allowed}. Got: {path}'
+            )
+        return path
+
+    @staticmethod
     def _validate_common_args(args):
         get_runner(args.runner).ensure_available()
 
@@ -282,24 +358,11 @@ class BaseRecipe:
                 raise ValueError(f"Invalid --scoring_functions: {sorted(invalid)}")
         
         # ---- path validation ----
-        system_path = Path(args.system_path)
-        if not system_path.exists():
-            raise ValueError(f'--system_path does not exist: {system_path}')
-        if not system_path.is_file():
-            raise ValueError(f'--system_path is not a file: {system_path}')
-
-        options_path = Path(args.options_path)
-        if not options_path.exists():
-            raise ValueError(f'--options_path does not exist: {options_path}')
-        if not options_path.is_file():
-            raise ValueError(f'--options_path is not a file: {options_path}')
+        BaseRecipe._validate_system_path(args)
+        BaseRecipe._validate_existing_file_arg(args.options_path, '--options_path')
         
         if args.sdf_file is not None:
-            sdf_path = Path(args.sdf_file)
-            if not sdf_path.exists():
-                raise ValueError(f'--sdf_file does not exist: {sdf_path}')
-            if not sdf_path.is_file():
-                raise ValueError(f'--sdf_file is not a file: {sdf_path}')
+            BaseRecipe._validate_existing_file_arg(args.sdf_file, '--sdf_file')
 
         # ---- conformer/sdf validation ----
         if args.conformers == 'sdf' and args.sdf_file is None:
@@ -311,9 +374,76 @@ class BaseRecipe:
             # pipeline can continue while warning and skipping bias metrics.
             pass
 
+    @staticmethod
+    def _validate_bias_args(args):
+        BaseRecipe._validate_system_path(args)
+
+        try:
+            threshold = float(args.bias_ligand_similarity_threshold)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                '--bias_ligand_similarity_threshold must be a number between 0 and 1.'
+            ) from exc
+        if threshold < 0.0 or threshold > 1.0:
+            raise ValueError(
+                '--bias_ligand_similarity_threshold must be between 0 and 1.'
+            )
+
+        if args.build_bias_training_data:
+            if args.protein_training_data_path is None:
+                raise ValueError(
+                    '--build_bias_training_data requires --protein_training_data_path.'
+                )
+            if args.bias_training_components_cif is not None:
+                BaseRecipe._validate_existing_file_arg(
+                    args.bias_training_components_cif,
+                    '--bias_training_components_cif',
+                )
+        has_any_source = bool(
+            args.build_bias_training_data
+            or args.protein_training_data_path
+            or args.ligand_training_data_path
+            or getattr(args, "custom_protein_reference_path", None)
+            or getattr(args, "custom_ligand_reference_path", None)
+        )
+        if not has_any_source:
+            raise ValueError(
+                'Standalone bias requires at least one public or custom reference input.'
+            )
+
+        if (
+            not args.build_bias_training_data
+            and args.protein_training_data_path is not None
+        ):
+            BaseRecipe._validate_existing_file_arg(
+                args.protein_training_data_path,
+                '--protein_training_data_path',
+            )
+        if args.ligand_training_data_path is not None:
+            BaseRecipe._validate_file_suffix(
+                args.ligand_training_data_path,
+                '--ligand_training_data_path',
+                {'.csv', '.sdf'},
+            )
+        custom_protein_reference_path = getattr(args, "custom_protein_reference_path", None)
+        if custom_protein_reference_path is not None:
+            BaseRecipe._validate_file_suffix(
+                custom_protein_reference_path,
+                '--custom_protein_reference_path',
+                {'.csv'},
+            )
+        custom_ligand_reference_path = getattr(args, "custom_ligand_reference_path", None)
+        if custom_ligand_reference_path is not None:
+            BaseRecipe._validate_file_suffix(
+                custom_ligand_reference_path,
+                '--custom_ligand_reference_path',
+                {'.csv', '.sdf'},
+            )
+
     @classmethod
     def setup(cls, args):
-        cls._validate_common_args(args)
+        validate_args = getattr(cls, "_validate_args", cls._validate_common_args)
+        validate_args(args)
         
         helpers.create_dir(args.wrk_dir)
 
@@ -460,10 +590,34 @@ class OracleRecipe(BaseRecipe):
         logger.info("Oracle pipeline completed.")
 
 
+class BiasRecipe(BaseRecipe):
+    LOGGER_NAME = "cofolder.bias"
+    _validate_args = staticmethod(BaseRecipe._validate_bias_args)
+
+    @staticmethod
+    def add_arguments(parser):
+        BaseRecipe.add_workdir_and_system_arguments(parser)
+        BaseRecipe.add_bias_arguments(parser)
+        BaseRecipe.add_custom_bias_arguments(parser)
+        BaseRecipe.add_final_arguments(parser)
+
+    @staticmethod
+    def main(args):
+        logger = BiasRecipe.setup(args)
+        logger.info("Starting COFOLDER standalone bias pipeline.")
+
+        bias_cls = _load_recipe_class("cofolder.recipes.bias", "Bias")
+        bias = bias_cls(**BaseRecipe.bias_kwargs(args))
+
+        bias.run()
+        logger.info("Standalone bias pipeline completed.")
+
+
 RECIPES = [
     ("validate", ValidateRecipe, "Basic protocol for co-folding and validating a single system using the selected runner."),
     ("screen", ScreenRecipe, "Co-fold a library using the selected runner for virtual screening."),
     ("oracle", OracleRecipe, "Use the selected runner as an oracle function for single SMILES predictions."),
+    ("bias", BiasRecipe, "Assess protein and ligand training-reference bias directly from a system definition."),
 ]
 
 
