@@ -5,7 +5,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from cofolder.modules.analytics.bias import _load_ligand_training, apply_bias_metrics
+from cofolder.modules.analytics.bias import (
+    BIAS_TRAINING_DATA_COLUMNS,
+    _build_bias_training_dataset,
+    _build_protein_training_view,
+    _load_ligand_training,
+    apply_bias_metrics,
+)
 
 
 class _MockSystem:
@@ -329,6 +335,8 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
     ligand_ref = temp_dir / "ligand_training.csv"
     custom_protein = temp_dir / "custom_protein.csv"
     custom_ligand = temp_dir / "custom_ligand.csv"
+    structure_ref = temp_dir / "custom_reference.pdb"
+    structure_ref.write_text("HEADER CUSTOM\n", encoding="utf-8")
 
     protein_ref.write_text(
         "pdb_id,release_date,sequence,sequence_similarity\n"
@@ -341,13 +349,13 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
         encoding="utf-8",
     )
     custom_protein.write_text(
-        "sequence,dataset_name\n"
-        "MKRAAT,private_proteins\n",
+        "sequence,dataset_name,source_structure_path\n"
+        f"MKRAAT,private_proteins,{structure_ref.name}\n",
         encoding="utf-8",
     )
     custom_ligand.write_text(
-        "smiles,dataset_name\n"
-        "CCO,private_ligands\n",
+        "smiles,dataset_name,source_reference_path\n"
+        f"CCO,private_ligands,{structure_ref.name}\n",
         encoding="utf-8",
     )
 
@@ -379,13 +387,145 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
 
     protein_view = pd.read_csv(temp_dir / "results" / "protein_training_data.csv")
     ligand_view = pd.read_csv(temp_dir / "results" / "ligand_training_data_B.csv")
+    bias_training = pd.read_csv(temp_dir / "results" / "bias_training_data.csv")
     summary = pd.read_csv(temp_dir / "results" / "reference_landscape_summary.csv")
 
     assert set(protein_view["source"]) == {"public", "custom"}
     assert "dataset_name" in protein_view.columns
     assert set(ligand_view["source"]) == {"public", "custom"}
+    assert bias_training.columns.tolist() == BIAS_TRAINING_DATA_COLUMNS
+    assert bias_training["source"].tolist() == ["custom", "public"]
+    assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
+    assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
+    assert bias_training["pairing_status"].tolist() == ["paired", "paired"]
+    assert bias_training["plot_sequence_similarity"].tolist() == [1.0, 0.83]
+    assert bias_training["plot_ecfp_similarity"].tolist() == [1.0, 0.4]
+    assert (temp_dir / "results" / "bias_reference_overlap_scatter.png").exists()
+    assert (temp_dir / "results" / "bias_reference_overlap_scatter.pdf").exists()
     assert set(summary["nearest_overall_source"]) == {"custom"}
     assert summary["custom_changes_nearest_reference"].tolist() == [True, True]
+
+
+def test_build_bias_training_dataset_clears_ambiguous_public_detail_fields():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1ABC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 95.0,
+                "sequence": "SEQ1",
+            },
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1ABC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 90.0,
+                "sequence": "SEQ2",
+            },
+        ]
+    )
+    ligand_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "B",
+                "pdb_id": "1ABC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "L1",
+                "ecfp_similarity": 0.8,
+                "smiles": "CCO",
+            },
+            {
+                "query_chain_id": "B",
+                "pdb_id": "1ABC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "L2",
+                "ecfp_similarity": 0.7,
+                "smiles": "CCN",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(
+        protein_view=protein_view,
+        ligand_views={"B": ligand_view},
+    )
+
+    assert len(result) == 4
+    assert result["reference_key"].tolist() == ["public:pdb:1ABC"] * 4
+    assert result["sequence"].isna().all()
+    assert result["ligand_id"].isna().all()
+    assert result["smiles"].isna().all()
+    assert result["pairing_status"].tolist() == ["paired"] * 4
+
+
+def test_build_protein_training_view_keeps_distinct_custom_paths_for_same_sequence():
+    proteins_df = pd.DataFrame(
+        [
+            {
+                "pdb_id": pd.NA,
+                "release_date": pd.NA,
+                "source": "custom",
+                "dataset_name": "private_set",
+                "source_structure_path": "/tmp/reference_a.pdb",
+                "source_reference_path": pd.NA,
+                "sequence": "MKRAAT",
+            },
+            {
+                "pdb_id": pd.NA,
+                "release_date": pd.NA,
+                "source": "custom",
+                "dataset_name": "private_set",
+                "source_structure_path": "/tmp/reference_b.pdb",
+                "source_reference_path": pd.NA,
+                "sequence": "MKRAAT",
+            },
+        ]
+    )
+
+    result = _build_protein_training_view(proteins_df, {"A": "MKRAAT"})
+
+    assert len(result) == 2
+    assert result["source_structure_path"].tolist() == [
+        "/tmp/reference_a.pdb",
+        "/tmp/reference_b.pdb",
+    ]
+    assert result["sequence_similarity"].tolist() == [100.0, 100.0]
+
+
+def test_build_bias_training_dataset_marks_protein_only_rows_with_provenance():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1ABC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 95.0,
+                "sequence": "SEQ1",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(
+        protein_view=protein_view,
+        ligand_views={},
+    )
+
+    assert result["pairing_status"].tolist() == ["protein_only"]
+    assert result["source"].tolist() == ["public"]
+    assert result["dataset_name"].tolist() == ["public"]
+    assert result["protein_pdb_id"].tolist() == ["1ABC"]
+    assert result["sequence_similarity"].tolist() == [95.0]
 
 
 def test_apply_bias_metrics_rejects_missing_custom_provenance_paths(temp_dir):
@@ -423,3 +563,37 @@ def test_apply_bias_metrics_rejects_missing_custom_provenance_paths(temp_dir):
             custom_protein_reference_path=custom_protein,
             release_cutoff="2023-06-01",
         )
+
+
+def test_apply_bias_metrics_clears_stale_plot_and_ligand_outputs_when_plot_is_skipped(temp_dir):
+    protein_ref = temp_dir / "protein_training.csv"
+    protein_ref.write_text(
+        "pdb_id,release_date,sequence\n"
+        "1ABC,2022-01-01,MAAA\n",
+        encoding="utf-8",
+    )
+
+    output_dir = temp_dir / "results"
+    output_dir.mkdir()
+    (output_dir / "ligand_training_data_B.csv").write_text("stale\n", encoding="utf-8")
+    (output_dir / "bias_reference_overlap_scatter.png").write_text("stale\n", encoding="utf-8")
+    (output_dir / "bias_reference_overlap_scatter.pdf").write_text("stale\n", encoding="utf-8")
+
+    system_df = pd.DataFrame([{"model_name": "system", "repeat": 1, "diffusion_sample": 0}])
+    chain_df = pd.DataFrame([{"CHAIN_ID": "A", "ENTITY_TYPE": "protein"}])
+    sys_obj = _MockSystem(sequences=[{"protein": {"id": "A", "sequence": "MAAA"}}])
+
+    apply_bias_metrics(
+        system_df=system_df,
+        chain_df=chain_df,
+        sys_obj=sys_obj,
+        protein_training_data_path=protein_ref,
+        ligand_training_data_path=None,
+        release_cutoff="2023-06-01",
+        output_dir=output_dir,
+    )
+
+    assert not (output_dir / "ligand_training_data_B.csv").exists()
+    assert not (output_dir / "bias_reference_overlap_scatter.png").exists()
+    assert not (output_dir / "bias_reference_overlap_scatter.pdf").exists()
+    assert (output_dir / "bias_reference_overlap_scatter.skipped.txt").exists()

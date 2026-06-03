@@ -399,6 +399,19 @@ class BaseRecipe:
                     args.bias_training_components_cif,
                     '--bias_training_components_cif',
                 )
+            else:
+                default_components_cif = Path(args.protein_training_data_path).parent / "ccd" / "components.cif"
+                if not default_components_cif.exists():
+                    raise ValueError(
+                        "components.cif not found for bias-training build: "
+                        f"{default_components_cif}. Provide --bias_training_components_cif "
+                        "or prepare the training-data root."
+                    )
+                if not default_components_cif.is_file():
+                    raise ValueError(
+                        "components.cif path for bias-training build is not a file: "
+                        f"{default_components_cif}."
+                    )
         has_any_source = bool(
             args.build_bias_training_data
             or args.protein_training_data_path

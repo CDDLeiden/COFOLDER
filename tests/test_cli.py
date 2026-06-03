@@ -401,6 +401,188 @@ class TestBiasRecipe:
         assert bias_cls.call_args.kwargs["protein_training_data_path"] == str(protein_output)
         bias_runner.run.assert_called_once()
 
+    def test_main_rejects_non_numeric_bias_threshold_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence\n"
+            "1ABC,2022-01-01,MKRAAT\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles\n"
+            "1ABC,2022-01-01,ETH,CCO\n",
+            encoding="utf-8",
+        )
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--protein_training_data_path", str(protein_ref),
+            "--ligand_training_data_path", str(ligand_ref),
+            "--bias_ligand_similarity_threshold", "not-a-number",
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(SystemExit) as exc_info:
+                cli.main(args)
+
+        assert exc_info.value.code == 2
+        mock_loader.assert_not_called()
+
+    @pytest.mark.parametrize("threshold", ["-0.01", "1.01"])
+    def test_main_rejects_out_of_range_bias_threshold_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+        threshold,
+    ):
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence\n"
+            "1ABC,2022-01-01,MKRAAT\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles\n"
+            "1ABC,2022-01-01,ETH,CCO\n",
+            encoding="utf-8",
+        )
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--protein_training_data_path", str(protein_ref),
+            "--ligand_training_data_path", str(ligand_ref),
+            "--bias_ligand_similarity_threshold", threshold,
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="must be between 0 and 1"):
+                cli.main(args)
+
+        mock_loader.assert_not_called()
+
+    def test_main_requires_protein_output_path_in_build_mode_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--build_bias_training_data",
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="requires --protein_training_data_path"):
+                cli.main(args)
+
+        mock_loader.assert_not_called()
+
+    def test_main_rejects_missing_components_cif_in_build_mode_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        protein_output = temp_dir / "generated" / "protein_training.csv"
+        missing_components = temp_dir / "missing_components.cif"
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--build_bias_training_data",
+            "--protein_training_data_path", str(protein_output),
+            "--bias_training_components_cif", str(missing_components),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="--bias_training_components_cif does not exist"):
+                cli.main(args)
+
+        mock_loader.assert_not_called()
+
+    def test_main_rejects_missing_default_components_cif_in_build_mode_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        protein_output = temp_dir / "generated" / "protein_training.csv"
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--build_bias_training_data",
+            "--protein_training_data_path", str(protein_output),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="components.cif not found for bias-training build"):
+                cli.main(args)
+
+        mock_loader.assert_not_called()
+
+    def test_main_rejects_missing_public_protein_reference_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        missing_protein = temp_dir / "missing_protein.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles\n"
+            "1ABC,2022-01-01,ETH,CCO\n",
+            encoding="utf-8",
+        )
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--protein_training_data_path", str(missing_protein),
+            "--ligand_training_data_path", str(ligand_ref),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="--protein_training_data_path does not exist"):
+                cli.main(args)
+
+        mock_loader.assert_not_called()
+
+    def test_main_rejects_invalid_custom_protein_file_type_before_recipe_load(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        custom_protein = temp_dir / "custom_protein.txt"
+        custom_ligand = temp_dir / "custom_ligand.csv"
+        custom_protein.write_text("sequence\nMKRAAT\n", encoding="utf-8")
+        custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
+
+        with patch("cofolder.cli._load_recipe_class") as mock_loader:
+            with pytest.raises(ValueError, match="--custom_protein_reference_path must use one of these file types"):
+                cli.main(
+                    [
+                        "bias",
+                        "-s", str(sample_system_yaml),
+                        "--custom_protein_reference_path", str(custom_protein),
+                        "--custom_ligand_reference_path", str(custom_ligand),
+                        "-w", str(temp_dir),
+                    ]
+                )
+
+        mock_loader.assert_not_called()
+
     def test_main_accepts_custom_only_reference_inputs(
         self,
         sample_system_yaml,

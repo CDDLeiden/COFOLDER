@@ -75,6 +75,7 @@ class TestBiasRun:
         output_dir = temp_dir / "results" / "bias_train"
         protein_view = pd.read_csv(output_dir / "protein_training_data.csv")
         ligand_view = pd.read_csv(output_dir / "ligand_training_data_B.csv")
+        bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
         summary = pd.read_csv(output_dir / "reference_landscape_summary.csv")
 
         assert float(system_df["bias_prot_sim_train_max"].iloc[0]) == 100.0
@@ -83,6 +84,10 @@ class TestBiasRun:
         assert protein_view["dataset_name"].tolist() == ["private_proteins"]
         assert ligand_view["source"].tolist() == ["custom"]
         assert ligand_view["dataset_name"].tolist() == ["private_ligands"]
+        assert bias_training["source"].tolist() == ["custom"]
+        assert bias_training["pairing_status"].tolist() == ["paired"]
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
         assert set(summary["nearest_overall_source"]) == {"custom"}
         assert summary["custom_changes_nearest_reference"].tolist() == [True, True]
         assert chain_df["CHAIN_ID"].tolist() == ["A", "B"]
@@ -147,6 +152,9 @@ class TestBiasRun:
         assert (output_dir / "chain_metrics.csv").exists()
         assert (output_dir / "protein_training_data.csv").exists()
         assert (output_dir / "ligand_training_data_B.csv").exists()
+        assert (output_dir / "bias_training_data.csv").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
 
         assert float(system_df["bias_prot_sim_train_max"].iloc[0]) == 100.0
         assert float(system_df["bias_lig_sim_train_max"].iloc[0]) == 1.0
@@ -204,12 +212,19 @@ class TestBiasRun:
         assert calls[0]["output_protein_csv"] == protein_ref
         assert calls[0]["output_ligand_csv"] == temp_dir / "results" / "bias_train" / "ligand_training_data.csv"
 
-        system_out = pd.read_csv(temp_dir / "results" / "bias_train" / "system_metrics.csv")
-        chain_out = pd.read_csv(temp_dir / "results" / "bias_train" / "chain_metrics.csv")
+        output_dir = temp_dir / "results" / "bias_train"
+        system_out = pd.read_csv(output_dir / "system_metrics.csv")
+        chain_out = pd.read_csv(output_dir / "chain_metrics.csv")
 
         assert float(system_out["bias_prot_sim_train_max"].iloc[0]) == 100.0
         assert float(system_out["bias_lig_sim_train_max"].iloc[0]) == 1.0
         assert {"CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"}.issubset(chain_out.columns)
+        assert (output_dir / "protein_training_data.csv").exists()
+        assert (output_dir / "ligand_training_data_B.csv").exists()
+        assert (output_dir / "bias_training_data.csv").exists()
+        assert (output_dir / "reference_landscape_summary.csv").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
 
     def test_run_rejects_unresolved_ccd_ligands_without_components_or_matching_training_id(
         self,
@@ -287,3 +302,64 @@ class TestBiasRun:
         )
         ligand_rows = chain_df[chain_df["CHAIN_ID"] == "B"].copy()
         assert ligand_rows["bias_lig_sim_train"].astype(float).tolist() == [1.0]
+
+    def test_run_merges_public_and_custom_sources_into_plotting_dataset(self, temp_dir):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        structure_ref = temp_dir / "custom_reference.pdb"
+        structure_ref.write_text("HEADER CUSTOM\n", encoding="utf-8")
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        custom_protein = temp_dir / "custom_protein.csv"
+        custom_ligand = temp_dir / "custom_ligand.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1PUB,2022-01-01,MKRAAS,83.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1PUB,2022-01-01,LIG,CCN,0.4\n",
+            encoding="utf-8",
+        )
+        custom_protein.write_text(
+            "sequence,dataset_name,source_structure_path\n"
+            f"MKRAAT,private_proteins,{structure_ref.name}\n",
+            encoding="utf-8",
+        )
+        custom_ligand.write_text(
+            "smiles,dataset_name,source_reference_path\n"
+            f"CCO,private_ligands,{structure_ref.name}\n",
+            encoding="utf-8",
+        )
+
+        bias = Bias(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+            custom_protein_reference_path=str(custom_protein),
+            custom_ligand_reference_path=str(custom_ligand),
+        )
+
+        bias.run()
+
+        output_dir = temp_dir / "results" / "bias_train"
+        bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
+
+        assert bias_training["source"].tolist() == ["custom", "public"]
+        assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
+        assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()

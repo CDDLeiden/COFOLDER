@@ -837,6 +837,56 @@ class TestValidateRun:
         assert "TIMER SUMMARY | scores.bias_metrics.protein_similarity" in caplog.text
         assert "TIMER SUMMARY | scores.bias_metrics.ligand_similarity" in caplog.text
 
+    def test_assess_bias_writes_shared_bias_training_artifacts(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        _patch_validate_pipeline(monkeypatch, system_name="bias_outputs")
+
+        system_data = {
+            "sequences": [
+                {"protein": {"id": "A", "fasta": "MKRAAT"}},
+                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+            ]
+        }
+        system_path = temp_dir / "bias_outputs.yaml"
+        system_path.write_text(yaml.safe_dump(system_data), encoding="utf-8")
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1ABC,2022-01-01,MKRAAT,100.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1ABC,2022-01-01,ETH,CCO,1.0\n",
+            encoding="utf-8",
+        )
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            assess_bias=True,
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        validator.run()
+
+        output_dir = Path(temp_dir) / "results" / "bias_train"
+        assert (output_dir / "protein_training_data.csv").exists()
+        assert (output_dir / "ligand_training_data_B.csv").exists()
+        assert (output_dir / "bias_training_data.csv").exists()
+        assert (output_dir / "reference_landscape_summary.csv").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
+
     def test_non_debug_run_does_not_log_timers(
         self,
         monkeypatch,

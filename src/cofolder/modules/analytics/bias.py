@@ -15,6 +15,7 @@ from pandas.errors import EmptyDataError
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 
+from cofolder.modules.analytics.plots import plot_bias_reference_overlap
 from cofolder.modules.utils.timing import DebugTimingCollector
 
 ALIGNER = PairwiseAligner(mode="global")
@@ -35,6 +36,42 @@ LIGAND_BASE_COLUMNS = ["pdb_id", "release_date", "ligand_id", "smiles", "ecfp_si
 CUSTOM_PROTEIN_REQUIRED_COLUMNS = {"sequence"}
 CUSTOM_LIGAND_REQUIRED_COLUMNS = {"smiles"}
 REFERENCE_PATH_COLUMNS = ("source_structure_path", "source_reference_path")
+BIAS_PROTEIN_VIEW_MIN_SIMILARITY = 25.0
+BIAS_LIGAND_VIEW_MIN_SIMILARITY = 0.35
+BIAS_PLOT_SEQUENCE_THRESHOLD = 0.25
+BIAS_PLOT_LIGAND_THRESHOLD = 0.35
+BIAS_PLOT_FILE_STEM = "bias_reference_overlap_scatter"
+BIAS_PLOT_SKIPPED_FILE = f"{BIAS_PLOT_FILE_STEM}.skipped.txt"
+BIAS_TRAINING_DATA_COLUMNS = [
+    "query_pair_id",
+    "query_protein_chain_id",
+    "query_ligand_chain_id",
+    "reference_key",
+    "reference_label",
+    "pairing_status",
+    "source",
+    "dataset_name",
+    "pdb_id",
+    "protein_pdb_id",
+    "ligand_pdb_id",
+    "protein_release_date",
+    "ligand_release_date",
+    "protein_source",
+    "protein_dataset_name",
+    "protein_source_structure_path",
+    "protein_source_reference_path",
+    "ligand_source",
+    "ligand_dataset_name",
+    "ligand_source_structure_path",
+    "ligand_source_reference_path",
+    "sequence_similarity",
+    "ecfp_similarity",
+    "plot_sequence_similarity",
+    "plot_ecfp_similarity",
+    "sequence",
+    "ligand_id",
+    "smiles",
+]
 
 
 def _empty_protein_reference_frame() -> pd.DataFrame:
@@ -702,19 +739,10 @@ def _extract_system_queries(
     return protein_by_chain, ligand_by_chain, unresolved_ccd_by_chain
 
 
-def _materialize_bias_training_views(
-    chain_df: pd.DataFrame,
-    ligands_df: pd.DataFrame,
+def _build_protein_training_view(
     proteins_df: pd.DataFrame,
     protein_queries: dict[str, str | None],
-    ligand_queries: dict[str, str | None],
-    boltz_cache_path: Path,
-    output_dir: Path,
-    components_cif_path: Path | None = None,
-) -> None:
-    """Write bias training files for debug/inspection under results/bias_train."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+) -> pd.DataFrame:
     prot_rows: list[pd.DataFrame] = []
     for chain_id, query_seq in protein_queries.items():
         if not query_seq:
@@ -725,7 +753,7 @@ def _materialize_bias_training_views(
             lower=0.0,
             upper=100.0,
         )
-        sub = sub[sub["sequence_similarity"] >= 25.0].copy()
+        sub = sub[sub["sequence_similarity"] >= BIAS_PROTEIN_VIEW_MIN_SIMILARITY].copy()
         sub = sub.sort_values("sequence_similarity", ascending=False).head(100).copy()
         sub["query_chain_id"] = str(chain_id).strip()
         prot_rows.append(sub)
@@ -740,31 +768,41 @@ def _materialize_bias_training_views(
                 "query_chain_id",
                 "source",
                 "dataset_name",
+                "source_structure_path",
+                "source_reference_path",
             ]
         )
         proteins_out = proteins_out.sort_values(
-            by=["sequence_similarity", "source", "pdb_id"], ascending=[False, True, True]
+            by=["query_chain_id", "sequence_similarity", "source", "pdb_id"],
+            ascending=[True, False, True, True],
+            na_position="last",
         )
     else:
         proteins_out = proteins_df.iloc[0:0].copy()
         proteins_out["sequence_similarity"] = pd.Series(dtype=float)
         proteins_out["query_chain_id"] = pd.Series(dtype=str)
 
-    proteins_out = _order_protein_training_columns(proteins_out)
-    proteins_out.to_csv(output_dir / "protein_training_data.csv", index=False)
+    return _order_protein_training_columns(proteins_out)
 
+
+def _build_ligand_training_views(
+    chain_df: pd.DataFrame,
+    ligands_df: pd.DataFrame,
+    ligand_queries: dict[str, str | None],
+    boltz_cache_path: Path,
+    components_cif_path: Path | None = None,
+) -> dict[str, pd.DataFrame]:
     lig_rows = chain_df[chain_df["ENTITY_TYPE"].astype(str) == "ligand"].copy()
-    if lig_rows.empty:
-        return
+    if lig_rows.empty or "ligand_molecule_id" not in lig_rows.columns:
+        return {}
 
-    if "ligand_molecule_id" not in lig_rows.columns:
-        _order_ligand_training_columns(ligands_df).to_csv(
-            output_dir / "ligand_training_data.csv",
-            index=False,
-        )
-        return
-
-    ordered = lig_rows[["CHAIN_ID", "ligand_molecule_id"]].dropna().drop_duplicates()
+    views: dict[str, pd.DataFrame] = {}
+    ordered = (
+        lig_rows[["CHAIN_ID", "ligand_molecule_id"]]
+        .dropna()
+        .drop_duplicates()
+        .sort_values(["CHAIN_ID", "ligand_molecule_id"])
+    )
     for _, row in ordered.iterrows():
         chain_id = str(row["CHAIN_ID"]).strip()
         mol_id = str(row["ligand_molecule_id"]).strip()
@@ -776,7 +814,6 @@ def _materialize_bias_training_views(
             query_smiles = _smiles_from_components_cif(mol_id, components_cif_path)
         if not query_smiles:
             query_smiles = _smiles_from_ccd_cache(mol_id, boltz_cache_path)
-        out_path = output_dir / f"ligand_training_data_{chain_id}.csv"
 
         if not query_smiles:
             ref = ligands_df[ligands_df.get("ligand_id").astype(str) == _norm_id(mol_id)]
@@ -784,19 +821,329 @@ def _materialize_bias_training_views(
                 query_smiles = str(ref.iloc[0]["smiles"])
 
         if not query_smiles:
-            _order_ligand_training_columns(ligands_df.iloc[0:0].copy()).to_csv(out_path, index=False)
+            empty_view = ligands_df.iloc[0:0].copy()
+            empty_view["query_chain_id"] = pd.Series(dtype=str)
+            views[chain_id] = _order_ligand_training_columns(empty_view)
             continue
 
         sub = ligands_df.copy()
         sub["ecfp_similarity"] = _ligand_similarity_series(query_smiles, sub, mol_id=mol_id)
         sub = sub.dropna(subset=["ecfp_similarity"]).copy()
         sub = sub.sort_values("ecfp_similarity", ascending=False, na_position="last")
-        above = sub[sub["ecfp_similarity"] >= 0.35].copy()
+        above = sub[sub["ecfp_similarity"] >= BIAS_LIGAND_VIEW_MIN_SIMILARITY].copy()
         if not above.empty:
             sub = above
         else:
             sub = sub.head(100).copy()
-        _order_ligand_training_columns(sub).to_csv(out_path, index=False)
+        sub["query_chain_id"] = chain_id
+        views[chain_id] = _order_ligand_training_columns(sub)
+
+    return views
+
+
+def _reference_key_from_row(row: pd.Series, *, is_ligand: bool) -> str:
+    source = _canonical_reference_source(row.get("source"), "custom")
+    pdb_id = row.get("pdb_id")
+    if pd.notna(pdb_id) and str(pdb_id).strip() and source == "public":
+        return f"{source}:pdb:{_norm_id(pdb_id)}"
+
+    for column in REFERENCE_PATH_COLUMNS:
+        value = row.get(column)
+        if pd.notna(value) and str(value).strip():
+            return f"{source}:path:{Path(str(value)).expanduser().resolve()}"
+
+    if pd.notna(pdb_id) and str(pdb_id).strip():
+        return f"{source}:pdb:{_norm_id(pdb_id)}"
+
+    dataset_name = row.get("dataset_name")
+    if pd.notna(dataset_name) and str(dataset_name).strip():
+        return f"{source}:dataset:{str(dataset_name).strip()}:{'ligand' if is_ligand else 'protein'}:{row.name}"
+
+    return f"{source}:{'ligand' if is_ligand else 'protein'}:{row.name}"
+
+
+def _collapse_pair_value(values: list[object], *, mixed_label: str | None = None) -> str | None:
+    normalized = [str(value).strip() for value in values if pd.notna(value) and str(value).strip()]
+    if not normalized:
+        return None
+    unique_values = list(dict.fromkeys(normalized))
+    if len(unique_values) == 1:
+        return unique_values[0]
+    if mixed_label is not None:
+        return mixed_label
+    return " | ".join(sorted(unique_values))
+
+
+def _reference_label_from_merged_row(row: pd.Series) -> str | None:
+    for value in (
+        row.get("pdb_id_protein"),
+        row.get("pdb_id_ligand"),
+        row.get("source_structure_path_protein"),
+        row.get("source_reference_path_protein"),
+        row.get("source_structure_path_ligand"),
+        row.get("source_reference_path_ligand"),
+        row.get("dataset_name_protein"),
+        row.get("dataset_name_ligand"),
+    ):
+        if pd.isna(value) or not str(value).strip():
+            continue
+        text = str(value).strip()
+        candidate = Path(text).stem if "/" in text or text.endswith((".pdb", ".cif", ".sdf", ".csv")) else text
+        if candidate:
+            return candidate
+    return None
+
+
+def _build_bias_training_rows(
+    *,
+    query_protein_chain_id: str | None,
+    query_ligand_chain_id: str | None,
+    protein_view: pd.DataFrame,
+    ligand_view: pd.DataFrame,
+) -> list[dict[str, object]]:
+    left = protein_view.copy()
+    if "reference_key" not in left.columns:
+        left["reference_key"] = left.apply(lambda row: _reference_key_from_row(row, is_ligand=False), axis=1)
+    left = left.rename(columns=lambda column: column if column == "reference_key" else f"{column}_protein")
+
+    right = ligand_view.copy()
+    if "reference_key" not in right.columns:
+        right["reference_key"] = right.apply(lambda row: _reference_key_from_row(row, is_ligand=True), axis=1)
+    right = right.rename(columns=lambda column: column if column == "reference_key" else f"{column}_ligand")
+
+    merged = left.merge(
+        right,
+        how="outer",
+        on="reference_key",
+        sort=True,
+    )
+    if merged.empty:
+        return []
+
+    # Public references are PDB-level aggregates in the legacy bias builder.
+    # When multiple protein or ligand rows exist for the same PDB, we keep the
+    # paired numeric bias rows but avoid presenting sequence/ligand identifiers
+    # as if each cross-product row were a validated one-to-one reference pair.
+    protein_unique_counts = (
+        left.groupby("reference_key")["sequence_protein"].nunique(dropna=True).to_dict()
+        if "sequence_protein" in left.columns
+        else {}
+    )
+    ligand_id_unique_counts = (
+        right.groupby("reference_key")["ligand_id_ligand"].nunique(dropna=True).to_dict()
+        if "ligand_id_ligand" in right.columns
+        else {}
+    )
+    ligand_smiles_unique_counts = (
+        right.groupby("reference_key")["smiles_ligand"].nunique(dropna=True).to_dict()
+        if "smiles_ligand" in right.columns
+        else {}
+    )
+
+    rows: list[dict[str, object]] = []
+    for _, row in merged.iterrows():
+        has_protein = pd.notna(row.get("query_chain_id_protein")) and str(row.get("query_chain_id_protein")).strip()
+        has_ligand = pd.notna(row.get("query_chain_id_ligand")) and str(row.get("query_chain_id_ligand")).strip()
+        if has_protein and has_ligand:
+            pairing_status = "paired"
+        elif has_protein:
+            pairing_status = "protein_only"
+        else:
+            pairing_status = "ligand_only"
+
+        sequence_similarity = pd.to_numeric(
+            pd.Series([row.get("sequence_similarity_protein")]),
+            errors="coerce",
+        ).iloc[0]
+        ecfp_similarity = pd.to_numeric(
+            pd.Series([row.get("ecfp_similarity_ligand")]),
+            errors="coerce",
+        ).iloc[0]
+        plot_sequence_similarity = (
+            float(sequence_similarity) / 100.0 if pd.notna(sequence_similarity) else pd.NA
+        )
+        plot_ecfp_similarity = float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA
+
+        protein_chain = query_protein_chain_id or None
+        ligand_chain = query_ligand_chain_id or None
+        reference_key = row.get("reference_key")
+        is_public_pdb_reference = (
+            pd.notna(reference_key)
+            and str(reference_key).startswith("public:pdb:")
+        )
+        if is_public_pdb_reference and protein_unique_counts.get(reference_key, 0) > 1:
+            sequence_value = pd.NA
+        else:
+            sequence_value = row.get("sequence_protein")
+        if is_public_pdb_reference and ligand_id_unique_counts.get(reference_key, 0) > 1:
+            ligand_id_value = pd.NA
+        else:
+            ligand_id_value = row.get("ligand_id_ligand")
+        if is_public_pdb_reference and ligand_smiles_unique_counts.get(reference_key, 0) > 1:
+            smiles_value = pd.NA
+        else:
+            smiles_value = row.get("smiles_ligand")
+
+        rows.append(
+            {
+                "query_pair_id": f"{protein_chain or 'none'}__{ligand_chain or 'none'}",
+                "query_protein_chain_id": protein_chain,
+                "query_ligand_chain_id": ligand_chain,
+                "reference_key": reference_key,
+                "reference_label": _reference_label_from_merged_row(row),
+                "pairing_status": pairing_status,
+                "source": _collapse_pair_value(
+                    [row.get("source_protein"), row.get("source_ligand")],
+                    mixed_label="mixed",
+                ),
+                "dataset_name": _collapse_pair_value(
+                    [row.get("dataset_name_protein"), row.get("dataset_name_ligand")]
+                ),
+                "pdb_id": _collapse_pair_value(
+                    [row.get("pdb_id_protein"), row.get("pdb_id_ligand")]
+                ),
+                "protein_pdb_id": row.get("pdb_id_protein"),
+                "ligand_pdb_id": row.get("pdb_id_ligand"),
+                "protein_release_date": row.get("release_date_protein"),
+                "ligand_release_date": row.get("release_date_ligand"),
+                "protein_source": row.get("source_protein"),
+                "protein_dataset_name": row.get("dataset_name_protein"),
+                "protein_source_structure_path": row.get("source_structure_path_protein"),
+                "protein_source_reference_path": row.get("source_reference_path_protein"),
+                "ligand_source": row.get("source_ligand"),
+                "ligand_dataset_name": row.get("dataset_name_ligand"),
+                "ligand_source_structure_path": row.get("source_structure_path_ligand"),
+                "ligand_source_reference_path": row.get("source_reference_path_ligand"),
+                "sequence_similarity": float(sequence_similarity) if pd.notna(sequence_similarity) else pd.NA,
+                "ecfp_similarity": float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA,
+                "plot_sequence_similarity": plot_sequence_similarity,
+                "plot_ecfp_similarity": plot_ecfp_similarity,
+                "sequence": sequence_value,
+                "ligand_id": ligand_id_value,
+                "smiles": smiles_value,
+            }
+        )
+
+    return rows
+
+
+def _build_bias_training_dataset(
+    *,
+    protein_view: pd.DataFrame,
+    ligand_views: dict[str, pd.DataFrame],
+) -> pd.DataFrame:
+    protein_chain_ids = sorted(
+        {
+            str(value).strip()
+            for value in protein_view.get("query_chain_id", pd.Series(dtype=object)).dropna()
+            if str(value).strip()
+        }
+    )
+    ligand_chain_ids = sorted(str(chain_id).strip() for chain_id in ligand_views if str(chain_id).strip())
+
+    if not protein_chain_ids and not ligand_chain_ids:
+        return pd.DataFrame(columns=BIAS_TRAINING_DATA_COLUMNS)
+
+    rows: list[dict[str, object]] = []
+    protein_iter = protein_chain_ids or [None]
+    ligand_iter = ligand_chain_ids or [None]
+
+    for protein_chain_id in protein_iter:
+        protein_subset = (
+            protein_view[protein_view["query_chain_id"].astype(str) == protein_chain_id].copy()
+            if protein_chain_id is not None and "query_chain_id" in protein_view.columns
+            else protein_view.iloc[0:0].copy()
+        )
+        for ligand_chain_id in ligand_iter:
+            ligand_subset = (
+                ligand_views.get(ligand_chain_id, pd.DataFrame()).copy()
+                if ligand_chain_id is not None
+                else pd.DataFrame()
+            )
+            rows.extend(
+                _build_bias_training_rows(
+                    query_protein_chain_id=protein_chain_id,
+                    query_ligand_chain_id=ligand_chain_id,
+                    protein_view=protein_subset,
+                    ligand_view=ligand_subset,
+                )
+            )
+
+    bias_training_df = pd.DataFrame(rows)
+    if bias_training_df.empty:
+        return pd.DataFrame(columns=BIAS_TRAINING_DATA_COLUMNS)
+
+    bias_training_df["plot_sequence_similarity"] = pd.to_numeric(
+        bias_training_df["plot_sequence_similarity"],
+        errors="coerce",
+    ).clip(lower=0.0, upper=1.0)
+    bias_training_df["plot_ecfp_similarity"] = pd.to_numeric(
+        bias_training_df["plot_ecfp_similarity"],
+        errors="coerce",
+    ).clip(lower=0.0, upper=1.0)
+    bias_training_df["_pairing_order"] = bias_training_df["pairing_status"].map(
+        {"paired": 0, "protein_only": 1, "ligand_only": 2}
+    )
+    bias_training_df = bias_training_df.sort_values(
+        by=[
+            "query_protein_chain_id",
+            "query_ligand_chain_id",
+            "_pairing_order",
+            "source",
+            "dataset_name",
+            "plot_sequence_similarity",
+            "plot_ecfp_similarity",
+            "reference_label",
+        ],
+        ascending=[True, True, True, True, True, False, False, True],
+        na_position="last",
+    ).drop(columns="_pairing_order")
+
+    for column in BIAS_TRAINING_DATA_COLUMNS:
+        if column not in bias_training_df.columns:
+            bias_training_df[column] = pd.NA
+    return bias_training_df.loc[:, BIAS_TRAINING_DATA_COLUMNS].reset_index(drop=True)
+
+
+def _materialize_bias_training_views(
+    chain_df: pd.DataFrame,
+    ligands_df: pd.DataFrame,
+    proteins_df: pd.DataFrame,
+    protein_queries: dict[str, str | None],
+    ligand_queries: dict[str, str | None],
+    boltz_cache_path: Path,
+    output_dir: Path,
+    components_cif_path: Path | None = None,
+) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Write bias training files for debug/inspection under results/bias_train."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for stale_path in output_dir.glob("ligand_training_data*.csv"):
+        stale_path.unlink()
+
+    proteins_out = _build_protein_training_view(proteins_df, protein_queries)
+    proteins_out.to_csv(output_dir / "protein_training_data.csv", index=False)
+
+    ligand_views = _build_ligand_training_views(
+        chain_df=chain_df,
+        ligands_df=ligands_df,
+        ligand_queries=ligand_queries,
+        boltz_cache_path=boltz_cache_path,
+        components_cif_path=components_cif_path,
+    )
+
+    lig_rows = chain_df[chain_df["ENTITY_TYPE"].astype(str) == "ligand"].copy()
+    if not lig_rows.empty and "ligand_molecule_id" not in lig_rows.columns:
+        _order_ligand_training_columns(ligands_df).to_csv(
+            output_dir / "ligand_training_data.csv",
+            index=False,
+        )
+        return proteins_out, ligand_views
+
+    for chain_id, ligand_view in ligand_views.items():
+        out_path = output_dir / f"ligand_training_data_{chain_id}.csv"
+        ligand_view.drop(columns=["query_chain_id"], errors="ignore").to_csv(out_path, index=False)
+
+    return proteins_out, ligand_views
 
 
 def apply_bias_metrics(
@@ -964,7 +1311,8 @@ def apply_bias_metrics(
             output_chain_df = chain_df[
                 chain_df["CHAIN_ID"].astype(str).str.strip().str.upper().isin(selected_chains)
             ].copy()
-        _materialize_bias_training_views(
+        output_root = Path(output_dir)
+        protein_view, ligand_views = _materialize_bias_training_views(
             chain_df=output_chain_df,
             ligands_df=ligands_df,
             proteins_df=_load_protein_training(
@@ -976,16 +1324,44 @@ def apply_bias_metrics(
             protein_queries=protein_queries,
             ligand_queries=ligand_queries,
             boltz_cache_path=cache_path,
-            output_dir=Path(output_dir),
+            output_dir=output_root,
             components_cif_path=components_path,
         )
+        bias_training_df = _build_bias_training_dataset(
+            protein_view=protein_view,
+            ligand_views=ligand_views,
+        )
+        bias_training_df.to_csv(output_root / "bias_training_data.csv", index=False)
+        skipped_plot_path = output_root / BIAS_PLOT_SKIPPED_FILE
+        plot_paths = plot_bias_reference_overlap(
+            bias_training_df,
+            output_dir=output_root,
+            file_stem=BIAS_PLOT_FILE_STEM,
+            sequence_threshold=BIAS_PLOT_SEQUENCE_THRESHOLD,
+            ligand_threshold=BIAS_PLOT_LIGAND_THRESHOLD,
+        )
+        if plot_paths:
+            if skipped_plot_path.exists():
+                skipped_plot_path.unlink()
+        else:
+            for suffix in ("png", "pdf"):
+                (output_root / f"{BIAS_PLOT_FILE_STEM}.{suffix}").unlink(missing_ok=True)
+            skipped_plot_path.write_text(
+                (
+                    "Bias reference-overlap scatter plot skipped because the merged plotting dataset "
+                    "did not contain rows with both protein and ligand similarity axes. "
+                    "Bias artifacts remain reference-overlap diagnostics only and do not predict "
+                    "affinity, structural confidence, or cofolding success.\n"
+                ),
+                encoding="utf-8",
+            )
         _materialize_reference_landscape_summary(
             chain_df=output_chain_df,
             proteins_df=proteins_df,
             ligands_df=ligands_df,
             protein_queries=protein_queries,
             ligand_queries=ligand_queries,
-            output_dir=Path(output_dir),
+            output_dir=output_root,
         )
         logger.info("Bias training views written to %s", output_dir)
 
