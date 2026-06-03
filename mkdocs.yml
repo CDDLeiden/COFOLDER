@@ -1,5 +1,5 @@
 site_name: COFOLDER Documentation
-site_description: Collection of tools for performing various co-folding tasks using Cofoloding models (e.g. Boltz)
+site_description: Documentation for COFOLDER co-folding workflows, diagnostics, and tutorials
 site_author: Bola Khalil
 repo_url: https://github.com/CDDLeiden/COFOLDER
 repo_name: CDDLeiden/COFOLDER
@@ -73,6 +73,7 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quickstart.md
+      - Repository Tour: getting-started/repository-tour.md
       - Configuration: getting-started/configuration.md
   - User Guide:
       - Overview: user-guide/overview.md
@@ -81,6 +82,7 @@ nav:
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
   - Tutorials:
+      - Tutorial Map: tutorials/index.md
       - Basic Usage: tutorials/basic.md
       - Virtual Screening: tutorials/screening.md
       - Ligand Handling: tutorials/ligands.md

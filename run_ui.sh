@@ -1,17 +1,24 @@
-#!/bin/bash
-# Start the COFOLDER Streamlit UI
+#!/usr/bin/env bash
 
-cd "$(dirname "$0")" || exit
+set -euo pipefail
 
-# Check if streamlit is installed
-if ! command -v streamlit &> /dev/null; then
-    echo "Streamlit is not installed. Installing dependencies..."
-    pip install streamlit streamlit-option-menu pyyaml
+cd "$(dirname "$0")" || exit 1
+
+if ! python -c "import streamlit, streamlit_option_menu" >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+COFOLDER UI dependencies are not installed in this environment.
+
+Install them explicitly with:
+  python -m pip install -e ".[ui]"
+
+Then rerun:
+  ./run_ui.sh
+EOF
+    exit 1
 fi
 
-# Run the Streamlit app
 echo "Starting COFOLDER UI..."
 echo "Access the UI at: http://localhost:8501"
 echo ""
 
-streamlit run src/cofolder/ui/app.py
+exec python -m streamlit run src/cofolder/ui/app.py
