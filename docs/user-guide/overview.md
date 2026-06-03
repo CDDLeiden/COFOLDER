@@ -1,8 +1,20 @@
 # User Guide Overview
 
-COFOLDER provides three main commands for different co-folding workflows.
+COFOLDER provides four main commands. `bias` is a standalone diagnostic workflow,
+while `validate`, `screen`, and `oracle` are runner-backed prediction workflows.
 
 ## Commands
+
+### Bias
+
+Inspect protein and ligand reference overlap directly from a system definition.
+
+**Use cases:**
+- Pre-cofolding decision support
+- Public reference overlap inspection
+- Custom reference comparison without running a backend
+
+[Learn more →](bias.md)
 
 ### Validate
 
@@ -44,7 +56,8 @@ Choose the right command for your task:
 ```mermaid
 graph TD
     A[Start] --> B{What is your goal?}
-    B -->|Single system| C[validate]
+    B -->|Reference-overlap diagnostics only| F[bias]
+    B -->|Single system prediction| C[validate]
     B -->|Multiple ligands| D[screen]
     B -->|Scoring function| E[oracle]
 ```
@@ -53,9 +66,16 @@ graph TD
 
 ### Input File Preparation
 
-All commands require:
-1. System YAML file defining the molecular system
-2. Runner options YAML file for prediction parameters
+All commands require a system YAML file defining the molecular system.
+
+Runner-backed commands also require runner options:
+1. `validate`
+2. `screen`
+3. `oracle`
+
+The standalone `bias` workflow does not require `options.yaml` or a runner installation.
+It needs at least one public or custom reference input, or build-mode inputs for generating
+public bias-training data.
 
 ### Output Organization
 
@@ -74,6 +94,29 @@ output/
 `screen` uses that same per-run layout inside each row-specific subdirectory and also writes top-level screening summaries such as `screen_results.csv` and `screen_results_with_scores.csv`.
 
 `oracle` writes its wrapped `validate` run under `oracle_run/` and adds a top-level `oracle_result.csv` summary.
+
+`bias` writes diagnostic outputs under `<wrk_dir>/results/bias_train/`, including:
+
+```
+output/
+├── results/
+│   └── bias_train/
+│       ├── system_metrics.csv
+│       ├── chain_metrics.csv
+│       ├── protein_training_data.csv
+│       ├── ligand_training_data_<CHAIN>.csv
+│       ├── bias_training_data.csv
+│       ├── reference_landscape_summary.csv
+│       ├── bias_reference_overlap_scatter.png
+│       └── bias_reference_overlap_scatter.pdf
+└── log.log
+```
+
+Some valid runs vary slightly from that common layout:
+
+- compatibility-only ligand views may be written as `ligand_training_data.csv`
+- when no paired protein/ligand plotting rows exist, the workflow writes
+  `bias_reference_overlap_scatter.skipped.txt` instead of plot files
 
 ### Error Handling
 
@@ -110,6 +153,7 @@ For screening large libraries:
 
 Explore detailed guides for each command:
 
+- [Bias Command →](bias.md)
 - [Validate Command →](validate.md)
 - [Screen Command →](screen.md)
 - [Oracle Command →](oracle.md)

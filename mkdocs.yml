@@ -76,6 +76,7 @@ nav:
       - Configuration: getting-started/configuration.md
   - User Guide:
       - Overview: user-guide/overview.md
+      - Bias: user-guide/bias.md
       - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
@@ -88,6 +89,7 @@ nav:
       - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
       - Recipes:
+          - Bias: api/recipes/bias.md
           - Validate: api/recipes/validate.md
           - Screen: api/recipes/screen.md
           - Oracle: api/recipes/oracle.md

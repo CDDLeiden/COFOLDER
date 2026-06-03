@@ -55,6 +55,9 @@ cofolder screen \
   - reproduction options (`--reference_path`, `--reproduction_metrics`)
   - robustness options
 
+If you only need pre-cofolding bias diagnostics for one system, prefer the dedicated
+[`bias`](bias.md) workflow instead of running `screen`.
+
 ## Output
 
 `screen` writes:
@@ -87,6 +90,7 @@ Failures are recorded in `screen_results.csv`.
 
 ## Related
 
+- [Bias Command](bias.md)
 - [Configuration Guide](../getting-started/configuration.md)
 - [Virtual Screening Tutorial](../tutorials/screening.md)
 - [Validate Command](validate.md)

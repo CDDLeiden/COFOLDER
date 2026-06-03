@@ -42,6 +42,10 @@ Examples:
 - `affinity_pred_value` requires affinity metrics
 - `bias_*` requires `--assess_bias`
 
+Requesting a `bias_*` metric here still runs the full validate-backed prediction path and
+then reads the shared bias diagnostics. If you only want reference-overlap diagnostics,
+use the dedicated [`bias`](bias.md) workflow instead.
+
 ## Output
 
 - Scalar return value from `Oracle.run()`
@@ -49,5 +53,6 @@ Examples:
 
 ## Related
 
+- [Bias Command](bias.md)
 - [Oracle API Reference](../api/recipes/oracle.md)
 - [Validate Command](validate.md)

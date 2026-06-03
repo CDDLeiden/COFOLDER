@@ -79,16 +79,25 @@ You should see output showing the version number.
 
 ## Optional Dependencies
 
-### Bias Assessment (MMseqs2)
+### Standalone Bias Workflow
 
-If you want protein sequence-similarity bias metrics (`--assess_bias` with protein training data),
-install `mmseqs2` in the same environment where you run `cofolder`:
+The dedicated `cofolder bias` command is part of the base package. You do not need a
+cofolding backend runner just to inspect reference-overlap diagnostics.
+
+Base-package-only bias usage works for:
+
+- custom-only reference inputs
+- prebuilt public protein/ligand training CSVs
+- mixed public-plus-custom reference analysis
+
+Install `mmseqs2` only if you want to build public protein bias-training data from a
+system definition in the same environment where you run `cofolder`:
 
 ```bash
 conda install -c conda-forge -c bioconda mmseqs2
 ```
 
-Alternative without conda-forge (vendor MMseqs2 binary):
+Alternative without conda-forge:
 
 ```bash
 chmod +x scripts/install_mmseqs_vendor.sh
@@ -103,15 +112,15 @@ which mmseqs
 mmseqs --version
 ```
 
-Step-by-step bias setup after installing the base package and the backend you plan to use:
+Bias-only setup after installing the base package:
 
 ```bash
-# 1) fetch CCD + mmseqs DB
+# 1) Optional: fetch CCD + mmseqs DB if you want to build public training CSVs
 python scripts/fetch_bias_training_data.py \
   --output_root /path/to/training_data \
   --overwrite
 
-# 2) build protein/ligand training CSVs
+# 2) Optional: build public protein/ligand training CSVs
 python scripts/build_bias_training_data.py \
   --system_path /path/to/system.yaml \
   --components_cif /path/to/training_data/ccd/components.cif \
@@ -120,7 +129,30 @@ python scripts/build_bias_training_data.py \
   --release_cutoff 2023-06-01 \
   --overwrite
 
-# 3) run validate with bias
+# 3a) Run standalone bias from prebuilt public references
+cofolder bias \
+  --system_path /path/to/system.yaml \
+  --wrk_dir /path/to/bias_run \
+  --protein_training_data_path /path/to/training_data/protein_training_data.csv \
+  --ligand_training_data_path /path/to/training_data/ligand_training_data.csv
+
+# 3b) Or run standalone bias from custom-only references
+cofolder bias \
+  --system_path /path/to/system.yaml \
+  --wrk_dir /path/to/bias_run \
+  --custom_protein_reference_path /path/to/custom_protein.csv \
+  --custom_ligand_reference_path /path/to/custom_ligand.csv
+```
+
+`cofolder bias` writes diagnostic artifacts under `<wrk_dir>/results/bias_train/`.
+These are reference-overlap outputs for pre-cofolding decision support. They are not
+binding-affinity predictions, model-confidence scores, or guarantees of cofolding
+success.
+
+If you want the same bias diagnostics attached to a runner-backed validation run, use
+`validate --assess_bias` with the same public reference CSVs:
+
+```bash
 cofolder validate ... \
   --assess_bias \
   --protein_training_data_path /path/to/training_data/protein_training_data.csv \

@@ -20,6 +20,7 @@ cofolder validate -s system.yaml -o options.yaml
 - `-w, --wrk_dir`: Working directory (default: current directory)
 - `--conformers {2D,3D,sdf}`: Generate or load conformers for SMILES input
 - `--sdf_file`: SDF path (required with `--conformers sdf`)
+- `--assess_bias`: Add shared bias diagnostics under `results/bias_train/`
 - `-d, --debug`: Enable debug logging
 
 ## Examples
@@ -60,6 +61,21 @@ This is intended for component benchmarking. For reproducible benchmark numbers,
 warmed Boltz cache/model files and fresh prediction outputs so one-time downloads or
 cache-hit skips do not distort timings.
 
+### With Shared Bias Diagnostics
+
+```bash
+cofolder validate \
+  -s system.yaml \
+  -o options.yaml \
+  --assess_bias \
+  --protein_training_data_path protein_training_data.csv \
+  --ligand_training_data_path ligand_training_data.csv
+```
+
+This uses the same bias-reporting seam as the standalone [`bias`](bias.md) workflow and
+writes those diagnostics to `<wrk_dir>/results/bias_train/` alongside the runner-backed
+prediction outputs.
+
 ## System File Format
 
 ```yaml
@@ -81,7 +97,12 @@ The command creates:
 - `results/system_metrics.csv` - merged system-level metrics
 - `results/chain_metrics.csv` - merged chain-level metrics
 - `results/structures/` - gathered output structures
+- `results/bias_train/` - optional shared bias diagnostics when `--assess_bias` is enabled
 - log files in the working directory
+
+Bias outputs remain distinct from validation metrics, model-confidence outputs, and any
+affinity predictions. They are reference-overlap diagnostics, not a proxy for binding
+affinity or expected cofolding success.
 
 ## Tips
 
@@ -92,6 +113,7 @@ The command creates:
 
 ## Related
 
+- [Bias Command](bias.md)
 - [Configuration Guide](../getting-started/configuration.md)
 - [Validate API Reference](../api/recipes/validate.md)
 - [Basic Tutorial](../tutorials/basic.md)
