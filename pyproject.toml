@@ -42,7 +42,11 @@ openfold3 = [
 acceptance = [
     "marimo>=0.23,<0.24",
 ]
+tutorials = [
+    "marimo>=0.23,<0.24",
+]
 test = [
+    "marimo>=0.23,<0.24",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
