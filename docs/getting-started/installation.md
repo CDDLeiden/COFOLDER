@@ -172,6 +172,20 @@ This installs:
 - MkDocs with Material theme
 - mkdocstrings for API reference generation
 
+### Tutorial Notebooks
+
+To run the interactive marimo tutorials:
+
+```bash
+pip install -e ".[tutorials]"
+```
+
+Then launch a tutorial notebook, for example:
+
+```bash
+marimo edit tutorials/bias.py
+```
+
 ## Development Installation
 
 For development work, install with all optional dependencies:

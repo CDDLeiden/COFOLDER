@@ -1,39 +1,40 @@
 # Tutorials
 
-This folder contains interactive notebook tutorials for users who want a hands-on path through COFOLDER.
+This folder contains the interactive COFOLDER tutorial notebooks in marimo format.
 
 The notebooks complement the written tutorials in `docs/tutorials/`. A good rule of thumb is:
 
 - read `docs/` when you want the shortest supported explanation
-- use these notebooks when you want to experiment step by step
+- use these marimo notebooks when you want a guided, executable walkthrough
+
+## Launching The Tutorials
+
+Install the notebook runtime and the backend you want to use:
+
+```bash
+python -m pip install -e ".[tutorials]"
+python -m pip install -e ".[boltz2]"
+marimo edit tutorials/bias.py
+```
+
+The `bias` parts of the tutorial set can run without a prediction backend, but the
+`validate`, `screen`, `oracle`, and some ligand-helper demonstrations assume a backend
+environment such as `.[boltz2]`.
 
 ## Recommended Order
 
-1. `base.ipynb`
-2. `system_validation.ipynb`
-3. `virtual_screening.ipynb`
-4. `oracle.ipynb`
-5. `ligand_handling.ipynb`
-6. `polymer_handling.ipynb`
-7. `runners.ipynb`
+1. `bias.py`
+2. `validate.py`
+3. `screen.py`
+4. `oracle.py`
+5. `ligand_handling.py`
+6. `runners.py`
 
 ## Notebook Roles
 
-- `base.ipynb`: first hands-on walkthrough
-- `system_validation.ipynb`: single-system validation workflow
-- `virtual_screening.ipynb`: multi-ligand screening workflow
-- `oracle.ipynb`: single-metric oracle workflow
-- `ligand_handling.ipynb`: ligand preparation and utility patterns
-- `polymer_handling.ipynb`: polymer and system-input handling
-- `runners.ipynb`: backend and runner-facing concepts for advanced users and contributors
-
-## Before You Open A Notebook
-
-Install the package and any backend you need first:
-
-```bash
-python -m pip install -e .
-python -m pip install -e ".[boltz2]"
-```
-
-Then open the notebooks in Jupyter, VS Code, or another notebook environment that uses the same Python environment.
+- `bias.py`: standalone reference-overlap diagnostics workflow
+- `validate.py`: single-system validation workflow
+- `screen.py`: multi-ligand screening workflow
+- `oracle.py`: single-metric oracle workflow
+- `ligand_handling.py`: specific ligand preparation and conformer-handling tutorial
+- `runners.py`: contributor notebook for authoring new runners plus backend-acceptance launch guidance

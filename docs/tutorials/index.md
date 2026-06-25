@@ -3,7 +3,7 @@
 COFOLDER tutorials come in two forms:
 
 - written tutorials in `docs/tutorials/` for the shortest supported reading path
-- notebook tutorials in the repository `tutorials/` folder for interactive exploration
+- marimo notebook tutorials in the repository `tutorials/` folder for interactive exploration
 
 ## Suggested Learning Path
 
@@ -25,12 +25,18 @@ COFOLDER tutorials come in two forms:
 
 These live in the repository root under `tutorials/`:
 
-- `base.ipynb`
-- `system_validation.ipynb`
-- `virtual_screening.ipynb`
-- `oracle.ipynb`
-- `ligand_handling.ipynb`
-- `polymer_handling.ipynb`
-- `runners.ipynb`
+- `bias.py`
+- `validate.py`
+- `screen.py`
+- `oracle.py`
+- `ligand_handling.py`
+- `runners.py`
 
-Use the notebooks when you want to inspect intermediate outputs, execute cells step by step, or adapt the tutorial flow to your own systems.
+Launch them with marimo:
+
+```bash
+python -m pip install -e ".[tutorials]"
+marimo edit tutorials/bias.py
+```
+
+Use the notebooks when you want to inspect intermediate outputs, execute cells step by step, or adapt the tutorial flow to your own systems. The workflow-first set centers on `bias`, `validate`, `screen`, and `oracle`, then adds cross-cutting ligand handling plus one contributor notebook for runners and backend acceptance.
