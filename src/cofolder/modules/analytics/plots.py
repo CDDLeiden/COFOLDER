@@ -14,6 +14,8 @@ from cofolder.modules.utils import helpers, write
 
 logger = logging.getLogger(__name__)
 
+SYNTHETIC_PAIRING_STATUS = "synthetic_paired"
+
 
 def plot_affinity_correlation(
     df: pd.DataFrame,
@@ -65,7 +67,10 @@ def _annotation_label(row: pd.Series) -> str | None:
     for column in ("reference_label", "pdb_id", "protein_pdb_id", "ligand_pdb_id", "dataset_name"):
         value = row.get(column)
         if pd.notna(value) and str(value).strip():
-            return str(value).strip()
+            label = str(value).strip()
+            if str(row.get("pairing_status", "")).strip() == SYNTHETIC_PAIRING_STATUS:
+                return f"Synthetic: {label}"
+            return label
     return None
 
 
@@ -93,6 +98,7 @@ def plot_bias_reference_overlap(
     plot_df[sequence_col] = plot_df[sequence_col].clip(lower=0.0, upper=1.0)
     plot_df[ligand_col] = plot_df[ligand_col].clip(lower=0.0, upper=1.0)
     plot_df["source"] = plot_df.get("source", pd.Series(dtype=object)).fillna("unknown").astype(str)
+    plot_df["pairing_status"] = plot_df.get("pairing_status", pd.Series(dtype=object)).fillna("").astype(str)
 
     fig, ax = plt.subplots(figsize=(7.2, 7.2))
     ax.add_patch(
@@ -131,21 +137,48 @@ def plot_bias_reference_overlap(
     )
 
     for source in source_order:
-        group = plot_df[plot_df["source"] == source].copy()
-        if group.empty:
+        source_group = plot_df[plot_df["source"] == source].copy()
+        if source_group.empty:
             continue
-        ax.scatter(
-            group[ligand_col],
-            group[sequence_col],
-            label=display_names.get(source, source),
-            c=palette.get(source, "#555555"),
-            marker=markers.get(source, "o"),
-            edgecolors="white",
-            linewidths=0.6,
-            s=52,
-            alpha=0.86,
-            zorder=3,
-        )
+        groups = [
+            ("base", source_group[source_group["pairing_status"] != SYNTHETIC_PAIRING_STATUS].copy()),
+            ("synthetic", source_group[source_group["pairing_status"] == SYNTHETIC_PAIRING_STATUS].copy()),
+        ]
+        for group_kind, group in groups:
+            if group.empty:
+                continue
+            label = display_names.get(source, source)
+            if group_kind == "synthetic":
+                label = f"{label} synthetic combinations"
+            scatter_kwargs = {
+                "label": label,
+                "marker": markers.get(source, "o"),
+                "linewidths": 0.6,
+                "s": 52,
+                "alpha": 0.86,
+                "zorder": 3,
+            }
+            color = palette.get(source, "#555555")
+            if group_kind == "synthetic":
+                scatter_kwargs.update(
+                    {
+                        "facecolors": "none",
+                        "edgecolors": color,
+                        "linewidths": 1.2,
+                    }
+                )
+            else:
+                scatter_kwargs.update(
+                    {
+                        "c": color,
+                        "edgecolors": "white",
+                    }
+                )
+            ax.scatter(
+                group[ligand_col],
+                group[sequence_col],
+                **scatter_kwargs,
+            )
 
     ax.axvline(ligand_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
     ax.axhline(sequence_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
@@ -170,8 +203,8 @@ def plot_bias_reference_overlap(
 
     annotated_labels: set[str] = set()
     ranked = plot_df.sort_values(
-        by=[sequence_col, ligand_col, "reference_label"],
-        ascending=[False, False, True],
+        by=["pairing_status", sequence_col, ligand_col, "reference_label"],
+        ascending=[True, False, False, True],
         na_position="last",
     )
     for candidate in (

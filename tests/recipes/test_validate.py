@@ -887,6 +887,71 @@ class TestValidateRun:
         assert (output_dir / "bias_reference_overlap_scatter.png").exists()
         assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
 
+    def test_assess_bias_builds_synthetic_pairs_for_disjoint_public_references(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        _patch_validate_pipeline(monkeypatch, system_name="bias_outputs")
+
+        system_data = {
+            "sequences": [
+                {"protein": {"id": "A", "fasta": "MKRAAT"}},
+                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+            ]
+        }
+        system_path = temp_dir / "bias_outputs.yaml"
+        system_path.write_text(yaml.safe_dump(system_data), encoding="utf-8")
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "5ZOD,2022-01-01,MKRAAC,94.1\n"
+            "3Q8K,2022-01-01,MKRAAG,94.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1XM1,2022-01-01,L1,CCO,0.38\n"
+            "6AGT,2022-01-01,L2,CCO,0.36\n",
+            encoding="utf-8",
+        )
+
+        output_dir = Path(temp_dir) / "results" / "bias_train"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "bias_reference_overlap_scatter.skipped.txt").write_text(
+            "stale\n",
+            encoding="utf-8",
+        )
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            assess_bias=True,
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        validator.run()
+
+        bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
+        synthetic = bias_training[bias_training["pairing_status"] == "synthetic_paired"].copy()
+
+        assert len(synthetic) == 4
+        assert set(zip(synthetic["protein_pdb_id"], synthetic["ligand_pdb_id"])) == {
+            ("5ZOD", "1XM1"),
+            ("5ZOD", "6AGT"),
+            ("3Q8K", "1XM1"),
+            ("3Q8K", "6AGT"),
+        }
+        assert (output_dir / "bias_reference_overlap_scatter.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
+        assert not (output_dir / "bias_reference_overlap_scatter.skipped.txt").exists()
+
     def test_non_debug_run_does_not_log_timers(
         self,
         monkeypatch,

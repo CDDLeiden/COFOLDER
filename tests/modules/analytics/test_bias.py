@@ -1,17 +1,21 @@
 """Tests for bias metric analytics."""
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from cofolder.modules.analytics import plots as plots_module
 from cofolder.modules.analytics.bias import (
     BIAS_TRAINING_DATA_COLUMNS,
     _build_bias_training_dataset,
     _build_protein_training_view,
     _load_ligand_training,
+    _synthetic_reference_key,
     apply_bias_metrics,
 )
+from cofolder.modules.analytics.plots import plot_bias_reference_overlap
 
 
 class _MockSystem:
@@ -394,12 +398,18 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
     assert "dataset_name" in protein_view.columns
     assert set(ligand_view["source"]) == {"public", "custom"}
     assert bias_training.columns.tolist() == BIAS_TRAINING_DATA_COLUMNS
-    assert bias_training["source"].tolist() == ["custom", "public"]
-    assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
-    assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
-    assert bias_training["pairing_status"].tolist() == ["paired", "paired"]
-    assert bias_training["plot_sequence_similarity"].tolist() == [1.0, 0.83]
-    assert bias_training["plot_ecfp_similarity"].tolist() == [1.0, 0.4]
+    assert bias_training["source"].tolist() == ["custom", "public", "mixed", "mixed"]
+    assert bias_training["query_protein_chain_id"].tolist() == ["A", "A", "A", "A"]
+    assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B", "B", "B"]
+    assert bias_training["pairing_status"].tolist() == ["paired", "paired", "synthetic_paired", "synthetic_paired"]
+    assert bias_training["plot_sequence_similarity"].tolist()[:2] == [1.0, 0.83]
+    assert bias_training["plot_ecfp_similarity"].tolist()[:2] == [1.0, 0.4]
+    assert set(
+        zip(
+            bias_training["plot_sequence_similarity"].tolist()[2:],
+            bias_training["plot_ecfp_similarity"].tolist()[2:],
+        )
+    ) == {(1.0, 0.4), (0.83, 1.0)}
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.png").exists()
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.pdf").exists()
     assert set(summary["nearest_overall_source"]) == {"custom"}
@@ -465,6 +475,263 @@ def test_build_bias_training_dataset_clears_ambiguous_public_detail_fields():
     assert result["ligand_id"].isna().all()
     assert result["smiles"].isna().all()
     assert result["pairing_status"].tolist() == ["paired"] * 4
+
+
+def test_build_bias_training_dataset_adds_synthetic_rows_for_disjoint_public_hits():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "5ZOD",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 94.1,
+                "sequence": "SEQ_A",
+            },
+            {
+                "query_chain_id": "A",
+                "pdb_id": "3Q8K",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 94.0,
+                "sequence": "SEQ_B",
+            },
+        ]
+    )
+    ligand_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "B",
+                "pdb_id": "1XM1",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "L1",
+                "ecfp_similarity": 0.38,
+                "smiles": "CCO",
+            },
+            {
+                "query_chain_id": "B",
+                "pdb_id": "6AGT",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "L2",
+                "ecfp_similarity": 0.36,
+                "smiles": "CCN",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(
+        protein_view=protein_view,
+        ligand_views={"B": ligand_view},
+    )
+
+    synthetic = result[result["pairing_status"] == "synthetic_paired"].copy()
+    protein_only = result[result["pairing_status"] == "protein_only"].copy()
+    ligand_only = result[result["pairing_status"] == "ligand_only"].copy()
+
+    assert len(result) == 8
+    assert len(synthetic) == 4
+    assert len(protein_only) == 2
+    assert len(ligand_only) == 2
+    assert synthetic["reference_key"].str.startswith("synthetic:").all()
+    assert synthetic["reference_label"].str.contains(" x ").all()
+    assert synthetic["pdb_id"].tolist() == ["synthetic_pair"] * 4
+    assert synthetic["source"].tolist() == ["public"] * 4
+    assert synthetic["query_pair_id"].tolist() == ["A__B"] * 4
+    assert set(zip(synthetic["protein_pdb_id"], synthetic["ligand_pdb_id"])) == {
+        ("5ZOD", "1XM1"),
+        ("5ZOD", "6AGT"),
+        ("3Q8K", "1XM1"),
+        ("3Q8K", "6AGT"),
+    }
+
+
+def test_build_bias_training_dataset_marks_mixed_provenance_synthetic_rows():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "5ZOD",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 94.1,
+                "sequence": "SEQ_A",
+            },
+        ]
+    )
+    ligand_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "B",
+                "pdb_id": pd.NA,
+                "release_date": pd.NA,
+                "source": "custom",
+                "dataset_name": "private_ligands",
+                "source_reference_path": "/tmp/custom_ligand.sdf",
+                "ligand_id": "L1",
+                "ecfp_similarity": 0.91,
+                "smiles": "CCO",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(
+        protein_view=protein_view,
+        ligand_views={"B": ligand_view},
+    )
+
+    synthetic = result[result["pairing_status"] == "synthetic_paired"].copy()
+
+    assert len(synthetic) == 1
+    assert synthetic["source"].tolist() == ["mixed"]
+    assert synthetic["protein_source"].tolist() == ["public"]
+    assert synthetic["ligand_source"].tolist() == ["custom"]
+    assert synthetic["protein_pdb_id"].tolist() == ["5ZOD"]
+    assert synthetic["ligand_pdb_id"].isna().all()
+    assert synthetic["pdb_id"].tolist() == ["synthetic_pair"]
+    assert synthetic["reference_key"].str.startswith("synthetic:").all()
+
+
+def test_synthetic_reference_key_avoids_separator_collisions():
+    left_then_right = _synthetic_reference_key("public:a__b", "custom:c")
+    split_other_way = _synthetic_reference_key("public:a", "custom:b__c")
+
+    assert left_then_right != split_other_way
+    assert left_then_right.startswith("synthetic:")
+    assert split_other_way.startswith("synthetic:")
+
+
+def test_build_bias_training_dataset_keeps_synthetic_rows_scoped_to_each_query_pair():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1AAA",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 90.0,
+                "sequence": "SEQ_A",
+            },
+            {
+                "query_chain_id": "C",
+                "pdb_id": "2CCC",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 91.0,
+                "sequence": "SEQ_C",
+            },
+        ]
+    )
+    ligand_views = {
+        "B": pd.DataFrame(
+            [
+                {
+                    "query_chain_id": "B",
+                    "pdb_id": "1BBB",
+                    "release_date": "2022-01-01",
+                    "source": "public",
+                    "dataset_name": "public",
+                    "ligand_id": "LB",
+                    "ecfp_similarity": 0.8,
+                    "smiles": "CCO",
+                }
+            ]
+        ),
+        "D": pd.DataFrame(
+            [
+                {
+                    "query_chain_id": "D",
+                    "pdb_id": "2DDD",
+                    "release_date": "2022-01-01",
+                    "source": "public",
+                    "dataset_name": "public",
+                    "ligand_id": "LD",
+                    "ecfp_similarity": 0.7,
+                    "smiles": "CCN",
+                }
+            ]
+        ),
+    }
+
+    result = _build_bias_training_dataset(
+        protein_view=protein_view,
+        ligand_views=ligand_views,
+    )
+
+    synthetic = result[result["pairing_status"] == "synthetic_paired"].copy()
+
+    assert set(synthetic["query_pair_id"]) == {"A__B", "A__D", "C__B", "C__D"}
+    for _, row in synthetic.iterrows():
+        if row["query_pair_id"] == "A__B":
+            assert row["protein_pdb_id"] == "1AAA"
+            assert row["ligand_pdb_id"] == "1BBB"
+        elif row["query_pair_id"] == "A__D":
+            assert row["protein_pdb_id"] == "1AAA"
+            assert row["ligand_pdb_id"] == "2DDD"
+        elif row["query_pair_id"] == "C__B":
+            assert row["protein_pdb_id"] == "2CCC"
+            assert row["ligand_pdb_id"] == "1BBB"
+        else:
+            assert row["protein_pdb_id"] == "2CCC"
+            assert row["ligand_pdb_id"] == "2DDD"
+
+
+def test_plot_bias_reference_overlap_distinguishes_synthetic_rows(temp_dir, monkeypatch):
+    captured: dict[str, object] = {}
+
+    def _capture_save(fig, output_path):
+        ax = fig.axes[0]
+        _, labels = ax.get_legend_handles_labels()
+        captured["labels"] = labels
+        captured["annotations"] = [text.get_text() for text in ax.texts]
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("plot", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(plots_module, "_save_figure", _capture_save)
+
+    saved_paths = plot_bias_reference_overlap(
+        pd.DataFrame(
+            [
+                {
+                    "reference_label": "1ABC",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "plot_sequence_similarity": 0.95,
+                    "plot_ecfp_similarity": 0.91,
+                },
+                {
+                    "reference_label": "2XYZ x 3LMN",
+                    "pairing_status": "synthetic_paired",
+                    "source": "public",
+                    "plot_sequence_similarity": 0.99,
+                    "plot_ecfp_similarity": 0.97,
+                },
+            ]
+        ),
+        output_dir=temp_dir / "results",
+    )
+
+    assert len(saved_paths) == 2
+    assert "Public references" in captured["labels"]
+    assert "Public references synthetic combinations" in captured["labels"]
+    assert plots_module._annotation_label(
+        pd.Series(
+            {
+                "reference_label": "2XYZ x 3LMN",
+                "pairing_status": "synthetic_paired",
+            }
+        )
+    ) == "Synthetic: 2XYZ x 3LMN"
 
 
 def test_build_protein_training_view_keeps_distinct_custom_paths_for_same_sequence():

@@ -42,6 +42,10 @@ BIAS_PLOT_SEQUENCE_THRESHOLD = 0.25
 BIAS_PLOT_LIGAND_THRESHOLD = 0.35
 BIAS_PLOT_FILE_STEM = "bias_reference_overlap_scatter"
 BIAS_PLOT_SKIPPED_FILE = f"{BIAS_PLOT_FILE_STEM}.skipped.txt"
+BIAS_PAIRING_PAIRED = "paired"
+BIAS_PAIRING_SYNTHETIC = "synthetic_paired"
+BIAS_PAIRING_PROTEIN_ONLY = "protein_only"
+BIAS_PAIRING_LIGAND_ONLY = "ligand_only"
 BIAS_TRAINING_DATA_COLUMNS = [
     "query_pair_id",
     "query_protein_chain_id",
@@ -894,6 +898,149 @@ def _reference_label_from_merged_row(row: pd.Series) -> str | None:
     return None
 
 
+def _synthetic_reference_key(protein_reference_key: object, ligand_reference_key: object) -> str:
+    protein_component = str(protein_reference_key).strip()
+    ligand_component = str(ligand_reference_key).strip()
+    return (
+        "synthetic:"
+        f"{len(protein_component)}:{protein_component}"
+        "|"
+        f"{len(ligand_component)}:{ligand_component}"
+    )
+
+
+def _synthetic_reference_label(protein_row: pd.Series, ligand_row: pd.Series) -> str:
+    protein_label = _reference_label_from_merged_row(
+        pd.Series(
+            {
+                "pdb_id_protein": protein_row.get("pdb_id_protein"),
+                "source_structure_path_protein": protein_row.get("source_structure_path_protein"),
+                "source_reference_path_protein": protein_row.get("source_reference_path_protein"),
+                "dataset_name_protein": protein_row.get("dataset_name_protein"),
+            }
+        )
+    )
+    ligand_label = _reference_label_from_merged_row(
+        pd.Series(
+            {
+                "pdb_id_ligand": ligand_row.get("pdb_id_ligand"),
+                "source_structure_path_ligand": ligand_row.get("source_structure_path_ligand"),
+                "source_reference_path_ligand": ligand_row.get("source_reference_path_ligand"),
+                "dataset_name_ligand": ligand_row.get("dataset_name_ligand"),
+            }
+        )
+    )
+    return f"{protein_label or 'protein'} x {ligand_label or 'ligand'}"
+
+
+def _bias_training_row_from_sources(
+    *,
+    query_protein_chain_id: str | None,
+    query_ligand_chain_id: str | None,
+    reference_key: object,
+    reference_label: str | None,
+    pairing_status: str,
+    protein_row: pd.Series | None,
+    ligand_row: pd.Series | None,
+    protein_unique_counts: dict[object, int],
+    ligand_id_unique_counts: dict[object, int],
+    ligand_smiles_unique_counts: dict[object, int],
+) -> dict[str, object]:
+    protein_chain = query_protein_chain_id or None
+    ligand_chain = query_ligand_chain_id or None
+    protein_reference_key = protein_row.get("reference_key") if protein_row is not None else None
+    ligand_reference_key = ligand_row.get("reference_key") if ligand_row is not None else None
+    protein_source = protein_row.get("source_protein") if protein_row is not None else None
+    ligand_source = ligand_row.get("source_ligand") if ligand_row is not None else None
+
+    sequence_similarity = pd.to_numeric(
+        pd.Series([protein_row.get("sequence_similarity_protein") if protein_row is not None else pd.NA]),
+        errors="coerce",
+    ).iloc[0]
+    ecfp_similarity = pd.to_numeric(
+        pd.Series([ligand_row.get("ecfp_similarity_ligand") if ligand_row is not None else pd.NA]),
+        errors="coerce",
+    ).iloc[0]
+    plot_sequence_similarity = (
+        float(sequence_similarity) / 100.0 if pd.notna(sequence_similarity) else pd.NA
+    )
+    plot_ecfp_similarity = float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA
+
+    protein_is_public_pdb_reference = (
+        pd.notna(protein_reference_key) and str(protein_reference_key).startswith("public:pdb:")
+    )
+    ligand_is_public_pdb_reference = (
+        pd.notna(ligand_reference_key) and str(ligand_reference_key).startswith("public:pdb:")
+    )
+    if (
+        protein_row is not None
+        and protein_is_public_pdb_reference
+        and protein_unique_counts.get(protein_reference_key, 0) > 1
+    ):
+        sequence_value = pd.NA
+    else:
+        sequence_value = protein_row.get("sequence_protein") if protein_row is not None else pd.NA
+    if (
+        ligand_row is not None
+        and ligand_is_public_pdb_reference
+        and ligand_id_unique_counts.get(ligand_reference_key, 0) > 1
+    ):
+        ligand_id_value = pd.NA
+    else:
+        ligand_id_value = ligand_row.get("ligand_id_ligand") if ligand_row is not None else pd.NA
+    if (
+        ligand_row is not None
+        and ligand_is_public_pdb_reference
+        and ligand_smiles_unique_counts.get(ligand_reference_key, 0) > 1
+    ):
+        smiles_value = pd.NA
+    else:
+        smiles_value = ligand_row.get("smiles_ligand") if ligand_row is not None else pd.NA
+
+    return {
+        "query_pair_id": f"{protein_chain or 'none'}__{ligand_chain or 'none'}",
+        "query_protein_chain_id": protein_chain,
+        "query_ligand_chain_id": ligand_chain,
+        "reference_key": reference_key,
+        "reference_label": reference_label,
+        "pairing_status": pairing_status,
+        "source": _collapse_pair_value([protein_source, ligand_source], mixed_label="mixed"),
+        "dataset_name": _collapse_pair_value(
+            [
+                protein_row.get("dataset_name_protein") if protein_row is not None else None,
+                ligand_row.get("dataset_name_ligand") if ligand_row is not None else None,
+            ]
+        ),
+        "pdb_id": "synthetic_pair"
+        if pairing_status == BIAS_PAIRING_SYNTHETIC
+        else _collapse_pair_value(
+            [
+                protein_row.get("pdb_id_protein") if protein_row is not None else None,
+                ligand_row.get("pdb_id_ligand") if ligand_row is not None else None,
+            ]
+        ),
+        "protein_pdb_id": protein_row.get("pdb_id_protein") if protein_row is not None else pd.NA,
+        "ligand_pdb_id": ligand_row.get("pdb_id_ligand") if ligand_row is not None else pd.NA,
+        "protein_release_date": protein_row.get("release_date_protein") if protein_row is not None else pd.NA,
+        "ligand_release_date": ligand_row.get("release_date_ligand") if ligand_row is not None else pd.NA,
+        "protein_source": protein_source,
+        "protein_dataset_name": protein_row.get("dataset_name_protein") if protein_row is not None else pd.NA,
+        "protein_source_structure_path": protein_row.get("source_structure_path_protein") if protein_row is not None else pd.NA,
+        "protein_source_reference_path": protein_row.get("source_reference_path_protein") if protein_row is not None else pd.NA,
+        "ligand_source": ligand_source,
+        "ligand_dataset_name": ligand_row.get("dataset_name_ligand") if ligand_row is not None else pd.NA,
+        "ligand_source_structure_path": ligand_row.get("source_structure_path_ligand") if ligand_row is not None else pd.NA,
+        "ligand_source_reference_path": ligand_row.get("source_reference_path_ligand") if ligand_row is not None else pd.NA,
+        "sequence_similarity": float(sequence_similarity) if pd.notna(sequence_similarity) else pd.NA,
+        "ecfp_similarity": float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA,
+        "plot_sequence_similarity": plot_sequence_similarity,
+        "plot_ecfp_similarity": plot_ecfp_similarity,
+        "sequence": sequence_value,
+        "ligand_id": ligand_id_value,
+        "smiles": smiles_value,
+    }
+
+
 def _build_bias_training_rows(
     *,
     query_protein_chain_id: str | None,
@@ -945,84 +1092,52 @@ def _build_bias_training_rows(
         has_protein = pd.notna(row.get("query_chain_id_protein")) and str(row.get("query_chain_id_protein")).strip()
         has_ligand = pd.notna(row.get("query_chain_id_ligand")) and str(row.get("query_chain_id_ligand")).strip()
         if has_protein and has_ligand:
-            pairing_status = "paired"
+            pairing_status = BIAS_PAIRING_PAIRED
         elif has_protein:
-            pairing_status = "protein_only"
+            pairing_status = BIAS_PAIRING_PROTEIN_ONLY
         else:
-            pairing_status = "ligand_only"
-
-        sequence_similarity = pd.to_numeric(
-            pd.Series([row.get("sequence_similarity_protein")]),
-            errors="coerce",
-        ).iloc[0]
-        ecfp_similarity = pd.to_numeric(
-            pd.Series([row.get("ecfp_similarity_ligand")]),
-            errors="coerce",
-        ).iloc[0]
-        plot_sequence_similarity = (
-            float(sequence_similarity) / 100.0 if pd.notna(sequence_similarity) else pd.NA
-        )
-        plot_ecfp_similarity = float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA
-
-        protein_chain = query_protein_chain_id or None
-        ligand_chain = query_ligand_chain_id or None
-        reference_key = row.get("reference_key")
-        is_public_pdb_reference = (
-            pd.notna(reference_key)
-            and str(reference_key).startswith("public:pdb:")
-        )
-        if is_public_pdb_reference and protein_unique_counts.get(reference_key, 0) > 1:
-            sequence_value = pd.NA
-        else:
-            sequence_value = row.get("sequence_protein")
-        if is_public_pdb_reference and ligand_id_unique_counts.get(reference_key, 0) > 1:
-            ligand_id_value = pd.NA
-        else:
-            ligand_id_value = row.get("ligand_id_ligand")
-        if is_public_pdb_reference and ligand_smiles_unique_counts.get(reference_key, 0) > 1:
-            smiles_value = pd.NA
-        else:
-            smiles_value = row.get("smiles_ligand")
+            pairing_status = BIAS_PAIRING_LIGAND_ONLY
 
         rows.append(
-            {
-                "query_pair_id": f"{protein_chain or 'none'}__{ligand_chain or 'none'}",
-                "query_protein_chain_id": protein_chain,
-                "query_ligand_chain_id": ligand_chain,
-                "reference_key": reference_key,
-                "reference_label": _reference_label_from_merged_row(row),
-                "pairing_status": pairing_status,
-                "source": _collapse_pair_value(
-                    [row.get("source_protein"), row.get("source_ligand")],
-                    mixed_label="mixed",
-                ),
-                "dataset_name": _collapse_pair_value(
-                    [row.get("dataset_name_protein"), row.get("dataset_name_ligand")]
-                ),
-                "pdb_id": _collapse_pair_value(
-                    [row.get("pdb_id_protein"), row.get("pdb_id_ligand")]
-                ),
-                "protein_pdb_id": row.get("pdb_id_protein"),
-                "ligand_pdb_id": row.get("pdb_id_ligand"),
-                "protein_release_date": row.get("release_date_protein"),
-                "ligand_release_date": row.get("release_date_ligand"),
-                "protein_source": row.get("source_protein"),
-                "protein_dataset_name": row.get("dataset_name_protein"),
-                "protein_source_structure_path": row.get("source_structure_path_protein"),
-                "protein_source_reference_path": row.get("source_reference_path_protein"),
-                "ligand_source": row.get("source_ligand"),
-                "ligand_dataset_name": row.get("dataset_name_ligand"),
-                "ligand_source_structure_path": row.get("source_structure_path_ligand"),
-                "ligand_source_reference_path": row.get("source_reference_path_ligand"),
-                "sequence_similarity": float(sequence_similarity) if pd.notna(sequence_similarity) else pd.NA,
-                "ecfp_similarity": float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA,
-                "plot_sequence_similarity": plot_sequence_similarity,
-                "plot_ecfp_similarity": plot_ecfp_similarity,
-                "sequence": sequence_value,
-                "ligand_id": ligand_id_value,
-                "smiles": smiles_value,
-            }
+            _bias_training_row_from_sources(
+                query_protein_chain_id=query_protein_chain_id,
+                query_ligand_chain_id=query_ligand_chain_id,
+                reference_key=row.get("reference_key"),
+                reference_label=_reference_label_from_merged_row(row),
+                pairing_status=pairing_status,
+                protein_row=row if has_protein else None,
+                ligand_row=row if has_ligand else None,
+                protein_unique_counts=protein_unique_counts,
+                ligand_id_unique_counts=ligand_id_unique_counts,
+                ligand_smiles_unique_counts=ligand_smiles_unique_counts,
+            )
         )
+
+    left_records = left.to_dict("records")
+    right_records = right.to_dict("records")
+    for protein_row_dict in left_records:
+        protein_row = pd.Series(protein_row_dict)
+        for ligand_row_dict in right_records:
+            ligand_row = pd.Series(ligand_row_dict)
+            if protein_row.get("reference_key") == ligand_row.get("reference_key"):
+                continue
+            rows.append(
+                _bias_training_row_from_sources(
+                    query_protein_chain_id=query_protein_chain_id,
+                    query_ligand_chain_id=query_ligand_chain_id,
+                    reference_key=_synthetic_reference_key(
+                        protein_row.get("reference_key"),
+                        ligand_row.get("reference_key"),
+                    ),
+                    reference_label=_synthetic_reference_label(protein_row, ligand_row),
+                    pairing_status=BIAS_PAIRING_SYNTHETIC,
+                    protein_row=protein_row,
+                    ligand_row=ligand_row,
+                    protein_unique_counts=protein_unique_counts,
+                    ligand_id_unique_counts=ligand_id_unique_counts,
+                    ligand_smiles_unique_counts=ligand_smiles_unique_counts,
+                )
+            )
 
     return rows
 
@@ -1082,7 +1197,12 @@ def _build_bias_training_dataset(
         errors="coerce",
     ).clip(lower=0.0, upper=1.0)
     bias_training_df["_pairing_order"] = bias_training_df["pairing_status"].map(
-        {"paired": 0, "protein_only": 1, "ligand_only": 2}
+        {
+            BIAS_PAIRING_PAIRED: 0,
+            BIAS_PAIRING_SYNTHETIC: 1,
+            BIAS_PAIRING_PROTEIN_ONLY: 2,
+            BIAS_PAIRING_LIGAND_ONLY: 3,
+        }
     )
     bias_training_df = bias_training_df.sort_values(
         by=[
