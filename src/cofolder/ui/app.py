@@ -12,6 +12,8 @@ from streamlit_option_menu import option_menu
 import subprocess
 from datetime import datetime
 
+from cofolder import __version__
+
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -204,7 +206,7 @@ def render_header():
     with col2:
         st.markdown(f"""
         <div style='text-align: right; margin-top: 1em;'>
-            <small>Version: 0.0.0-dev</small><br>
+            <small>Version: {__version__}</small><br>
             <small>Last updated: {datetime.now().strftime('%Y-%m-%d')}</small>
         </div>
         """, unsafe_allow_html=True)

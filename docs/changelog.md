@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Import paths updated for new package structure
 
-## [0.0.0-dev] - Development
+## [0.1.0] - 2026-08-06
 
 ### Added
 - Initial development version
@@ -36,5 +36,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive CLI interface
 - Example configurations and tutorials
 
-[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v0.0.0-dev...HEAD
-[0.0.0-dev]: https://github.com/CDDLeiden/COFOLDER/releases/tag/v0.0.0-dev
+[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/CDDLeiden/COFOLDER/releases/tag/v0.1.0

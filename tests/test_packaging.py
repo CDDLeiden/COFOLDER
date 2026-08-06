@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import importlib.util
+import runpy
 import tomllib
 
 
@@ -35,3 +36,14 @@ def test_bias_training_builder_is_an_importable_package_module():
     assert spec is not None
     assert spec.origin is not None
     assert Path(spec.origin).name == "build_bias_training_data.py"
+
+
+def test_package_version_is_consistent():
+    repository = Path(__file__).resolve().parents[1]
+    pyproject_path = repository / "pyproject.toml"
+    pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    package_version = runpy.run_path(repository / "src/cofolder/__init__.py")[
+        "__version__"
+    ]
+
+    assert pyproject["project"]["version"] == package_version == "0.1.0"
