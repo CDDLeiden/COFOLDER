@@ -163,6 +163,182 @@ class TestBiasRun:
         assert ligand_rows["CHAIN_ID"].tolist() == ["B", "C"]
         assert ligand_rows["bias_lig_sim_train"].astype(float).tolist() == [1.0, 1.0]
 
+    def test_run_writes_pair_specific_outputs_for_unique_query_combinations(self, temp_dir):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                        {"ligand": {"id": ["C", "D"], "ccd": "MG"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1ABC,2022-01-01,MKRAAT,100.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1ABC,2022-01-01,LIG,CCO,1.0\n"
+            "1ABC,2022-01-01,MG,[Mg+2],1.0\n",
+            encoding="utf-8",
+        )
+
+        bias = Bias(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        bias.run()
+
+        output_dir = temp_dir / "results" / "bias_train"
+        assert (output_dir / "bias_training_data_A__B.csv").exists()
+        assert (output_dir / "bias_training_data_A__MG.csv").exists()
+        assert (output_dir / "bias_reference_overlap_scatter_A__B.png").exists()
+        assert (output_dir / "bias_reference_overlap_scatter_A__MG.png").exists()
+        assert not (output_dir / "bias_training_data_A__C.csv").exists()
+        assert not (output_dir / "bias_training_data_A__D.csv").exists()
+
+        mg_pair = pd.read_csv(output_dir / "bias_training_data_A__MG.csv")
+        assert mg_pair["query_pair_id"].tolist() == ["A__MG"]
+        assert mg_pair["query_ligand_chain_id"].tolist() == ["MG"]
+
+    def test_run_writes_same_type_pair_outputs_for_multi_component_system(self, temp_dir):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MAAA"}},
+                        {"protein": {"id": "C", "sequence": "MBBB"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                        {"ligand": {"id": "D", "smiles": "CCN"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1AAA,2022-01-01,MAAA,100.0\n"
+            "2CCC,2022-01-01,MBBB,100.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1AAA,2022-01-01,LIGA,CCO,1.0\n"
+            "2CCC,2022-01-01,LIGD,CCN,1.0\n",
+            encoding="utf-8",
+        )
+
+        bias = Bias(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        bias.run()
+
+        output_dir = temp_dir / "results" / "bias_train"
+        assert (output_dir / "bias_training_data_A__B.csv").exists()
+        assert (output_dir / "bias_training_data_A__D.csv").exists()
+        assert (output_dir / "bias_training_data_C__B.csv").exists()
+        assert (output_dir / "bias_training_data_C__D.csv").exists()
+        assert (output_dir / "bias_protein_pair_data_A__C.csv").exists()
+        assert (output_dir / "bias_protein_pair_scatter_A__C.png").exists()
+        assert (output_dir / "bias_ligand_pair_data_B__D.csv").exists()
+        assert (output_dir / "bias_ligand_pair_scatter_B__D.png").exists()
+
+        protein_pair = pd.read_csv(output_dir / "bias_protein_pair_data_A__C.csv")
+        ligand_pair = pd.read_csv(output_dir / "bias_ligand_pair_data_B__D.csv")
+
+        assert set(protein_pair["query_pair_id"]) == {"A__C"}
+        assert set(protein_pair["component_1_type"]) == {"protein"}
+        assert set(protein_pair["component_2_type"]) == {"protein"}
+        assert set(ligand_pair["query_pair_id"]) == {"B__D"}
+        assert set(ligand_pair["component_1_type"]) == {"ligand"}
+        assert set(ligand_pair["component_2_type"]) == {"ligand"}
+
+    def test_run_clears_stale_same_type_pair_artifacts_on_rerun(self, temp_dir):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MAAA"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                        {"ligand": {"id": "D", "smiles": "CCN"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        protein_ref = temp_dir / "protein_training.csv"
+        ligand_ref = temp_dir / "ligand_training.csv"
+        protein_ref.write_text(
+            "pdb_id,release_date,sequence,sequence_similarity\n"
+            "1AAA,2022-01-01,MAAA,100.0\n",
+            encoding="utf-8",
+        )
+        ligand_ref.write_text(
+            "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
+            "1AAA,2022-01-01,LIGA,CCO,1.0\n"
+            "2CCC,2022-01-01,LIGD,CCN,1.0\n",
+            encoding="utf-8",
+        )
+
+        bias = Bias(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        bias.run()
+
+        output_dir = temp_dir / "results" / "bias_train"
+        assert (output_dir / "bias_ligand_pair_data_B__D.csv").exists()
+        assert (output_dir / "bias_ligand_pair_scatter_B__D.png").exists()
+
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MAAA"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        bias = Bias(
+            wrk_dir=str(temp_dir),
+            system_path=str(system_path),
+            protein_training_data_path=str(protein_ref),
+            ligand_training_data_path=str(ligand_ref),
+        )
+
+        bias.run()
+
+        assert not (output_dir / "bias_ligand_pair_data_B__D.csv").exists()
+        assert not (output_dir / "bias_ligand_pair_scatter_B__D.png").exists()
+
     def test_run_build_mode_defaults_ligand_training_output(self, monkeypatch, temp_dir):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
@@ -330,7 +506,7 @@ class TestBiasRun:
         )
         ligand_ref.write_text(
             "pdb_id,release_date,ligand_id,smiles,ecfp_similarity\n"
-            "1PUB,2022-01-01,LIG,CCN,0.4\n",
+            "1PUB,2022-01-01,LIG,CCO,1.0\n",
             encoding="utf-8",
         )
         custom_protein.write_text(
@@ -358,13 +534,22 @@ class TestBiasRun:
         output_dir = temp_dir / "results" / "bias_train"
         bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
 
-        assert bias_training["source"].tolist() == ["custom", "mixed", "public"]
-        assert bias_training["query_protein_chain_id"].tolist() == ["A", "A", "A"]
-        assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B", "B"]
+        assert bias_training["source"].tolist() == ["custom", "public"]
+        assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
+        assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
         assert (output_dir / "bias_reference_overlap_scatter.png").exists()
         assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
 
-    def test_run_builds_synthetic_pairs_for_disjoint_public_references(self, temp_dir):
+    def test_run_sets_apo_ligand_similarity_to_zero_for_disjoint_public_references(self, temp_dir, monkeypatch):
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+            lambda **kwargs: [],
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+            lambda **kwargs: [],
+        )
+
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
             yaml.safe_dump(
@@ -410,17 +595,15 @@ class TestBiasRun:
         bias.run()
 
         bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
-        synthetic = bias_training[bias_training["pairing_status"] == "synthetic_paired"].copy()
+        protein_only = bias_training[bias_training["pairing_status"] == "protein_only"].copy()
+        ligand_only = bias_training[bias_training["pairing_status"] == "ligand_only"].copy()
 
-        assert len(synthetic) == 4
-        assert len(bias_training[bias_training["pairing_status"] == "protein_only"]) == 2
-        assert len(bias_training[bias_training["pairing_status"] == "ligand_only"]) == 2
-        assert set(zip(synthetic["protein_pdb_id"], synthetic["ligand_pdb_id"])) == {
-            ("5ZOD", "1XM1"),
-            ("5ZOD", "6AGT"),
-            ("3Q8K", "1XM1"),
-            ("3Q8K", "6AGT"),
-        }
+        assert len(protein_only) == 2
+        assert len(ligand_only) == 2
+        assert protein_only["protein_pdb_id"].tolist() == ["5ZOD", "3Q8K"]
+        assert protein_only["ligand_pdb_id"].isna().all()
+        assert protein_only["ecfp_similarity"].tolist() == [0.0, 0.0]
+        assert protein_only["plot_ecfp_similarity"].tolist() == [0.0, 0.0]
         assert (output_dir / "bias_reference_overlap_scatter.png").exists()
         assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
         assert not (output_dir / "bias_reference_overlap_scatter.skipped.txt").exists()

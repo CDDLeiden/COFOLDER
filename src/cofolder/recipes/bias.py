@@ -38,7 +38,10 @@ def _iter_chain_ids(raw_ids) -> list[str]:
 
 def _resolve_ligand_molecule_id(ligand_data: dict) -> str:
     ccd_value = ligand_data.get("ccd")
-    ccd_ids = ccd_value if isinstance(ccd_value, list) else [ccd_value]
+    if ccd_value is None:
+        ccd_ids = []
+    else:
+        ccd_ids = ccd_value if isinstance(ccd_value, list) else [ccd_value]
     for ccd_id in ccd_ids:
         ccd_text = str(ccd_id).strip()
         if ccd_text:

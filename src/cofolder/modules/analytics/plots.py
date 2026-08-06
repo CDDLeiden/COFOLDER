@@ -14,8 +14,6 @@ from cofolder.modules.utils import helpers, write
 
 logger = logging.getLogger(__name__)
 
-SYNTHETIC_PAIRING_STATUS = "synthetic_paired"
-
 
 def plot_affinity_correlation(
     df: pd.DataFrame,
@@ -63,49 +61,55 @@ def _save_figure(fig: plt.Figure, output_path: str | Path) -> Path:
     return path
 
 
-def _annotation_label(row: pd.Series) -> str | None:
-    for column in ("reference_label", "pdb_id", "protein_pdb_id", "ligand_pdb_id", "dataset_name"):
-        value = row.get(column)
-        if pd.notna(value) and str(value).strip():
-            label = str(value).strip()
-            if str(row.get("pairing_status", "")).strip() == SYNTHETIC_PAIRING_STATUS:
-                return f"Synthetic: {label}"
-            return label
-    return None
-
-
-def plot_bias_reference_overlap(
+def plot_reference_overlap_scatter(
     df: pd.DataFrame,
     *,
     output_dir: str | Path,
-    file_stem: str = "bias_reference_overlap_scatter",
-    sequence_col: str = "plot_sequence_similarity",
-    ligand_col: str = "plot_ecfp_similarity",
-    sequence_threshold: float = 0.25,
-    ligand_threshold: float = 0.35,
+    file_stem: str,
+    x_col: str,
+    y_col: str,
+    x_threshold: float,
+    y_threshold: float,
+    x_label: str,
+    y_label: str,
+    title: str,
+    query_1_col: str,
+    query_2_col: str,
 ) -> list[Path]:
-    """Plot bias reference-overlap diagnostics for decision support."""
+    """Plot reference-overlap diagnostics for decision support."""
     plot_df = df.copy()
     if plot_df.empty:
         return []
 
-    plot_df[sequence_col] = pd.to_numeric(plot_df.get(sequence_col), errors="coerce")
-    plot_df[ligand_col] = pd.to_numeric(plot_df.get(ligand_col), errors="coerce")
-    plot_df = plot_df.dropna(subset=[sequence_col, ligand_col]).copy()
+    plot_df[x_col] = pd.to_numeric(plot_df.get(x_col), errors="coerce").clip(lower=0.0, upper=1.0)
+    plot_df[y_col] = pd.to_numeric(plot_df.get(y_col), errors="coerce").clip(lower=0.0, upper=1.0)
+    has_query_1 = (
+        plot_df.get(query_1_col, pd.Series(dtype=object)).fillna("").astype(str).str.strip() != ""
+    )
+    has_query_2 = (
+        plot_df.get(query_2_col, pd.Series(dtype=object)).fillna("").astype(str).str.strip() != ""
+    )
+    if not (has_query_1 & has_query_2).any():
+        return []
+    plot_df["_plot_x"] = plot_df[x_col]
+    plot_df.loc[plot_df["_plot_x"].isna() & has_query_1, "_plot_x"] = 0.0
+    plot_df["_plot_y"] = plot_df[y_col]
+    plot_df.loc[plot_df["_plot_y"].isna() & has_query_2, "_plot_y"] = 0.0
+    plot_df = plot_df[
+        (plot_df["_plot_x"] >= x_threshold)
+        | (plot_df["_plot_y"] >= y_threshold)
+    ].copy()
     if plot_df.empty:
         return []
 
-    plot_df[sequence_col] = plot_df[sequence_col].clip(lower=0.0, upper=1.0)
-    plot_df[ligand_col] = plot_df[ligand_col].clip(lower=0.0, upper=1.0)
     plot_df["source"] = plot_df.get("source", pd.Series(dtype=object)).fillna("unknown").astype(str)
-    plot_df["pairing_status"] = plot_df.get("pairing_status", pd.Series(dtype=object)).fillna("").astype(str)
 
     fig, ax = plt.subplots(figsize=(7.2, 7.2))
     ax.add_patch(
         Rectangle(
             (0.0, 0.0),
-            ligand_threshold,
-            sequence_threshold,
+            x_threshold,
+            y_threshold,
             facecolor="#d9d9d9",
             edgecolor="none",
             alpha=0.35,
@@ -140,96 +144,27 @@ def plot_bias_reference_overlap(
         source_group = plot_df[plot_df["source"] == source].copy()
         if source_group.empty:
             continue
-        groups = [
-            ("base", source_group[source_group["pairing_status"] != SYNTHETIC_PAIRING_STATUS].copy()),
-            ("synthetic", source_group[source_group["pairing_status"] == SYNTHETIC_PAIRING_STATUS].copy()),
-        ]
-        for group_kind, group in groups:
-            if group.empty:
-                continue
-            label = display_names.get(source, source)
-            if group_kind == "synthetic":
-                label = f"{label} synthetic combinations"
-            scatter_kwargs = {
-                "label": label,
-                "marker": markers.get(source, "o"),
-                "linewidths": 0.6,
-                "s": 52,
-                "alpha": 0.86,
-                "zorder": 3,
-            }
-            color = palette.get(source, "#555555")
-            if group_kind == "synthetic":
-                scatter_kwargs.update(
-                    {
-                        "facecolors": "none",
-                        "edgecolors": color,
-                        "linewidths": 1.2,
-                    }
-                )
-            else:
-                scatter_kwargs.update(
-                    {
-                        "c": color,
-                        "edgecolors": "white",
-                    }
-                )
-            ax.scatter(
-                group[ligand_col],
-                group[sequence_col],
-                **scatter_kwargs,
-            )
+        ax.scatter(
+            source_group["_plot_x"],
+            source_group["_plot_y"],
+            marker=markers.get(source, "o"),
+            linewidths=0.6,
+            s=52,
+            alpha=0.86,
+            zorder=3,
+            c=palette.get(source, "#555555"),
+            edgecolors="white",
+        )
 
-    ax.axvline(ligand_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
-    ax.axhline(sequence_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
+    ax.axvline(x_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
+    ax.axhline(y_threshold, color="#4d4d4d", linestyle="--", linewidth=1.2, zorder=2)
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal", adjustable="box")
     ax.grid(True, color="#ececec", linewidth=0.8, zorder=1)
-    ax.set_xlabel("Ligand reference overlap (ECFP Tanimoto)")
-    ax.set_ylabel("Protein reference overlap (sequence identity, normalized)")
-    ax.set_title("Bias reference-overlap diagnostic")
-    ax.text(
-        0.02,
-        0.98,
-        "Reference overlap only; not affinity, confidence, or cofolding-success prediction.",
-        transform=ax.transAxes,
-        va="top",
-        ha="left",
-        fontsize=9,
-        color="#333333",
-        bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "none", "pad": 3},
-    )
-
-    annotated_labels: set[str] = set()
-    ranked = plot_df.sort_values(
-        by=["pairing_status", sequence_col, ligand_col, "reference_label"],
-        ascending=[True, False, False, True],
-        na_position="last",
-    )
-    for candidate in (
-        ranked.iloc[0] if not ranked.empty else None,
-        ranked[ranked[sequence_col] >= 0.8].iloc[0] if (ranked[sequence_col] >= 0.8).any() else None,
-    ):
-        if candidate is None:
-            continue
-        label = _annotation_label(candidate)
-        if not label or label in annotated_labels:
-            continue
-        annotated_labels.add(label)
-        ax.annotate(
-            label,
-            (float(candidate[ligand_col]), float(candidate[sequence_col])),
-            xytext=(6, 6),
-            textcoords="offset points",
-            fontsize=8,
-            color="#1f1f1f",
-            bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2},
-        )
-
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        ax.legend(handles, labels, loc="lower right", frameon=True, framealpha=0.95)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_title(title)
 
     fig.tight_layout()
     output_root = Path(output_dir)
@@ -239,3 +174,29 @@ def plot_bias_reference_overlap(
     ]
     plt.close(fig)
     return saved_paths
+
+
+def plot_bias_reference_overlap(
+    df: pd.DataFrame,
+    *,
+    output_dir: str | Path,
+    file_stem: str = "bias_reference_overlap_scatter",
+    sequence_col: str = "plot_sequence_similarity",
+    ligand_col: str = "plot_ecfp_similarity",
+    sequence_threshold: float = 0.25,
+    ligand_threshold: float = 0.35,
+) -> list[Path]:
+    return plot_reference_overlap_scatter(
+        df,
+        output_dir=output_dir,
+        file_stem=file_stem,
+        x_col=ligand_col,
+        y_col=sequence_col,
+        x_threshold=ligand_threshold,
+        y_threshold=sequence_threshold,
+        x_label="Ligand reference overlap (ECFP Tanimoto)",
+        y_label="Protein reference overlap (sequence identity, normalized)",
+        title="Bias reference-overlap diagnostic",
+        query_1_col="query_ligand_chain_id",
+        query_2_col="query_protein_chain_id",
+    )
