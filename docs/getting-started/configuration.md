@@ -67,9 +67,9 @@ sequences:
       ccd: "LIG"
 ```
 
-## Boltz Options
+## Runner Options
 
-The options YAML file controls Boltz prediction parameters.
+The options YAML file controls runner prediction parameters.
 
 ### Basic Options
 
@@ -99,35 +99,36 @@ diffusion_temperature: 1.0  # Temperature for sampling
 
 - `-w, --wrk_dir`: Working directory (default: current directory)
 - `-s, --system_path`: Path to system YAML file (required)
-- `-b, --boltz_options_path`: Path to Boltz options YAML file (required)
+- `-o, --options_path`: Path to runner options YAML file (required)
 - `-d, --debug`: Enable debug logging
 
 ### Conformer Generation
 
 ```bash
---generate_conformers {2D,3D}
+--conformers {2D,3D,sdf}
 ```
 
 Generate conformers for SMILES input:
 - `2D`: Generate 2D coordinates
 - `3D`: Generate 3D conformers using ETKDG + UFF
+- `sdf`: Reuse conformers from an input SDF file (requires `--sdf_file`)
 
 ### Screen-Specific Options
 
 ```bash
--v, --variable "sequences,0,ligand,smiles"
+-v, --variable "sequences,1,ligand,smiles"
 -c, --variable_csv compounds.csv
 --col_variable smiles
 --col_id compound_id
 ```
 
-### Evaluate-Specific Options
+### Validate-Specific Options
 
 ```bash
---repeats 5                    # Number of prediction repeats
---seeds "42,123,456,789,101"   # Specific random seeds
--i, --input_pdb reference.pdb  # Reference structure for RMSD
---ifp "true"                   # Calculate interaction fingerprints
+--repeats 5                    # Number of validation repeats
+--seed 42                      # Base seed for reproducibility
+--conformers {2D,3D,sdf}       # Optional conformer handling
+--sdf_file ligands.sdf         # SDF input when using --conformers sdf
 ```
 
 ## Environment Variables

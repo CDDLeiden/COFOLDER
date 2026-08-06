@@ -1,10 +1,10 @@
 # Basic Usage Tutorial
 
-This tutorial walks through basic Boltz-Lab usage for protein-ligand co-folding.
+This tutorial walks through basic COFOLDER usage for protein-ligand co-folding.
 
 ## Prerequisites
 
-- Boltz-Lab installed
+- COFOLDER installed
 - CUDA-compatible GPU
 - Basic understanding of protein-ligand systems
 
@@ -27,7 +27,7 @@ sequences:
       ccd: "IBP"
 ```
 
-## Step 2: Configure Boltz Options
+## Step 2: Configure Runner Options
 
 Create `options.yaml`:
 
@@ -42,7 +42,7 @@ diffusion_samples: 1
 ## Step 3: Run Prediction
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -w ./tutorial_output
+cofolder validate -s system.yaml -o options.yaml -w ./tutorial_output
 ```
 
 ## Step 4: Examine Output
@@ -54,16 +54,18 @@ ls -l tutorial_output/
 ```
 
 You should see:
-- `predictions.cif` - Predicted structure
-- `confidence_model_0.json` - Confidence scores
-- Log files
+- `raw/` - runner-owned raw execution artifacts
+- `results/system_metrics.csv` - merged system-level metrics
+- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/structures/` - gathered output structures
+- log files in the working directory
 
 ## Step 5: Visualize Results
 
-Load `predictions.cif` in PyMOL, ChimeraX, or your favorite molecular viewer:
+Load one of the gathered structure files in PyMOL, ChimeraX, or your favorite molecular viewer:
 
 ```bash
-pymol tutorial_output/predictions.cif
+pymol tutorial_output/results/structures/*.cif
 ```
 
 ## Step 6: Check Confidence
@@ -71,19 +73,18 @@ pymol tutorial_output/predictions.cif
 Examine the confidence scores:
 
 ```python
-import json
+import pandas as pd
 
-with open('tutorial_output/confidence_model_0.json') as f:
-    confidence = json.load(f)
+system_df = pd.read_csv("tutorial_output/results/system_metrics.csv")
 
-print(f"Overall confidence: {confidence['overall']}")
+print(system_df[["model_name", "confidence_score"]].head())
 ```
 
 ## Next Steps
 
 ### Try Different Options
 
-Experiment with different Boltz parameters:
+Experiment with different runner parameters:
 
 ```yaml
 # Higher quality prediction
@@ -97,16 +98,16 @@ num_models: 5
 ### Add 3D Conformer Generation
 
 ```bash
-boltz-lab predict \
+cofolder validate \
   -s system.yaml \
-  -b options.yaml \
-  --generate_conformers 3D
+  -o options.yaml \
+  --conformers 3D
 ```
 
 ### Enable Debug Logging
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -d
+cofolder validate -s system.yaml -o options.yaml -d
 ```
 
 ## Troubleshooting
@@ -130,6 +131,6 @@ boltz-lab predict -s system.yaml -b options.yaml -d
 
 ## Further Reading
 
-- [Predict Command Guide](../user-guide/predict.md)
+- [Validate Command Guide](../user-guide/validate.md)
 - [Configuration Reference](../getting-started/configuration.md)
 - [Virtual Screening Tutorial](screening.md)

@@ -1,6 +1,6 @@
 # Virtual Screening Tutorial
 
-Learn how to screen compound libraries with Boltz-Lab.
+Learn how to screen compound libraries with COFOLDER.
 
 ## Overview
 
@@ -57,13 +57,12 @@ diffusion_samples: 1
 ## Step 4: Run Screening
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system_template.yaml \
-  -b screening_options.yaml \
-  -v "sequences,1,ligand,smiles" \
+  -o screening_options.yaml \
   -c library.csv \
-  --col_variable smiles \
   --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles \
   --merge_data "mw,logp" \
   -w ./screening_output
 ```
@@ -73,7 +72,7 @@ boltz-lab screen \
 The screen command will process each compound sequentially. Monitor with:
 
 ```bash
-tail -f screening_output/screening.log
+tail -f screening_output/log.log
 ```
 
 ## Step 6: Analyze Results
@@ -83,13 +82,13 @@ Results are saved in a CSV file:
 ```python
 import pandas as pd
 
-results = pd.read_csv('screening_output/screening_results.csv')
+results = pd.read_csv("screening_output/screen_results_with_scores.csv")
 
-# Sort by confidence score
-top_hits = results.sort_values('confidence', ascending=False).head(10)
+# Sort by a system-level confidence metric
+top_hits = results.sort_values("system__confidence_score", ascending=False).head(10)
 
 print("Top 10 Compounds:")
-print(top_hits[['compound_id', 'confidence', 'mw', 'logp']])
+print(top_hits[["compound_id", "system__confidence_score", "mw", "logp"]])
 ```
 
 ## Step 7: Visualize Top Hits
@@ -100,7 +99,7 @@ import seaborn as sns
 
 # Plot confidence distribution
 plt.figure(figsize=(10, 6))
-sns.histplot(results['confidence'], bins=30)
+sns.histplot(results["system__confidence_score"].dropna(), bins=30)
 plt.xlabel('Confidence Score')
 plt.ylabel('Count')
 plt.title('Screening Confidence Distribution')
@@ -115,43 +114,28 @@ Split library and run parallel jobs:
 
 ```bash
 # GPU 0
-boltz-lab screen -s system.yaml -b options.yaml \
-  -c library_part1.csv --col_variable smiles --col_id compound_id \
-  -v "sequences,1,ligand,smiles"
+cofolder screen -s system.yaml -o options.yaml \
+  -c library_part1.csv --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles
 
 # GPU 1 (in parallel)
-boltz-lab screen -s system.yaml -b options.yaml \
-  -c library_part2.csv --col_variable smiles --col_id compound_id \
-  -v "sequences,1,ligand,smiles"
+cofolder screen -s system.yaml -o options.yaml \
+  -c library_part2.csv --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles
 ```
 
-### SDF Input
+### Multi-Variable Mapping
 
-Screen from SDF file:
-
-```bash
-boltz-lab screen \
-  -s system.yaml \
-  -b options.yaml \
-  -v "sequences,1,ligand,smiles" \
-  --variable_sdf library.sdf \
-  --property_id ID \
-  --generate_conformers 3D
-```
-
-### 3D Conformer Generation
-
-Generate 3D conformers for better accuracy:
+Update multiple fields in one run:
 
 ```bash
-boltz-lab screen \
+cofolder screen \
   -s system.yaml \
-  -b options.yaml \
-  -v "sequences,1,ligand,smiles" \
+  -o options.yaml \
   -c library.csv \
-  --col_variable smiles \
   --col_id compound_id \
-  --generate_conformers 3D
+  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --variable sequences,1,ligand,ccd --col_variable ccd
 ```
 
 ## Best Practices
@@ -201,7 +185,7 @@ boltz-lab screen \
 
 ## Next Steps
 
-- [Evaluate top hits](../user-guide/evaluate.md) against reference structures
+- [Validate top hits](../user-guide/validate.md) with the single-system workflow
 - Try [advanced features](advanced.md) like custom scoring
 - Explore [ligand handling](ligands.md) in detail
 

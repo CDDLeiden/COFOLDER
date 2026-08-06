@@ -2,7 +2,7 @@
 
 Analysis and visualization tools.
 
-::: boltz_lab.modules.analytics
+::: cofolder.modules.analytics
     options:
       show_root_heading: true
       show_source: true

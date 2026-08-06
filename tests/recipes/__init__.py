@@ -1,1 +1,1 @@
-"""Tests for boltz_lab.recipes."""
+"""Tests for cofolder.recipes."""

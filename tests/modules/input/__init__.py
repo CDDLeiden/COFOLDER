@@ -1,1 +1,1 @@
-"""Tests for boltz_lab.modules.input."""
+"""Tests for cofolder.modules.input."""

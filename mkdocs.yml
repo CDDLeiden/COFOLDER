@@ -1,8 +1,8 @@
-site_name: Boltz-Lab Documentation
-site_description: Collection of tools for performing various co-folding tasks using Boltz
+site_name: COFOLDER Documentation
+site_description: Documentation for COFOLDER co-folding workflows, diagnostics, and tutorials
 site_author: Bola Khalil
-repo_url: https://github.com/CDDLeiden/boltz-lab
-repo_name: CDDLeiden/boltz-lab
+repo_url: https://github.com/CDDLeiden/COFOLDER
+repo_name: CDDLeiden/COFOLDER
 
 theme:
   name: material
@@ -73,24 +73,28 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quickstart.md
+      - Repository Tour: getting-started/repository-tour.md
       - Configuration: getting-started/configuration.md
   - User Guide:
       - Overview: user-guide/overview.md
-      - Predict: user-guide/predict.md
+      - Bias: user-guide/bias.md
+      - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
-      - Evaluate: user-guide/evaluate.md
   - Tutorials:
+      - Tutorial Map: tutorials/index.md
       - Basic Usage: tutorials/basic.md
       - Virtual Screening: tutorials/screening.md
       - Ligand Handling: tutorials/ligands.md
       - Advanced Features: tutorials/advanced.md
+      - Adding New Runners: tutorials/runners.md
+      - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
       - Recipes:
-          - Predict: api/recipes/predict.md
+          - Bias: api/recipes/bias.md
+          - Validate: api/recipes/validate.md
           - Screen: api/recipes/screen.md
           - Oracle: api/recipes/oracle.md
-          - Evaluate: api/recipes/evaluate.md
       - Modules:
           - Input: api/modules/input.md
           - Entities: api/modules/entities.md
@@ -104,4 +108,4 @@ extra:
     provider: mike
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/CDDLeiden/boltz-lab
+      link: https://github.com/CDDLeiden/COFOLDER

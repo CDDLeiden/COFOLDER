@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for boltz-lab tests."""
+"""Pytest configuration and fixtures for cofolder tests."""
 import tempfile
 from pathlib import Path
 

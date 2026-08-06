@@ -3,28 +3,50 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "boltz-lab"
-
-version = "0.0.1-dev"
-description = "Collection of helpful tools for performing various co-folding tasks using Boltz."
+name = "cofolder"
+version = "0.1.0"
+description = "Collection of helpful tools for performing various co-folding tasks using cofolding models (e.g. Boltz.)"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
   {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
 ]
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "boltz[cuda]",
+    "pandas",
+    "pyyaml",
+    "biopython",
     "rdkit",
     "matplotlib",
     "seaborn",
-    "streamlit>=1.28.0",
-    "streamlit-option-menu>=0.3.6",
-    "pyyaml"
+    "scipy",
+    "scikit-learn",
+    "gemmi",
+    "prolif",
+    "pdb2pqr",
 ]
 
 [project.optional-dependencies]
+boltz1 = [
+    "boltz==1.0.0; python_version < '3.13'",
+]
+boltz2 = [
+    "boltz[cuda]; python_version < '3.13'",
+]
+boltz-community = [
+    "boltz-community[cuda] @ git+https://github.com/Novel-Therapeutics/boltz-community.git",
+]
+openfold3 = [
+    "openfold3",
+]
+acceptance = [
+    "marimo>=0.23,<0.24",
+]
+tutorials = [
+    "marimo>=0.23,<0.24",
+]
 test = [
+    "marimo>=0.23,<0.24",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
@@ -40,12 +62,14 @@ docs = [
 ui = [
     "streamlit>=1.28.0",
     "streamlit-option-menu>=0.3.6",
-    "pyyaml"
 ]
 
 [project.scripts]
-boltz-lab = "boltz_lab.cli:main"
+cofolder = "cofolder.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["boltz_lab*"]
+include = ["cofolder*"]
+
+[tool.setuptools.package-data]
+"cofolder.acceptance" = ["data/*.yaml", "data/*.csv"]

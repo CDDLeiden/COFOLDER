@@ -1,14 +1,14 @@
-# Contributing to Boltz-Lab
+# Contributing to COFOLDER
 
-Thank you for your interest in contributing to Boltz-Lab! This guide will help you get started.
+Thank you for your interest in contributing to COFOLDER! This guide will help you get started.
 
 ## Getting Started
 
 1. Fork the repository on GitHub
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/CDDLeiden/boltz-lab.git
-   cd boltz-lab
+   git clone https://github.com/CDDLeiden/COFOLDER.git
+   cd COFOLDER
    ```
 3. Create a feature branch:
    ```bash
@@ -22,6 +22,8 @@ Install in development mode with all dependencies:
 ```bash
 pip install -e ".[docs,test]"
 ```
+
+If your work changes runner integrations, backend packaging, or the shared CLI workflows, use the backend-specific clean-install acceptance lane described in [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). That lane is intentionally manual and expensive, so it complements routine tests instead of replacing them.
 
 ## Development Workflow
 
@@ -39,12 +41,21 @@ When tests are in place:
 - Ensure existing tests still pass
 - Aim for good test coverage
 
+For backend-, runner-, or CLI-adjacent changes:
+- keep routine targeted tests in place
+- run the backend acceptance notebooks before promoting the change toward `main`
+- use one fresh environment per backend (`boltz1`, `boltz2`, `boltz-community`) instead of reusing a mixed development environment
+
 ### 3. Update Documentation
 
 - Update relevant documentation in `docs/`
 - Add docstrings following NumPy style
 - Update examples if needed
 - Add tutorials for new features
+
+If you are integrating a new runner or changing runner behavior, update both:
+- [Adding New Runners](tutorials/runners.md)
+- [Backend Acceptance Tutorial](tutorials/backend-acceptance.md)
 
 ### 4. Submit Pull Request
 
@@ -60,6 +71,8 @@ When tests are in place:
    ```
 
 3. Create a Pull Request on GitHub targeting the `dev` branch
+
+Before changes that affect runners, backend packaging, or shared CLI behavior are promoted toward `main`, run the backend acceptance lane from [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). These checks are not CI-default and should be treated as a deliberate pre-promotion safeguard.
 
 ## Code Style
 
@@ -135,7 +148,7 @@ Good pull requests include:
 
 When reporting issues, include:
 
-- Boltz-Lab version
+- COFOLDER version
 - Python version
 - Operating system
 - Complete error message

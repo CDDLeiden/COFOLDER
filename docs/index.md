@@ -1,47 +1,58 @@
-# Boltz-Lab Documentation
+# COFOLDER Documentation
 
-Welcome to the official documentation for **Boltz-Lab**, a comprehensive collection of command-line tools designed for performing various co-folding tasks using Boltz.
+COFOLDER provides command-line workflows for protein-ligand co-folding and pre-cofolding diagnostics.
 
-## Overview
+The supported user-facing workflows are:
 
-Boltz-Lab provides a suite of utilities that streamline protein-ligand co-folding workflows, including:
+- `bias`: standalone reference-overlap diagnostics from `system.yaml`
+- `validate`: single runner-backed co-folding workflow
+- `screen`: validate-style workflow across a ligand library
+- `oracle`: single-metric runner-backed scoring workflow
 
-- **Single System Predictions**: Co-fold individual protein-ligand systems
-- **Virtual Screening**: High-throughput screening of ligand libraries
-- **Oracle Functions**: Use Boltz as a scoring function for molecular design
-- **Evaluation Tools**: Assess and validate co-folding results with detailed metrics
+## Start Here
 
-## Key Features
+If you are new to COFOLDER, follow this order:
 
-- **Easy-to-use CLI**: Intuitive command-line interface for all workflows
-- **Flexible Input Formats**: Support for SMILES, SDF, PDB, and CIF formats
-- **Comprehensive Analytics**: Built-in tools for RMSD calculation, interaction fingerprints, and visualization
-- **Conformer Generation**: Automated 2D and 3D conformer generation for ligands
-- **Batch Processing**: Efficient screening of large compound libraries
+1. [Installation](getting-started/installation.md)
+2. [Quick Start](getting-started/quickstart.md)
+3. [Workflow Overview](user-guide/overview.md)
+4. [Tutorial Map](tutorials/index.md)
 
-## Quick Start
+## Choose Your Path
 
-```bash
-# Install boltz-lab
-git clone https://github.com/CDDLeiden/boltz-lab.git
-cd boltz-lab
-pip install -e .
+### I want the shortest path to a first run
 
-# Run a simple prediction
-boltz-lab predict -s system.yaml -b options.yaml
-```
+- Read [Quick Start](getting-started/quickstart.md)
+- Copy files from `examples/`
+- Run `cofolder validate`
 
-## Navigation
+### I want to understand which command to use
 
-- **[Getting Started](getting-started/installation.md)**: Installation and basic setup
-- **[User Guide](user-guide/overview.md)**: Detailed guides for each command
-- **[Tutorials](tutorials/basic.md)**: Step-by-step tutorials and examples
-- **[API Reference](api/recipes/predict.md)**: Complete API documentation
+- Read [User Guide Overview](user-guide/overview.md)
+- Then jump to `bias`, `validate`, `screen`, or `oracle`
 
-## Support
+### I want step-by-step learning
 
-For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/CDDLeiden/boltz-lab).
+- Start with [Basic Usage](tutorials/basic.md)
+- Continue through the [Tutorial Map](tutorials/index.md)
 
-## Citation
+### I want contributor-facing backend context
 
-If you use Boltz-Lab in your research, please cite the Boltz paper and this repository.
+- Read [Adding New Runners](tutorials/runners.md)
+- Use [Backend Acceptance](tutorials/backend-acceptance.md) before promoting backend or CLI-adjacent changes
+
+## Repository Orientation
+
+The public repo is organized around a few distinct user paths:
+
+- `docs/`: curated reading path
+- `examples/`: copy-and-run input files
+- repository `tutorials/`: interactive notebooks
+- `scripts/`: optional setup and bias-data helpers
+- `legacy/`: archived historical material
+
+For a concise map of those roles, see [Repository Tour](getting-started/repository-tour.md).
+
+## Scientific Scope
+
+COFOLDER keeps validation metrics, model-derived confidence metrics, and structure-derived diagnostics distinct. Structural confidence should not be described as a proxy for binding affinity.

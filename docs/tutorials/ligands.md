@@ -1,10 +1,10 @@
 # Ligand Handling Tutorial
 
-Comprehensive guide to working with ligands in Boltz-Lab.
+Comprehensive guide to working with ligands in COFOLDER.
 
 ## Overview
 
-Boltz-Lab supports multiple ligand input formats and provides utilities for ligand preparation and manipulation.
+COFOLDER supports multiple ligand input formats and provides utilities for ligand preparation and manipulation.
 
 ## Ligand Input Formats
 
@@ -54,10 +54,10 @@ ligand:
 Fast generation of 2D coordinates:
 
 ```bash
-boltz-lab predict \
+cofolder validate \
   -s system.yaml \
-  -b options.yaml \
-  --generate_conformers 2D
+  -o options.yaml \
+  --conformers 2D
 ```
 
 ### 3D Conformers
@@ -65,10 +65,10 @@ boltz-lab predict \
 Generate 3D conformers using ETKDG + UFF:
 
 ```bash
-boltz-lab predict \
+cofolder validate \
   -s system.yaml \
-  -b options.yaml \
-  --generate_conformers 3D
+  -o options.yaml \
+  --conformers 3D
 ```
 
 ## Programmatic Ligand Handling
@@ -76,7 +76,7 @@ boltz-lab predict \
 ### Convert CSV to SDF
 
 ```python
-from boltz_lab.modules.entities.ligand import csv_to_sdf
+from cofolder.modules.entities.ligand import csv_to_sdf
 
 csv_to_sdf(
     csv_path="compounds.csv",
@@ -89,7 +89,7 @@ csv_to_sdf(
 ### Generate 2D Conformers
 
 ```python
-from boltz_lab.modules.entities.ligand import generate_2d_conformers
+from cofolder.modules.entities.ligand import generate_2d_conformers
 
 generate_2d_conformers(
     sdf_in="input.sdf",
@@ -100,7 +100,7 @@ generate_2d_conformers(
 ### Generate 3D Conformers
 
 ```python
-from boltz_lab.modules.entities.ligand import generate_3d_conformers
+from cofolder.modules.entities.ligand import generate_3d_conformers
 
 generate_3d_conformers(
     sdf_in="input.sdf",
@@ -114,7 +114,7 @@ Convert molecules to Boltz CCD format:
 
 ```python
 from rdkit import Chem
-from boltz_lab.modules.entities.ligand import mol_to_ccd
+from cofolder.modules.entities.ligand import mol_to_ccd
 
 mol = Chem.MolFromSmiles("CCO")
 mol_to_ccd("ETH", mol, boltz_path="~/.boltz")
@@ -123,7 +123,7 @@ mol_to_ccd("ETH", mol, boltz_path="~/.boltz")
 ### Cache Molecules from SDF
 
 ```python
-from boltz_lab.modules.entities.ligand import cache_mols_from_sdf
+from cofolder.modules.entities.ligand import cache_mols_from_sdf
 
 cache_mols_from_sdf(
     file_path="ligands.sdf",
@@ -138,7 +138,7 @@ cache_mols_from_sdf(
 ### Iterate Through SDF
 
 ```python
-from boltz_lab.modules.entities.ligand import iterate_sdf_records
+from cofolder.modules.entities.ligand import iterate_sdf_records
 
 for idx, mol_id, molblock in iterate_sdf_records("library.sdf", "ID"):
     print(f"Processing {mol_id}...")
@@ -155,7 +155,7 @@ for idx, mol_id, molblock in iterate_sdf_records("library.sdf", "ID"):
 - Use descriptive names when possible
 
 ```python
-from boltz_lab.modules.entities.ligand import sanitize_mol_id
+from cofolder.modules.entities.ligand import sanitize_mol_id
 
 safe_id = sanitize_mol_id("VERY_LONG_COMPOUND_ID")  # Truncates to 5 chars
 ```
@@ -195,7 +195,7 @@ AllChem.AssignStereochemistryFrom3D(mol)
 Add custom properties to molecules:
 
 ```python
-from boltz_lab.modules.entities.ligand import add_pickled_prop
+from cofolder.modules.entities.ligand import add_pickled_prop
 
 mol = Chem.MolFromSmiles("CCO")
 add_pickled_prop(mol, "custom_score", 0.95)
@@ -206,9 +206,9 @@ add_pickled_prop(mol, "custom_score", 0.95)
 Extract geometric constraints from molecules:
 
 ```python
-from boltz_lab.modules.entities.ligand import extract_constraints
+from cofolder.modules.entities.ligand import extract_constraints
 
-constraints = [...] # From parsed residue
+constraints = [...]  # From parsed residue
 bond_constraints = extract_constraints(constraints, 'is_bond')
 ```
 
@@ -251,7 +251,7 @@ cache_mols_from_sdf(
 
 ```python
 from rdkit import Chem
-from boltz_lab.modules.entities.ligand import (
+from cofolder.modules.entities.ligand import (
     csv_to_sdf,
     generate_3d_conformers,
     cache_mols_from_sdf

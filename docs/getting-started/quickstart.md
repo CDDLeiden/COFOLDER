@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-This guide will walk you through your first Boltz-Lab workflow.
+This guide will walk you through your first COFOLDER workflow.
 
 ## Basic Workflow
 
@@ -19,9 +19,9 @@ sequences:
       ccd: "IBP"
 ```
 
-### 2. Configure Boltz Options
+### 2. Configure Runner Options
 
-Create a Boltz options file (`options.yaml`):
+Create a runner options file (`options.yaml`):
 
 ```yaml
 out_dir: output
@@ -31,46 +31,42 @@ recycling_steps: 3
 diffusion_samples: 1
 ```
 
-### 3. Run Prediction
+### 3. Run Validation
 
-Execute the prediction:
+Execute the validation workflow:
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml -w ./output
+cofolder validate -s system.yaml -o options.yaml -w ./output
 ```
 
 ## Output Files
 
 After successful execution, you'll find:
 
-- `predictions.cif` - Predicted structure in CIF format
-- `confidence_model_0.json` - Confidence metrics for the prediction
-- Logs and additional metadata
+- `raw/` - runner-owned raw execution artifacts
+- `results/system_metrics.csv` - merged system-level metrics
+- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/structures/` - gathered output structures
+- logs and additional metadata in the working directory
 
 ## Common Commands
 
-### Predict a Single System
+### Validate a Single System
 
 ```bash
-boltz-lab predict -s system.yaml -b options.yaml
+cofolder validate -s system.yaml -o options.yaml
 ```
 
 ### Screen a Library
 
 ```bash
-boltz-lab screen -s system.yaml -b options.yaml -v "sequences,0,ligand,smiles" -c compounds.csv --col_variable smiles --col_id compound_id
-```
-
-### Evaluate with Reference
-
-```bash
-boltz-lab evaluate -s system.yaml -b options.yaml -i reference.pdb --repeats 3
+cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --variable sequences,1,ligand,smiles --col_variable smiles
 ```
 
 ### Use as Oracle
 
 ```bash
-boltz-lab oracle -s system.yaml -b options.yaml
+cofolder oracle -s system.yaml -o options.yaml --input_smiles "CCO" --output_metric affinity_pred_value
 ```
 
 ## Getting Help
@@ -78,10 +74,9 @@ boltz-lab oracle -s system.yaml -b options.yaml
 For detailed information about any command:
 
 ```bash
-boltz-lab predict --help
-boltz-lab screen --help
-boltz-lab oracle --help
-boltz-lab evaluate --help
+cofolder validate --help
+cofolder screen --help
+cofolder oracle --help
 ```
 
 ## Next Steps
