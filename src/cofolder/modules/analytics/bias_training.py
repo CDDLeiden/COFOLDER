@@ -59,16 +59,11 @@ def run_build_bias_training_data(
     ligand_chains: set[str] | None = None,
     timings: DebugTimingCollector | None = None,
 ) -> None:
-    """Run scripts/build_bias_training_data.py from package code.
+    """Run the packaged bias-training builder in a subprocess.
 
     This keeps validate() in control of when and how bias training references
     are built, while reusing the existing builder implementation.
     """
-    repo_root = Path(__file__).resolve().parents[4]
-    script_path = repo_root / "scripts" / "build_bias_training_data.py"
-    if not script_path.exists():
-        raise FileNotFoundError(f"build script not found: {script_path}")
-
     resolved_mmseqs = _resolve_mmseqs_bin()
     if skip_protein_mmseqs is None:
         skip_protein_mmseqs = resolved_mmseqs is None
@@ -84,7 +79,8 @@ def run_build_bias_training_data(
         cmd: list[str] = [
             sys.executable,
             "-u",
-            str(script_path),
+            "-m",
+            "cofolder.modules.analytics.build_bias_training_data",
             "--system_path",
             str(system_path),
             "--components_cif",

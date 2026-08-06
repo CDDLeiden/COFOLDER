@@ -17,6 +17,16 @@ def _threshold_from_cmd(cmd: list[str]) -> float:
     return float(cmd[idx + 1])
 
 
+def _assert_packaged_builder_command(cmd: list[str]) -> None:
+    assert cmd[:4] == [
+        cmd[0],
+        "-u",
+        "-m",
+        "cofolder.modules.analytics.build_bias_training_data",
+    ]
+    assert "scripts/build_bias_training_data.py" not in " ".join(cmd)
+
+
 def test_backoff_when_pre_cutoff_hits_are_zero(monkeypatch, temp_dir):
     calls: list[list[str]] = []
 
@@ -57,6 +67,7 @@ def test_backoff_when_pre_cutoff_hits_are_zero(monkeypatch, temp_dir):
     )
 
     assert len(calls) == 2
+    _assert_packaged_builder_command(calls[0])
     assert _threshold_from_cmd(calls[0]) == 0.35
     assert _threshold_from_cmd(calls[1]) == 0.3
 
