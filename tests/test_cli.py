@@ -401,6 +401,34 @@ class TestBiasRecipe:
         assert bias_cls.call_args.kwargs["protein_training_data_path"] == str(protein_output)
         bias_runner.run.assert_called_once()
 
+    def test_main_accepts_fresh_ligand_output_path_in_build_mode(
+        self,
+        sample_system_yaml,
+        temp_dir,
+    ):
+        components_cif = temp_dir / "components.cif"
+        components_cif.write_text("data_components\n", encoding="utf-8")
+        protein_output = temp_dir / "generated" / "protein_training.csv"
+        ligand_output = temp_dir / "generated" / "ligand_training.csv"
+        bias_runner = Mock()
+        bias_cls = Mock(return_value=bias_runner)
+
+        args = [
+            "bias",
+            "-s", str(sample_system_yaml),
+            "--build_bias_training_data",
+            "--protein_training_data_path", str(protein_output),
+            "--ligand_training_data_path", str(ligand_output),
+            "--bias_training_components_cif", str(components_cif),
+            "-w", str(temp_dir),
+        ]
+
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
+
+        assert bias_cls.call_args.kwargs["ligand_training_data_path"] == str(ligand_output)
+        bias_runner.run.assert_called_once()
+
     def test_main_rejects_non_numeric_bias_threshold_before_recipe_load(
         self,
         sample_system_yaml,

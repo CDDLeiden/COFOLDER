@@ -337,8 +337,12 @@ class BaseRecipe:
         )
 
     @staticmethod
-    def _validate_file_suffix(value, flag_name, allowed_suffixes):
-        path = BaseRecipe._validate_existing_file_arg(value, flag_name)
+    def _validate_file_suffix(value, flag_name, allowed_suffixes, *, must_exist=True):
+        path = (
+            BaseRecipe._validate_existing_file_arg(value, flag_name)
+            if must_exist
+            else Path(value)
+        )
         suffix = path.suffix.lower()
         if suffix not in allowed_suffixes:
             allowed = ", ".join(sorted(allowed_suffixes))
@@ -437,6 +441,7 @@ class BaseRecipe:
                 args.ligand_training_data_path,
                 '--ligand_training_data_path',
                 {'.csv', '.sdf'},
+                must_exist=not args.build_bias_training_data,
             )
         custom_protein_reference_path = getattr(args, "custom_protein_reference_path", None)
         if custom_protein_reference_path is not None:
