@@ -144,6 +144,18 @@ cofolder bias \
   --custom_ligand_reference_path /path/to/custom_ligand.csv
 ```
 
+When the builder writes `bias_training_data.csv`, its `sequence_similarity` values are
+MMseqs `pident` percentages. The accompanying `sequence_similarity_method` column is
+`mmseqs_pident` when a hit exists and `unavailable` when MMseqs returned no result; an
+unavailable protein similarity is left empty so it cannot pass a protein-similarity
+threshold. The configured threshold filters the standalone `protein_training_data.csv`
+but does not discard MMseqs hits needed to annotate PDBs in the combined table.
+
+Downstream bias analysis never puts a PairwiseAligner result in `sequence_similarity`.
+When PairwiseAligner is used for sequence-only custom references, its percentage is
+written to `sequence_similarity_pairwise`, with method `pairwise_aligner`; the MMseqs
+column remains empty.
+
 `cofolder bias` writes diagnostic artifacts under `<wrk_dir>/results/bias_train/`.
 These are reference-overlap outputs for pre-cofolding decision support. They are not
 binding-affinity predictions, model-confidence scores, or guarantees of cofolding

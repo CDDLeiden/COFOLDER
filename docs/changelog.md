@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Import paths updated for new package structure
+- Protein sequence similarities in generated combined bias tables now consistently use
+  MMseqs `pident`, retain below-threshold hits for PDB lookup, and record method
+  provenance instead of substituting PairwiseAligner scores. Downstream bias outputs
+  also keep PairwiseAligner scores in a separate `sequence_similarity_pairwise` column.
 
 ## [0.1.0] - 2026-08-06
 

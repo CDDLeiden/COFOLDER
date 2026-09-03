@@ -42,7 +42,14 @@ PROVENANCE_COLUMNS = [
     "source_structure_path",
     "source_reference_path",
 ]
-PROTEIN_BASE_COLUMNS = ["pdb_id", "release_date", "sequence", "sequence_similarity"]
+PROTEIN_BASE_COLUMNS = [
+    "pdb_id",
+    "release_date",
+    "sequence",
+    "sequence_similarity",
+    "sequence_similarity_pairwise",
+    "sequence_similarity_method",
+]
 LIGAND_BASE_COLUMNS = ["pdb_id", "release_date", "ligand_id", "smiles", "ecfp_similarity"]
 CUSTOM_PROTEIN_REQUIRED_COLUMNS = {"sequence"}
 CUSTOM_LIGAND_REQUIRED_COLUMNS = {"smiles"}
@@ -85,8 +92,11 @@ BIAS_TRAINING_DATA_COLUMNS = [
     "ligand_source_structure_path",
     "ligand_source_reference_path",
     "sequence_similarity",
+    "sequence_similarity_pairwise",
+    "sequence_similarity_method",
     "ecfp_similarity",
     "plot_sequence_similarity",
+    "plot_sequence_similarity_pairwise",
     "plot_ecfp_similarity",
     "sequence",
     "ligand_id",
@@ -160,6 +170,8 @@ def _order_protein_training_columns(df: pd.DataFrame) -> pd.DataFrame:
         "source_structure_path",
         "source_reference_path",
         "sequence_similarity",
+        "sequence_similarity_pairwise",
+        "sequence_similarity_method",
         "sequence",
     ]
     cols = [c for c in preferred if c in df.columns] + [c for c in df.columns if c not in preferred]
@@ -262,8 +274,56 @@ def _finalize_reference_frame(
     else:
         if "sequence" in df.columns:
             df["sequence"] = df["sequence"].astype(str)
-        if "sequence_similarity" in df.columns:
-            df["sequence_similarity"] = pd.to_numeric(df["sequence_similarity"], errors="coerce")
+        df["sequence_similarity"] = pd.to_numeric(df["sequence_similarity"], errors="coerce")
+        df["sequence_similarity_pairwise"] = pd.to_numeric(
+            df["sequence_similarity_pairwise"], errors="coerce"
+        )
+        both_present = (
+            df["sequence_similarity"].notna()
+            & df["sequence_similarity_pairwise"].notna()
+        )
+        if both_present.any():
+            raise ValueError(
+                "Protein reference rows cannot contain both sequence_similarity "
+                "(MMseqs pident) and sequence_similarity_pairwise"
+            )
+        method = df["sequence_similarity_method"].astype("string")
+        missing_method = method.isna() | method.str.strip().eq("")
+        method = method.mask(
+            missing_method & df["sequence_similarity"].notna(),
+            "mmseqs_pident",
+        )
+        method = method.mask(
+            missing_method
+            & df["sequence_similarity"].isna()
+            & df["sequence_similarity_pairwise"].notna(),
+            "pairwise_aligner",
+        )
+        method = method.mask(
+            missing_method
+            & df["sequence_similarity"].isna()
+            & df["sequence_similarity_pairwise"].isna(),
+            "unavailable",
+        )
+        invalid_mmseqs = df["sequence_similarity"].notna() & method.ne("mmseqs_pident")
+        invalid_pairwise = (
+            df["sequence_similarity_pairwise"].notna()
+            & method.ne("pairwise_aligner")
+        )
+        invalid_unavailable = (
+            df["sequence_similarity"].isna()
+            & df["sequence_similarity_pairwise"].isna()
+            & method.ne("unavailable")
+        )
+        if (
+            invalid_mmseqs.any()
+            or invalid_pairwise.any()
+            or invalid_unavailable.any()
+        ):
+            raise ValueError(
+                "Protein similarity values do not match sequence_similarity_method"
+            )
+        df["sequence_similarity_method"] = method
 
     return df
 
@@ -539,7 +599,7 @@ def _load_protein_training(
     return _concat_reference_frames(frames, is_ligand=False)
 
 
-def _sequence_identity_percent(query: str, target: str) -> float:
+def _pairwise_sequence_identity_percent(query: str, target: str) -> float:
     if not query or not target:
         return 0.0
     score = ALIGNER.score(query, target)
@@ -551,17 +611,24 @@ def _sequence_identity_percent(query: str, target: str) -> float:
 
 def _best_protein_hit(query_seq: str, proteins_df: pd.DataFrame) -> float | None:
     if "sequence_similarity" in proteins_df.columns:
-        if "sequence" in proteins_df.columns:
-            exact_match = proteins_df["sequence"].astype(str) == str(query_seq)
-            if exact_match.any():
-                return 100.0
         sims = pd.to_numeric(proteins_df["sequence_similarity"], errors="coerce").dropna()
         if len(sims):
             return float(sims.max())
+    return None
 
+
+def _best_pairwise_protein_hit(query_seq: str, proteins_df: pd.DataFrame) -> float | None:
+    if "sequence_similarity_pairwise" in proteins_df.columns:
+        sims = pd.to_numeric(
+            proteins_df["sequence_similarity_pairwise"], errors="coerce"
+        ).dropna()
+        if len(sims):
+            return float(sims.max())
     best_score = None
     for _, row in proteins_df.iterrows():
-        score = _sequence_identity_percent(query_seq, str(row["sequence"]))
+        if pd.notna(row.get("sequence_similarity")):
+            continue
+        score = _pairwise_sequence_identity_percent(query_seq, str(row["sequence"]))
         if best_score is None or score > best_score:
             best_score = score
     return best_score
@@ -834,13 +901,31 @@ def _protein_similarity_series(query_seq: str, proteins_df: pd.DataFrame) -> pd.
     if proteins_df.empty:
         return pd.Series(dtype=float)
     if "sequence_similarity" in proteins_df.columns:
-        sims = pd.to_numeric(proteins_df["sequence_similarity"], errors="coerce")
+        return pd.to_numeric(proteins_df["sequence_similarity"], errors="coerce")
+    return pd.Series(pd.NA, index=proteins_df.index, dtype="Float64")
+
+
+def _protein_pairwise_similarity_series(
+    query_seq: str,
+    proteins_df: pd.DataFrame,
+) -> pd.Series:
+    if proteins_df.empty:
+        return pd.Series(dtype=float)
+    if "sequence_similarity_pairwise" in proteins_df.columns:
+        pairwise = pd.to_numeric(
+            proteins_df["sequence_similarity_pairwise"], errors="coerce"
+        )
     else:
-        sims = proteins_df["sequence"].apply(lambda seq: _sequence_identity_percent(query_seq, str(seq)))
-    if "sequence" in proteins_df.columns:
-        exact_match = proteins_df["sequence"].astype(str) == str(query_seq)
-        sims = sims.mask(exact_match, 100.0)
-    return pd.to_numeric(sims, errors="coerce")
+        pairwise = pd.Series(pd.NA, index=proteins_df.index, dtype="Float64")
+    mmseqs = _protein_similarity_series(query_seq, proteins_df)
+    missing = pairwise.isna() & mmseqs.isna()
+    if missing.any() and "sequence" in proteins_df.columns:
+        pairwise.loc[missing] = proteins_df.loc[missing, "sequence"].apply(
+            lambda sequence: _pairwise_sequence_identity_percent(
+                query_seq, str(sequence)
+            )
+        )
+    return pd.to_numeric(pairwise, errors="coerce")
 
 
 def _ligand_similarity_series(
@@ -884,16 +969,26 @@ def _best_reference_row(
 ) -> pd.Series | None:
     if df.empty or not query_value:
         return None
-    similarities = (
-        _ligand_similarity_series(query_value, df, mol_id=mol_id)
-        if is_ligand
-        else _protein_similarity_series(query_value, df)
-    )
+    if is_ligand:
+        similarities = _ligand_similarity_series(query_value, df, mol_id=mol_id)
+        similarity_methods = pd.Series(
+            "ecfp4_tanimoto", index=df.index, dtype="string"
+        )
+    else:
+        mmseqs_similarities = _protein_similarity_series(query_value, df)
+        pairwise_similarities = _protein_pairwise_similarity_series(query_value, df)
+        similarities = mmseqs_similarities.combine_first(pairwise_similarities)
+        similarity_methods = pd.Series(pd.NA, index=df.index, dtype="string")
+        similarity_methods.loc[mmseqs_similarities.notna()] = "mmseqs_pident"
+        similarity_methods.loc[
+            mmseqs_similarities.isna() & pairwise_similarities.notna()
+        ] = "pairwise_aligner"
     if similarities.dropna().empty:
         return None
     best_idx = similarities.fillna(float("-inf")).idxmax()
     best_row = df.loc[best_idx].copy()
     best_row["best_similarity"] = float(similarities.loc[best_idx])
+    best_row["best_similarity_method"] = similarity_methods.loc[best_idx]
     return best_row
 
 
@@ -978,15 +1073,30 @@ def _build_reference_landscape_row(
         "nearest_public_pdb_id": public_best.get("pdb_id") if public_best is not None else None,
         "nearest_public_dataset_name": public_best.get("dataset_name") if public_best is not None else None,
         "nearest_public_similarity": public_similarity,
+        "nearest_public_similarity_method": (
+            public_best.get("best_similarity_method")
+            if public_best is not None
+            else None
+        ),
         "nearest_custom_pdb_id": custom_best.get("pdb_id") if custom_best is not None else None,
         "nearest_custom_dataset_name": custom_best.get("dataset_name") if custom_best is not None else None,
         "nearest_custom_similarity": custom_similarity,
+        "nearest_custom_similarity_method": (
+            custom_best.get("best_similarity_method")
+            if custom_best is not None
+            else None
+        ),
         "nearest_overall_source": nearest_overall_source,
         "nearest_overall_pdb_id": overall_best.get("pdb_id") if overall_best is not None else None,
         "nearest_overall_dataset_name": overall_best.get("dataset_name") if overall_best is not None else None,
         "nearest_overall_similarity": (
             float(overall_best["best_similarity"])
             if overall_best is not None and pd.notna(overall_best.get("best_similarity"))
+            else None
+        ),
+        "nearest_overall_similarity_method": (
+            overall_best.get("best_similarity_method")
+            if overall_best is not None
             else None
         ),
         "custom_changes_nearest_reference": bool(
@@ -1078,15 +1188,31 @@ def _build_protein_training_view(
             continue
         sub = proteins_df.copy()
         sub["sequence_similarity"] = _protein_similarity_series(str(query_seq), sub)
+        sub["sequence_similarity_pairwise"] = _protein_pairwise_similarity_series(
+            str(query_seq), sub
+        )
         sub["sequence_similarity"] = pd.to_numeric(sub["sequence_similarity"], errors="coerce").clip(
             lower=0.0,
             upper=100.0,
         )
+        sub["sequence_similarity_pairwise"] = pd.to_numeric(
+            sub["sequence_similarity_pairwise"], errors="coerce"
+        ).clip(lower=0.0, upper=100.0)
+        sub["sequence_similarity_method"] = pd.Series(pd.NA, index=sub.index, dtype="string")
+        sub.loc[sub["sequence_similarity"].notna(), "sequence_similarity_method"] = "mmseqs_pident"
+        sub.loc[
+            sub["sequence_similarity"].isna() & sub["sequence_similarity_pairwise"].notna(),
+            "sequence_similarity_method",
+        ] = "pairwise_aligner"
+        sub["_effective_sequence_similarity"] = sub["sequence_similarity"].combine_first(
+            sub["sequence_similarity_pairwise"]
+        )
         if minimum_similarity is not None:
-            sub = sub[sub["sequence_similarity"] >= minimum_similarity].copy()
-        sub = sub.sort_values("sequence_similarity", ascending=False)
+            sub = sub[sub["_effective_sequence_similarity"] >= minimum_similarity].copy()
+        sub = sub.sort_values("_effective_sequence_similarity", ascending=False)
         if top_n is not None:
             sub = sub.head(top_n).copy()
+        sub = sub.drop(columns="_effective_sequence_similarity")
         sub["query_chain_id"] = str(chain_id).strip()
         prot_rows.append(sub)
 
@@ -1105,13 +1231,21 @@ def _build_protein_training_view(
             ]
         )
         proteins_out = proteins_out.sort_values(
-            by=["query_chain_id", "sequence_similarity", "source", "pdb_id"],
-            ascending=[True, False, True, True],
+            by=[
+                "query_chain_id",
+                "sequence_similarity",
+                "sequence_similarity_pairwise",
+                "source",
+                "pdb_id",
+            ],
+            ascending=[True, False, False, True, True],
             na_position="last",
         )
     else:
         proteins_out = proteins_df.iloc[0:0].copy()
         proteins_out["sequence_similarity"] = pd.Series(dtype=float)
+        proteins_out["sequence_similarity_pairwise"] = pd.Series(dtype=float)
+        proteins_out["sequence_similarity_method"] = pd.Series(dtype="string")
         proteins_out["query_chain_id"] = pd.Series(dtype=str)
 
     return _order_protein_training_columns(proteins_out)
@@ -1285,8 +1419,53 @@ def _finalize_bias_training_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=BIAS_TRAINING_DATA_COLUMNS)
     ordered = df.copy()
+    if "sequence_similarity_pairwise" not in ordered.columns:
+        ordered["sequence_similarity_pairwise"] = pd.NA
+    if "plot_sequence_similarity_pairwise" not in ordered.columns:
+        ordered["plot_sequence_similarity_pairwise"] = pd.NA
+    ligand_only = ordered["pairing_status"].astype(str).eq(BIAS_PAIRING_LIGAND_ONLY)
+    ordered.loc[ligand_only, "sequence_similarity"] = pd.NA
+    ordered.loc[ligand_only, "sequence_similarity_pairwise"] = pd.NA
+    ordered.loc[ligand_only, "plot_sequence_similarity"] = pd.NA
+    ordered.loc[ligand_only, "plot_sequence_similarity_pairwise"] = pd.NA
+    mmseqs = pd.to_numeric(ordered["sequence_similarity"], errors="coerce")
+    pairwise = pd.to_numeric(
+        ordered["sequence_similarity_pairwise"], errors="coerce"
+    )
+    if "sequence_similarity_method" not in ordered.columns:
+        ordered["sequence_similarity_method"] = pd.NA
+    methods = ordered["sequence_similarity_method"].astype("string")
+    missing_method = methods.isna() | methods.str.strip().eq("")
+    methods = methods.mask(missing_method & mmseqs.notna(), "mmseqs_pident")
+    methods = methods.mask(
+        missing_method & mmseqs.isna() & pairwise.notna(), "pairwise_aligner"
+    )
+    methods = methods.mask(
+        missing_method & mmseqs.isna() & pairwise.isna(), "unavailable"
+    )
+    methods = methods.mask(ligand_only, "unavailable")
+    ordered["sequence_similarity_method"] = methods
+    methods = methods.fillna("")
+    invalid = (
+        (mmseqs.notna() & pairwise.notna())
+        | (mmseqs.notna() & methods.ne("mmseqs_pident"))
+        | (pairwise.notna() & methods.ne("pairwise_aligner"))
+        | (mmseqs.isna() & pairwise.isna() & methods.ne("unavailable"))
+    )
+    if invalid.any():
+        raise ValueError(
+            "Bias training rows must keep MMseqs pident and PairwiseAligner "
+            "similarities in their method-specific columns"
+        )
     ordered["plot_sequence_similarity"] = pd.to_numeric(
         ordered["plot_sequence_similarity"],
+        errors="coerce",
+    ).clip(lower=0.0, upper=1.0)
+    ordered["plot_sequence_similarity_pairwise"] = pd.to_numeric(
+        ordered.get(
+            "plot_sequence_similarity_pairwise",
+            pd.Series(pd.NA, index=ordered.index, dtype="Float64"),
+        ),
         errors="coerce",
     ).clip(lower=0.0, upper=1.0)
     ordered["plot_ecfp_similarity"] = pd.to_numeric(
@@ -1383,6 +1562,8 @@ def _pdb_protein_similarity_rows(
         {
             "sequence": sequence,
             "sequence_similarity": similarity,
+            "sequence_similarity_pairwise": pd.NA,
+            "sequence_similarity_method": "mmseqs_pident",
         }
         for sequence, similarity in _cached_pdb_protein_similarity_rows(
             str(pdb_id).strip().upper(),
@@ -1471,9 +1652,23 @@ def _build_protein_lookup_index(
             ordered["sequence_similarity"],
             errors="coerce",
         )
+    if "sequence_similarity_pairwise" in ordered.columns:
+        ordered["sequence_similarity_pairwise"] = pd.to_numeric(
+            ordered["sequence_similarity_pairwise"],
+            errors="coerce",
+        )
+    else:
+        ordered["sequence_similarity_pairwise"] = pd.NA
     ordered = ordered.sort_values(
-        by=["pdb_id", "sequence_similarity", "source", "dataset_name", "sequence"],
-        ascending=[True, False, True, True, True],
+        by=[
+            "pdb_id",
+            "sequence_similarity",
+            "sequence_similarity_pairwise",
+            "source",
+            "dataset_name",
+            "sequence",
+        ],
+        ascending=[True, False, False, True, True, True],
         na_position="last",
     )
 
@@ -1727,7 +1922,10 @@ def _enrich_mixed_bias_row_with_pdb_backfill(
                 )
                 updated_row["sequence"] = protein_match["sequence"]
                 updated_row["sequence_similarity"] = float(sequence_similarity)
+                updated_row["sequence_similarity_pairwise"] = pd.NA
+                updated_row["sequence_similarity_method"] = "mmseqs_pident"
                 updated_row["plot_sequence_similarity"] = float(sequence_similarity) / 100.0
+                updated_row["plot_sequence_similarity_pairwise"] = pd.NA
                 updated_row["source"] = _collapse_pair_value(
                     [updated_row.get("protein_source"), updated_row.get("ligand_source")],
                     mixed_label="mixed",
@@ -2221,7 +2419,6 @@ def _bias_training_row_from_sources(
     protein_unique_counts: dict[object, int],
     ligand_id_unique_counts: dict[object, int],
     ligand_smiles_unique_counts: dict[object, int],
-    forced_sequence_similarity: float | None = None,
     forced_ecfp_similarity: float | None = None,
 ) -> dict[str, object]:
     protein_chain = query_protein_chain_id or None
@@ -2233,14 +2430,50 @@ def _bias_training_row_from_sources(
 
     sequence_similarity = pd.to_numeric(
         pd.Series(
+            [protein_row.get("sequence_similarity_protein") if protein_row is not None else pd.NA]
+        ),
+        errors="coerce",
+    ).iloc[0]
+    sequence_similarity_pairwise = pd.to_numeric(
+        pd.Series(
             [
-                forced_sequence_similarity
-                if forced_sequence_similarity is not None
-                else (protein_row.get("sequence_similarity_protein") if protein_row is not None else pd.NA)
+                protein_row.get("sequence_similarity_pairwise_protein")
+                if protein_row is not None
+                else pd.NA
             ]
         ),
         errors="coerce",
     ).iloc[0]
+    if pd.notna(sequence_similarity) and pd.notna(sequence_similarity_pairwise):
+        raise ValueError(
+            "Protein reference row contains both MMseqs pident and PairwiseAligner similarity"
+        )
+    sequence_similarity_method = (
+        protein_row.get("sequence_similarity_method_protein")
+        if protein_row is not None
+        else pd.NA
+    )
+    if pd.isna(sequence_similarity_method) or not str(sequence_similarity_method).strip():
+        if pd.notna(sequence_similarity):
+            sequence_similarity_method = "mmseqs_pident"
+        elif pd.notna(sequence_similarity_pairwise):
+            sequence_similarity_method = "pairwise_aligner"
+        else:
+            sequence_similarity_method = "unavailable"
+    if (
+        pd.notna(sequence_similarity)
+        and sequence_similarity_method != "mmseqs_pident"
+    ) or (
+        pd.notna(sequence_similarity_pairwise)
+        and sequence_similarity_method != "pairwise_aligner"
+    ) or (
+        pd.isna(sequence_similarity)
+        and pd.isna(sequence_similarity_pairwise)
+        and sequence_similarity_method != "unavailable"
+    ):
+        raise ValueError(
+            "Protein similarity value does not match sequence_similarity_method"
+        )
     ecfp_similarity = pd.to_numeric(
         pd.Series(
             [
@@ -2253,6 +2486,11 @@ def _bias_training_row_from_sources(
     ).iloc[0]
     plot_sequence_similarity = (
         float(sequence_similarity) / 100.0 if pd.notna(sequence_similarity) else pd.NA
+    )
+    plot_sequence_similarity_pairwise = (
+        float(sequence_similarity_pairwise) / 100.0
+        if pd.notna(sequence_similarity_pairwise)
+        else pd.NA
     )
     plot_ecfp_similarity = float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA
 
@@ -2320,8 +2558,15 @@ def _bias_training_row_from_sources(
         "ligand_source_structure_path": ligand_row.get("source_structure_path_ligand") if ligand_row is not None else pd.NA,
         "ligand_source_reference_path": ligand_row.get("source_reference_path_ligand") if ligand_row is not None else pd.NA,
         "sequence_similarity": float(sequence_similarity) if pd.notna(sequence_similarity) else pd.NA,
+        "sequence_similarity_pairwise": (
+            float(sequence_similarity_pairwise)
+            if pd.notna(sequence_similarity_pairwise)
+            else pd.NA
+        ),
+        "sequence_similarity_method": sequence_similarity_method,
         "ecfp_similarity": float(ecfp_similarity) if pd.notna(ecfp_similarity) else pd.NA,
         "plot_sequence_similarity": plot_sequence_similarity,
+        "plot_sequence_similarity_pairwise": plot_sequence_similarity_pairwise,
         "plot_ecfp_similarity": plot_ecfp_similarity,
         "sequence": sequence_value,
         "ligand_id": ligand_id_value,
@@ -2433,9 +2678,6 @@ def _build_bias_training_rows(
                 protein_unique_counts=protein_unique_counts,
                 ligand_id_unique_counts=ligand_id_unique_counts,
                 ligand_smiles_unique_counts=ligand_smiles_unique_counts,
-                forced_sequence_similarity=(
-                    0.0 if query_protein_chain_id is not None else None
-                ),
             )
         )
 
@@ -3426,6 +3668,7 @@ def apply_bias_metrics(
         )
 
     protein_best: dict[str, float | None] = {}
+    protein_pairwise_best: dict[str, float | None] = {}
     protein_timer = (
         timings.measure("scores.bias_metrics.protein_similarity", logger=logger)
         if timings is not None
@@ -3433,8 +3676,14 @@ def apply_bias_metrics(
     )
     with protein_timer:
         for chain_id, query_seq in protein_queries.items():
-            protein_best[str(chain_id).strip().upper()] = (
+            normalized_chain_id = str(chain_id).strip().upper()
+            protein_best[normalized_chain_id] = (
                 _best_protein_hit(query_seq, proteins_df) if query_seq else None
+            )
+            protein_pairwise_best[normalized_chain_id] = (
+                _best_pairwise_protein_hit(query_seq, proteins_df)
+                if query_seq
+                else None
             )
 
     ligand_best: dict[str, float | None] = {}
@@ -3451,6 +3700,8 @@ def apply_bias_metrics(
 
     if "bias_prot_sim_train" not in chain_df.columns:
         chain_df["bias_prot_sim_train"] = pd.NA
+    if "bias_prot_sim_train_pairwise" not in chain_df.columns:
+        chain_df["bias_prot_sim_train_pairwise"] = pd.NA
     if "bias_lig_sim_train" not in chain_df.columns:
         chain_df["bias_lig_sim_train"] = pd.NA
 
@@ -3461,6 +3712,9 @@ def apply_bias_metrics(
             continue
         if entity == "protein":
             chain_df.at[idx, "bias_prot_sim_train"] = protein_best.get(chain_id)
+            chain_df.at[idx, "bias_prot_sim_train_pairwise"] = protein_pairwise_best.get(
+                chain_id
+            )
         elif entity == "ligand":
             sim = ligand_best.get(chain_id)
             mol_id = row.get("ligand_molecule_id")
@@ -3480,10 +3734,17 @@ def apply_bias_metrics(
             chain_df.at[idx, "bias_lig_sim_train"] = sim
 
     prot_vals = pd.to_numeric(chain_df.get("bias_prot_sim_train"), errors="coerce").dropna()
+    prot_pairwise_vals = pd.to_numeric(
+        chain_df.get("bias_prot_sim_train_pairwise"), errors="coerce"
+    ).dropna()
     lig_vals = pd.to_numeric(chain_df.get("bias_lig_sim_train"), errors="coerce").dropna()
 
     if len(prot_vals):
         system_df["bias_prot_sim_train_max"] = float(prot_vals.max())
+    if len(prot_pairwise_vals):
+        system_df["bias_prot_sim_train_pairwise_max"] = float(
+            prot_pairwise_vals.max()
+        )
     if len(lig_vals):
         system_df["bias_lig_sim_train_max"] = float(lig_vals.max())
 

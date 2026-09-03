@@ -71,12 +71,13 @@ def test_apply_bias_metrics_basic(temp_dir):
         release_cutoff="2023-06-01",
     )
 
-    prot_val = float(out_chain.loc[out_chain["ENTITY_TYPE"] == "protein", "bias_prot_sim_train"].iloc[0])
+    protein_row = out_chain.loc[out_chain["ENTITY_TYPE"] == "protein"].iloc[0]
     lig_val = float(out_chain.loc[out_chain["ENTITY_TYPE"] == "ligand", "bias_lig_sim_train"].iloc[0])
 
-    assert prot_val == 100.0
+    assert pd.isna(protein_row["bias_prot_sim_train"])
+    assert float(protein_row["bias_prot_sim_train_pairwise"]) == 100.0
     assert lig_val == 1.0
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_pairwise_max"].iloc[0]) == 100.0
     assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
 
 
@@ -125,10 +126,10 @@ def test_apply_bias_metrics_ccd_multi_ligands_and_cutoff(temp_dir):
     lig_b = float(out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0])
     lig_c = float(out_chain.loc[out_chain["CHAIN_ID"] == "C", "bias_lig_sim_train"].iloc[0])
 
-    assert prot_val == 100.0
+    assert prot_val == 99.0
     assert lig_b == 1.0
     assert lig_c == 1.0
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 99.0
     assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
 
 
@@ -332,12 +333,13 @@ def test_apply_bias_metrics_with_empty_ligand_csv_no_crash(temp_dir):
         release_cutoff="2023-06-01",
     )
 
-    prot_val = float(out_chain.loc[out_chain["CHAIN_ID"] == "A", "bias_prot_sim_train"].iloc[0])
+    protein_row = out_chain.loc[out_chain["CHAIN_ID"] == "A"].iloc[0]
     lig_val = out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0]
 
-    assert prot_val == 100.0
+    assert pd.isna(protein_row["bias_prot_sim_train"])
+    assert float(protein_row["bias_prot_sim_train_pairwise"]) == 100.0
     assert pd.isna(lig_val)
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_pairwise_max"].iloc[0]) == 100.0
 
 
 def test_apply_bias_metrics_rejects_unresolved_ccd_when_strict(monkeypatch, temp_dir):
@@ -449,11 +451,25 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
     assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
     assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
     assert bias_training["pairing_status"].tolist() == ["paired", "paired"]
-    assert bias_training["plot_sequence_similarity"].tolist() == [1.0, 0.83]
+    assert pd.isna(bias_training["plot_sequence_similarity"].iloc[0])
+    assert bias_training["plot_sequence_similarity"].iloc[1] == 0.83
+    assert bias_training["plot_sequence_similarity_pairwise"].iloc[0] == 1.0
+    assert pd.isna(bias_training["plot_sequence_similarity_pairwise"].iloc[1])
+    assert bias_training["sequence_similarity_method"].tolist() == [
+        "pairwise_aligner",
+        "mmseqs_pident",
+    ]
     assert bias_training["plot_ecfp_similarity"].tolist() == [1.0, 0.4]
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.png").exists()
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.pdf").exists()
     assert set(summary["nearest_overall_source"]) == {"custom"}
+    summary_methods = summary.set_index("entity_type")[
+        "nearest_overall_similarity_method"
+    ].to_dict()
+    assert summary_methods == {
+        "protein": "pairwise_aligner",
+        "ligand": "ecfp4_tanimoto",
+    }
     assert summary["custom_changes_nearest_reference"].tolist() == [True, True]
 
 
@@ -1431,7 +1447,7 @@ def test_build_bias_training_dataset_sets_apo_ligand_similarity_to_zero():
     assert len(ligand_only) == 1
 
 
-def test_build_bias_training_dataset_sets_ligand_only_sequence_similarity_to_zero():
+def test_build_bias_training_dataset_leaves_ligand_only_protein_similarity_unavailable():
     protein_view = pd.DataFrame(
         [
             {
@@ -1471,8 +1487,11 @@ def test_build_bias_training_dataset_sets_ligand_only_sequence_similarity_to_zer
 
     assert len(ligand_only) == 1
     assert ligand_only["pairing_status"].tolist() == ["ligand_only"]
-    assert ligand_only["sequence_similarity"].tolist() == [0.0]
-    assert ligand_only["plot_sequence_similarity"].tolist() == [0.0]
+    assert ligand_only["sequence_similarity"].isna().all()
+    assert ligand_only["sequence_similarity_pairwise"].isna().all()
+    assert ligand_only["plot_sequence_similarity"].isna().all()
+    assert ligand_only["plot_sequence_similarity_pairwise"].isna().all()
+    assert ligand_only["sequence_similarity_method"].tolist() == ["unavailable"]
     assert ligand_only["protein_pdb_id"].isna().all()
 
 
@@ -1633,7 +1652,12 @@ def test_build_protein_training_view_keeps_distinct_custom_paths_for_same_sequen
         "/tmp/reference_a.pdb",
         "/tmp/reference_b.pdb",
     ]
-    assert result["sequence_similarity"].tolist() == [100.0, 100.0]
+    assert result["sequence_similarity"].isna().all()
+    assert result["sequence_similarity_pairwise"].tolist() == [100.0, 100.0]
+    assert result["sequence_similarity_method"].tolist() == [
+        "pairwise_aligner",
+        "pairwise_aligner",
+    ]
 
 
 def test_build_bias_training_dataset_marks_protein_only_rows_with_provenance():
@@ -1661,6 +1685,62 @@ def test_build_bias_training_dataset_marks_protein_only_rows_with_provenance():
     assert result["dataset_name"].tolist() == ["public"]
     assert result["protein_pdb_id"].tolist() == ["1ABC"]
     assert result["sequence_similarity"].tolist() == [95.0]
+
+
+def test_protein_reference_rejects_mixed_mmseqs_and_pairwise_scores(temp_dir):
+    reference_path = temp_dir / "mixed_protein_reference.csv"
+    reference_path.write_text(
+        "sequence,sequence_similarity,sequence_similarity_pairwise,"
+        "sequence_similarity_method\n"
+        "MAAA,24.0,75.0,mmseqs_pident\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot contain both"):
+        bias_module._load_custom_protein_training(reference_path)
+
+
+def test_combined_bias_rows_keep_mmseqs_and_pairwise_in_separate_columns():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1ABC",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 24.0,
+                "sequence_similarity_pairwise": pd.NA,
+                "sequence_similarity_method": "mmseqs_pident",
+                "sequence": "MAAA",
+            },
+            {
+                "query_chain_id": "A",
+                "pdb_id": pd.NA,
+                "source": "custom",
+                "dataset_name": "custom",
+                "sequence_similarity": pd.NA,
+                "sequence_similarity_pairwise": 75.0,
+                "sequence_similarity_method": "pairwise_aligner",
+                "sequence": "MATA",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(protein_view=protein_view, ligand_views={})
+
+    assert not (
+        result["sequence_similarity"].notna()
+        & result["sequence_similarity_pairwise"].notna()
+    ).any()
+    assert set(
+        result.loc[result["sequence_similarity"].notna(), "sequence_similarity_method"]
+    ) == {"mmseqs_pident"}
+    assert set(
+        result.loc[
+            result["sequence_similarity_pairwise"].notna(),
+            "sequence_similarity_method",
+        ]
+    ) == {"pairwise_aligner"}
 
 
 def test_apply_bias_metrics_rejects_missing_custom_provenance_paths(temp_dir):

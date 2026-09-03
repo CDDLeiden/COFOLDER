@@ -248,7 +248,9 @@ class BaseRecipe:
                 "Path to a custom protein reference CSV. "
                 "Required column: sequence. Optional columns: pdb_id, release_date, "
                 "source, dataset_name, source_structure_path, source_reference_path, "
-                "sequence_similarity."
+                "sequence_similarity (MMseqs pident only), "
+                "sequence_similarity_pairwise (PairwiseAligner only), "
+                "sequence_similarity_method."
             ),
         )
         parser.add_argument(
