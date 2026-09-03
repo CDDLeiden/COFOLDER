@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Import paths updated for new package structure
+- Screening and validation now warn and continue with empty affinity columns when
+  default affinity outputs are unavailable but affinity was not explicitly requested
+  or activated in the system YAML.
 - Protein sequence similarities in generated combined bias tables now consistently use
   MMseqs `pident`, retain below-threshold hits for PDB lookup, and record method
   provenance instead of substituting PairwiseAligner scores. Downstream bias outputs

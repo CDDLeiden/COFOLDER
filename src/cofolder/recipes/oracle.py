@@ -11,7 +11,7 @@ import pandas as pd
 
 from cofolder.modules.input import system
 from cofolder.modules.utils import read, write
-from cofolder.recipes.validate import Validate
+from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS, Validate
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,15 @@ class Oracle:
         self.output_metric = str(output_metric).strip() if output_metric else None
         self.aggregate = str(aggregate).strip().lower()
 
+        effective_scoring_functions = (
+            scoring_functions
+            if scoring_functions is not None
+            else sorted(DEFAULT_SCORING_FUNCTIONS)
+        )
         self.validate_kwargs: dict[str, Any] = {
             "repeats": repeats,
             "seed": seed,
-            "scoring_functions": scoring_functions,
+            "scoring_functions": effective_scoring_functions,
             "assess_robustness": assess_robustness,
             "assess_bias": assess_bias,
             "protein_training_data_path": protein_training_data_path,

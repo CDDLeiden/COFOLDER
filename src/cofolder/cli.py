@@ -109,10 +109,11 @@ class BaseRecipe:
             nargs='+',
             choices=SCORING_FUNCTIONS,
             metavar="SCORING_FUNCTION",
-            default=DEFAULT_SCORING_FUNCTIONS,
+            default=None,
             help=(
                 "Scoring functions to compute. "
-                f"Choices: {', '.join(SCORING_FUNCTIONS)}"
+                f"Choices: {', '.join(SCORING_FUNCTIONS)}. "
+                f"Defaults to: {', '.join(DEFAULT_SCORING_FUNCTIONS)}"
             ),
         )
 

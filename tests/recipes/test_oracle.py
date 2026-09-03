@@ -7,9 +7,26 @@ import pandas as pd
 import pytest
 
 from cofolder.recipes.oracle import Oracle
+from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS
 
 
 class TestOracleInit:
+    def test_default_scoring_functions_remain_enabled(
+        self,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        oracle = Oracle(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            input_smiles="CCO",
+            output_metric="affinity_pred_value",
+        )
+
+        assert set(oracle.validate_kwargs["scoring_functions"]) == DEFAULT_SCORING_FUNCTIONS
+
     def test_requires_exactly_one_input(self, sample_system_yaml, sample_options_yaml, temp_dir):
         with pytest.raises(ValueError, match="exactly one input"):
             Oracle(

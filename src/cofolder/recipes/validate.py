@@ -40,6 +40,10 @@ RUNNER_METRIC_GROUPS = {
     "affinity_metrics",
     "affinity_metrics_ext",
 }
+AFFINITY_METRIC_GROUPS = {
+    "affinity_metrics",
+    "affinity_metrics_ext",
+}
 
 
 class Validate(object):
@@ -109,6 +113,7 @@ class Validate(object):
                 raise ValueError(f"reference_path is not a file: {self.reference_path}")
 
         self.logger = logging.getLogger(__name__)
+        self.explicit_scoring_functions = set(scoring_functions or ())
         self.scoring_functions = (
             set(scoring_functions)
             if scoring_functions is not None
@@ -232,13 +237,33 @@ class Validate(object):
                 )
                 runner_results.append(self.runner.run(request))
 
-            requested_runner_metric_groups = self.scoring_functions & RUNNER_METRIC_GROUPS
+            selected_runner_metric_groups = self.scoring_functions & RUNNER_METRIC_GROUPS
+            requested_runner_metric_groups = self._required_runner_metric_groups()
+            optional_runner_metric_groups = (
+                selected_runner_metric_groups - requested_runner_metric_groups
+            )
+            unavailable_metric_groups = set(unsupported_metric_groups)
             with self._debug_timer("runner.bundle_validation"):
-                for result in runner_results:
-                    validate_runner_bundle(
+                for repeat, result in enumerate(runner_results, 1):
+                    bundle = validate_runner_bundle(
                         result,
                         requested_metric_groups=requested_runner_metric_groups,
                     )
+                    for group_name in sorted(optional_runner_metric_groups):
+                        outcome = bundle.metric_outcomes.get(group_name)
+                        if outcome is None or outcome.state not in {"missing", "failed"}:
+                            continue
+                        unavailable_metric_groups.add(group_name)
+                        reason = outcome.message or "runner did not produce the normalized payload"
+                        self.logger.warning(
+                            "Runner '%s' did not produce optional scoring group '%s' for "
+                            "repeat %d: %s The run will continue and the related output "
+                            "columns will be empty.",
+                            self.runner_name,
+                            group_name,
+                            repeat,
+                            reason,
+                        )
 
             with self._debug_timer("structures.gather"):
                 gather.gather_structures(
@@ -259,10 +284,10 @@ class Validate(object):
                 with self._debug_timer("results.add_chain_info"):
                     chain_df = gather.add_chain_info(chain_df, self.sys)
 
-            system_df, chain_df = self._apply_unsupported_metric_columns(
+            system_df, chain_df = self._apply_unavailable_metric_columns(
                 system_df=system_df,
                 chain_df=chain_df,
-                unsupported_metric_groups=unsupported_metric_groups,
+                unavailable_metric_groups=unavailable_metric_groups,
             )
 
             structure_metrics = {
@@ -339,25 +364,43 @@ class Validate(object):
 
         self._log_timing_summary()
 
-    def _apply_unsupported_metric_columns(
+    def _required_runner_metric_groups(self) -> set[str]:
+        selected = self.scoring_functions & RUNNER_METRIC_GROUPS
+        required = selected - AFFINITY_METRIC_GROUPS
+        affinity_is_activated = self._system_declares_affinity()
+        for group_name in selected & AFFINITY_METRIC_GROUPS:
+            if affinity_is_activated or group_name in self.explicit_scoring_functions:
+                required.add(group_name)
+        return required
+
+    def _system_declares_affinity(self) -> bool:
+        properties = self.sys.find_value(key="properties") or []
+        if not isinstance(properties, list):
+            return False
+        return any(
+            isinstance(property_entry, dict) and "affinity" in property_entry
+            for property_entry in properties
+        )
+
+    def _apply_unavailable_metric_columns(
         self,
         system_df,
         chain_df,
-        unsupported_metric_groups: list[str],
+        unavailable_metric_groups: set[str],
     ):
-        if "confidence_metrics" in unsupported_metric_groups:
+        if "confidence_metrics" in unavailable_metric_groups:
             for column in ("ptm", "iptm", "confidence_score"):
                 if column not in system_df.columns:
                     system_df[column] = None
             if "chains_ptm" not in chain_df.columns:
                 chain_df["chains_ptm"] = None
 
-        if "affinity_metrics" in unsupported_metric_groups:
+        if "affinity_metrics" in unavailable_metric_groups:
             for column in ("affinity_pred_value", "affinity_probability_binary"):
                 if column not in chain_df.columns:
                     chain_df[column] = None
 
-        if "affinity_metrics_ext" in unsupported_metric_groups:
+        if "affinity_metrics_ext" in unavailable_metric_groups:
             for column in ("pIC50", "IC50_M", "pIC50_kcal_per_mol"):
                 if column not in chain_df.columns:
                     chain_df[column] = None

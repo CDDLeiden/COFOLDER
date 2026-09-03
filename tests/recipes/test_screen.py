@@ -90,7 +90,13 @@ class TestScreenRun:
 
         first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
         assert first_call_kwargs["runner"] == "boltz2"
+        assert first_call_kwargs["scoring_functions"] is None
         assert mock_validator.run.call_count == 2
+
+        summary = pd.read_csv(temp_dir / "screen_results.csv")
+        merged = pd.read_csv(temp_dir / "screen_results_with_scores.csv")
+        assert summary["status"].tolist() == ["success", "success"]
+        assert merged["status"].tolist() == ["success", "success"]
 
     @patch("cofolder.recipes.screen.Validate")
     def test_run_passes_explicit_boltz_community_runner(
