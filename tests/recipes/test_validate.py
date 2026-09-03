@@ -162,6 +162,9 @@ class _FakeRunner:
     def ensure_available(self):
         return None
 
+    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+        return None
+
     def load_options(self, options_path):
         return {"options_path": str(options_path)}
 
@@ -237,7 +240,6 @@ class _NoMetricsRunner(_FakeRunner):
                 runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
             )
         )
-
         return RunnerExecutionResult(
             runner_name="boltz2",
             raw_output_dir=request.repeat_dir,
@@ -255,6 +257,24 @@ class _NoMetricsRunner(_FakeRunner):
                 "affinity_metrics_ext": RunnerMetricOutcome(state="unsupported"),
             },
         )
+
+
+class _CapturingRunner(_FakeRunner):
+    def __init__(self, system_name="system"):
+        super().__init__(system_name)
+        self.validation_snapshots = []
+        self.execution_constraints = None
+
+    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+        self.validation_snapshots.append(
+            (check_atom_names, json.loads(json.dumps(system_obj.system.get("constraints", []))))
+        )
+
+    def run(self, request):
+        self.execution_constraints = json.loads(
+            json.dumps(request.system_obj.system.get("constraints", []))
+        )
+        return super().run(request)
 
 
 class _ManifestOnlyRuntimeRunner(_FakeRunner):
@@ -762,6 +782,45 @@ class TestValidateInit:
 
 
 class TestValidateRun:
+    def test_constraints_reach_runner_unchanged(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        _patch_validate_pipeline(monkeypatch, system_name="constrained")
+        constraints = [
+            {
+                "pocket": {
+                    "binder": "B",
+                    "contacts": [["A", 1]],
+                    "max_distance": 6.0,
+                }
+            }
+        ]
+        system_path = temp_dir / "constrained.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ],
+                    "constraints": constraints,
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _CapturingRunner(system_name="constrained")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        assert runner.validation_snapshots == [(False, constraints), (True, constraints)]
+        assert runner.execution_constraints == constraints
+
     def test_debug_run_logs_timing_summary(
         self,
         monkeypatch,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from cofolder.modules.input.command import Command
 from cofolder.modules.runners.boltz_runner import BoltzRunner
+from cofolder.modules.runners.contracts import RunnerInputCapabilities
 
 
 class Boltz1Runner(BoltzRunner):
@@ -14,6 +15,12 @@ class Boltz1Runner(BoltzRunner):
     capabilities = {
         "confidence_metrics",
     }
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset({"protein", "ligand", "dna", "rna"}),
+        constraint_types=frozenset({"bond", "pocket"}),
+        max_pocket_constraints=1,
+        required_pocket_distance=6.0,
+    )
 
     def check_availability(self) -> tuple[bool, str | None]:
         available, message = self.check_distribution_available(

@@ -6,6 +6,8 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.input.system import System
+from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 from cofolder.recipes.screen import Screen
 
 
@@ -64,6 +66,91 @@ class TestScreenInit:
 
 
 class TestScreenRun:
+    @patch("cofolder.recipes.screen.Validate.run")
+    def test_run_preserves_constraints_unrelated_to_ligand_replacement(
+        self, mock_validate_run, sample_options_yaml, temp_dir
+    ):
+        constraints = [
+            {"contact": {"token1": ["A", 1], "token2": ["D", 1], "max_distance": 5.0}}
+        ]
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"dna": {"id": "D", "sequence": "AT"}},
+                        {"ligand": {"id": "L", "smiles": "CCO"}},
+                    ],
+                    "constraints": constraints,
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = temp_dir / "ligands.csv"
+        csv_path.write_text("id,smiles\none,CCN\n", encoding="utf-8")
+
+        Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,2,ligand,smiles"],
+            variable_csv=str(csv_path),
+            col_variable=["smiles"],
+            col_id="id",
+        ).run()
+
+        row_system = yaml.safe_load(
+            (temp_dir / "screen" / "1_one" / "screen_system.yaml").read_text(encoding="utf-8")
+        )
+        assert row_system["constraints"] == constraints
+
+    def test_run_reports_ligand_replacement_that_invalidates_bond(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "L", "smiles": "CCO"}},
+                    ],
+                    "constraints": [
+                        {"bond": {"atom1": ["A", 2, "SG"], "atom2": ["L", 1, "C1"]}}
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = temp_dir / "ligands.csv"
+        csv_path.write_text("id,smiles\none,[Na+]\n", encoding="utf-8")
+
+        class _PreflightOnlyValidate:
+            def __init__(self, **kwargs):
+                self.system_path = kwargs["system_path"]
+
+            def run(self):
+                Boltz2Runner().validate_system(
+                    System(system_path=self.system_path), {}, check_atom_names=True
+                )
+
+        monkeypatch.setattr("cofolder.recipes.screen.Validate", _PreflightOnlyValidate)
+
+        Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(csv_path),
+            col_variable=["smiles"],
+            col_id="id",
+        ).run()
+
+        summary = pd.read_csv(temp_dir / "screen" / "screen_results.csv")
+        assert summary["status"].tolist() == ["failed"]
+        assert "atom 'C1' does not exist" in summary.loc[0, "error_message"]
+
     @patch("cofolder.recipes.screen.Validate")
     def test_run_uses_boltz2_as_default_runner(
         self,

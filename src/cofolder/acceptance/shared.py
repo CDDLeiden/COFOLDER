@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import shlex
 import shutil
@@ -53,7 +54,7 @@ _BACKEND_ACCEPTANCE_SCORING = {
     "openfold3": ["confidence_metrics"],
 }
 _BACKEND_OPTIONS_RESOURCES = {
-    "boltz1": "options_acceptance.yaml",
+    "boltz1": "options_boltz1_acceptance.yaml",
     "boltz2": "options_acceptance.yaml",
     "boltz-community": "options_acceptance.yaml",
     "openfold3": "options_openfold3_acceptance.yaml",
@@ -66,6 +67,8 @@ class AcceptanceInputs:
     system_screen_path: Path
     options_path: Path
     ligand_csv_path: Path
+    nucleic_acid_system_path: Path
+    constrained_system_paths: dict[str, Path]
 
 
 @dataclass(frozen=True)
@@ -117,11 +120,28 @@ def materialize_acceptance_inputs(
     system_screen_path = _write_package_file("system_screen.yaml", target_dir / "system_screen.yaml")
     options_path = _write_package_file(options_resource, target_dir / "options_acceptance.yaml")
     ligand_csv_path = _write_package_file("ligand_screen.csv", target_dir / "ligand_screen.csv")
+    nucleic_acid_system_path = _write_package_file(
+        "system_nucleic_acid.yaml", target_dir / "system_nucleic_acid.yaml"
+    )
+    constrained_system_paths = {
+        runner: _write_package_file(
+            resource,
+            target_dir / resource,
+        )
+        for runner, resource in {
+            "boltz1": "system_constraints_boltz1.yaml",
+            "boltz2": "system_constraints_boltz2.yaml",
+            "boltz-community": "system_constraints_boltz2.yaml",
+            "openfold3": "system_constraints_openfold3.yaml",
+        }.items()
+    }
     return AcceptanceInputs(
         system_path=system_path,
         system_screen_path=system_screen_path,
         options_path=options_path,
         ligand_csv_path=ligand_csv_path,
+        nucleic_acid_system_path=nucleic_acid_system_path,
+        constrained_system_paths=constrained_system_paths,
     )
 
 
@@ -200,6 +220,157 @@ def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None)
             f"Expected {runner} setup to be ready before running expensive acceptance cells. {detail}"
         )
     return message or f"Runner '{runner}' setup is ready."
+
+
+def assert_chain_ids(path: Path, expected: Iterable[str]) -> None:
+    """Assert normalized chain metadata contains the expected ordered IDs."""
+
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    actual: list[str] = []
+    for row in rows:
+        chain_id = str(row.get("CHAIN_ID", "")).strip()
+        if chain_id and chain_id not in actual:
+            actual.append(chain_id)
+    expected_ids = [str(value) for value in expected]
+    if actual != expected_ids:
+        raise AssertionError(
+            f"Expected ordered chain IDs {expected_ids!r} in {path}, found {actual!r}."
+        )
+
+
+def assert_constraints_preserved(source_path: Path, prepared_path: Path) -> list[object]:
+    """Assert that runner preparation preserved canonical top-level constraints."""
+
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    prepared = yaml.safe_load(prepared_path.read_text(encoding="utf-8"))
+    source_constraints = source.get("constraints", []) if isinstance(source, dict) else []
+    prepared_constraints = prepared.get("constraints", []) if isinstance(prepared, dict) else []
+    if prepared_constraints != source_constraints:
+        raise AssertionError(
+            "Runner preparation changed the canonical constraints: "
+            f"expected {source_constraints!r}, found {prepared_constraints!r}."
+        )
+    return source_constraints
+
+
+def assert_openfold3_query_translation(
+    source_path: Path,
+    query_path: Path,
+    *,
+    system_name: str,
+) -> dict[str, object]:
+    """Assert that an OpenFold3 query preserves chains and translates its pocket."""
+
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    payload = json.loads(query_path.read_text(encoding="utf-8"))
+    try:
+        query = payload["queries"][system_name]
+    except (KeyError, TypeError) as exc:
+        raise AssertionError(
+            f"OpenFold3 query payload does not contain system {system_name!r}."
+        ) from exc
+
+    expected_chains: list[tuple[str, list[str]]] = []
+    for entry in source.get("sequences", []):
+        entity_type, entity = next(iter(entry.items()))
+        raw_ids = entity.get("id")
+        chain_ids = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+        expected_chains.append(
+            (str(entity_type).lower(), [str(value) for value in chain_ids])
+        )
+    actual_chains = [
+        (
+            str(chain.get("molecule_type")).lower(),
+            [str(value) for value in chain.get("chain_ids", [])],
+        )
+        for chain in query.get("chains", [])
+    ]
+    if actual_chains != expected_chains:
+        raise AssertionError(
+            "OpenFold3 query chain mapping changed: "
+            f"expected {expected_chains!r}, found {actual_chains!r}."
+        )
+
+    pockets = [
+        constraint["pocket"]
+        for constraint in source.get("constraints", [])
+        if isinstance(constraint, dict) and "pocket" in constraint
+    ]
+    if len(pockets) != 1:
+        raise AssertionError(
+            f"Tutorial input must contain exactly one pocket constraint, found {len(pockets)}."
+        )
+    pocket = pockets[0]
+    expected_pocket = {
+        "ligand_chain_id": str(pocket["binder"]),
+        "pocket_residues": [
+            [str(chain_id), int(residue_id)] for chain_id, residue_id in pocket["contacts"]
+        ],
+        "max_distance": float(pocket.get("max_distance", 6.0)),
+    }
+    if query.get("pocket_constraint") != expected_pocket:
+        raise AssertionError(
+            "OpenFold3 pocket translation changed: "
+            f"expected {expected_pocket!r}, found {query.get('pocket_constraint')!r}."
+        )
+    return query
+
+
+def materialize_invalid_constraint_input(
+    runner: str,
+    source_path: Path,
+    destination: Path,
+) -> Path:
+    """Create the tutorial's runner-specific preflight rejection example."""
+
+    _validate_runner(runner)
+    system = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    constraints = system.setdefault("constraints", [])
+    if runner == "boltz1":
+        constraints.append(
+            {
+                "contact": {
+                    "token1": ["A", 2],
+                    "token2": ["R", 2],
+                    "max_distance": 6.0,
+                }
+            }
+        )
+    elif runner in {"boltz2", "boltz-community"}:
+        contact = next(
+            (
+                item["contact"]
+                for item in constraints
+                if isinstance(item, dict) and "contact" in item
+            ),
+            None,
+        )
+        if contact is None:
+            raise AssertionError(f"Expected {runner} tutorial input to contain a contact constraint.")
+        contact["token2"] = ["Z", 2]
+    else:
+        constraints.append(
+            {
+                "bond": {
+                    "atom1": ["A", 2, "CA"],
+                    "atom2": ["L", 1, "C1"],
+                }
+            }
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+    return destination
+
+
+def assert_backend_not_started(work_dir: Path) -> None:
+    """Assert that preflight rejection happened before a repeat/backend launch."""
+
+    repeat_dirs = list((work_dir / "raw").glob("repeat_*"))
+    if repeat_dirs:
+        raise AssertionError(
+            f"Expected preflight rejection before inference, found repeat outputs: {repeat_dirs}."
+        )
 
 
 def resolve_openfold3_notebook_cache(

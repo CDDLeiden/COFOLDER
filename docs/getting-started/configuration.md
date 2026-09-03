@@ -2,7 +2,7 @@
 
 ## System Configuration
 
-The system YAML file defines the molecular system to be co-folded. It specifies proteins, ligands, and other molecular entities.
+The system YAML file defines proteins, ligands, DNA, RNA, and optional constraints.
 
 ### Basic Structure
 
@@ -11,10 +11,10 @@ version: 1
 sequences:
   - protein:
       id: "protein_1"
-      fasta: "SEQUENCE..."
+      sequence: "SEQUENCE..."
   - ligand:
+      id: "ligand_1"
       smiles: "SMILES_STRING"
-      ccd: "RESIDUE_NAME"
 ```
 
 ### Protein Specification
@@ -22,9 +22,7 @@ sequences:
 ```yaml
 protein:
   id: "my_protein"
-  fasta: "MKTAYIAKQRQISFV..."
-  # or
-  pdb: "path/to/protein.pdb"
+  sequence: "MKTAYIAKQRQISFV..."
 ```
 
 ### Ligand Specification
@@ -34,22 +32,75 @@ Multiple formats are supported:
 #### SMILES Format
 ```yaml
 ligand:
+  id: L
   smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-  ccd: "IBP"  # Chemical Component Dictionary identifier
-```
-
-#### PDB/CIF Format
-```yaml
-ligand:
-  pdb: "path/to/ligand.pdb"
-  ccd: "LIG"
 ```
 
 #### CCD Identifier Only
 ```yaml
 ligand:
+  id: L
   ccd: "ATP"  # Use pre-existing CCD entry
 ```
+
+Specify either `smiles` or `ccd`, not both. Conformer preparation replaces a
+SMILES representation with a generated CCD before validation and execution.
+
+### DNA and RNA
+
+```yaml
+- dna:
+    id: D
+    sequence: ATGC
+- rna:
+    id: R
+    sequence: AUGC
+```
+
+Chain IDs must be non-empty and unique across every entity. A list-valued `id`
+creates identical copies in that exact order.
+
+### Runner input support
+
+| Runner | Protein | Ligand | DNA | RNA | Bond | Pocket | Contact |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `boltz1` | yes | yes | yes | yes | yes | one, distance 6 | no |
+| `boltz2` | yes | yes | yes | yes | yes | yes | yes |
+| `boltz-community` | yes | yes | yes | yes | yes | yes | yes |
+| `openfold3` | yes | yes | yes | yes | no | one | no |
+
+Unsupported combinations fail during COFOLDER preflight, before the backend is
+started. OpenFold3 bond inputs are rejected because OpenFold3 0.5.0 accepts a
+`covalent_bonds` field but does not consume it during query construction.
+
+### Constraints
+
+Constraints are top-level entries. Residue positions are 1-based.
+
+```yaml
+constraints:
+  - bond:
+      atom1: [A, 145, SG]
+      atom2: [L, 1, C12]
+  - pocket:
+      binder: L
+      contacts: [[A, 140], [A, 145]]
+      max_distance: 6.0
+  - contact:
+      token1: [A, 140]
+      token2: [D, 2]
+      max_distance: 6.0
+```
+
+Bond endpoints are `[chain_id, residue_id, atom_name]`. Pocket/contact tokens
+use a residue number for polymer chains and an atom name for ligand chains.
+Referenced chains, residues, and atoms are checked against the prepared system.
+OpenFold3 translates one pocket constraint to its native query schema and does
+not accept `force` on that constraint.
+
+`screen` preserves constraints not involving a replaced field. If replacement
+or SMILES/SDF-to-CCD conversion removes a referenced ligand atom, that row fails
+with the invalid chain/residue/atom reference instead of submitting stale input.
 
 ### Multiple Chains
 
@@ -58,13 +109,13 @@ version: 1
 sequences:
   - protein:
       id: "chain_A"
-      fasta: "SEQUENCE_A..."
+      sequence: "SEQUENCE_A..."
   - protein:
       id: "chain_B"
-      fasta: "SEQUENCE_B..."
+      sequence: "SEQUENCE_B..."
   - ligand:
+      id: L
       smiles: "SMILES..."
-      ccd: "LIG"
 ```
 
 ## Runner Options
@@ -162,4 +213,5 @@ See the `examples/` directory in the repository for complete configuration examp
 - `examples/system.yaml` - Basic protein-ligand system
 - `examples/system_screen.yaml` - Screening configuration
 - `examples/system_covalent.yaml` - Covalent binding system
+- `examples/system_nucleic_acid.yaml` - DNA/RNA system with a pocket constraint
 - `examples/options.yaml` - Standard Boltz options

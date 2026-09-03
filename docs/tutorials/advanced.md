@@ -82,15 +82,19 @@ For covalent inhibitors, specify the covalent bond:
 version: 1
 sequences:
   - protein:
-      id: "protease"
-      fasta: "SEQUENCE..."
+      id: A
+      sequence: "SEQUENCE..."
   - ligand:
-      smiles: "COVALENT_SMILES"
-      ccd: "COV"
-      covalent:
-        protein_residue: "CYS145"
-        ligand_atom: 12
+      id: B
+      ccd: COV
+constraints:
+  - bond:
+      atom1: [A, 145, SG]
+      atom2: [B, 1, C12]
 ```
+
+Residues are 1-based. Bond endpoints use `[chain_id, residue_id, atom_name]`;
+the atom name must exist in the selected residue or ligand CCD.
 
 ## Custom Scoring Functions
 

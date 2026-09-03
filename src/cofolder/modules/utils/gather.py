@@ -6,6 +6,7 @@ import numpy as np
 
 from cofolder.modules.utils import read, write
 from cofolder.modules.analytics import stats, structure, align
+from cofolder.modules.input.system import iter_system_chains
 
 logger = logging.getLogger(__name__)
 
@@ -125,20 +126,9 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
     chain_to_entity: dict[str, str] = {}
     chain_to_molecule_id: dict[str, str] = {}
 
-    for seq_entry in sequences:
-        if not isinstance(seq_entry, dict):
-            continue
-
-        entity_type = next(iter(seq_entry))
-        entity_data = seq_entry[entity_type]
-
-        chain_ids = entity_data.get("id")
-        if chain_ids is None:
-            continue
-
-        if not isinstance(chain_ids, list):
-            chain_ids = [chain_ids]
-
+    for chain in iter_system_chains(sys):
+        entity_type = chain.entity_type
+        entity_data = chain.entity_data
         # ----------------------------------------------
         # Resolve molecule identifier
         # ----------------------------------------------
@@ -151,15 +141,14 @@ def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
         else:
             molecule_id = None  # handled per-chain below
 
-        for cid in chain_ids:
-            cid = str(cid)
-            ordered_chain_ids.append(cid)
-            chain_to_entity[cid] = entity_type
+        cid = chain.chain_id
+        ordered_chain_ids.append(cid)
+        chain_to_entity[cid] = entity_type
 
-            if entity_type == "ligand":
-                chain_to_molecule_id[cid] = molecule_id
-            else:
-                chain_to_molecule_id[cid] = f"{entity_type}_{cid}"
+        if entity_type == "ligand":
+            chain_to_molecule_id[cid] = molecule_id
+        else:
+            chain_to_molecule_id[cid] = f"{entity_type}_{cid}"
 
     # --------------------------------------------------
     # Assign CHAIN_ID, ENTITY_TYPE, ligand_molecule_id

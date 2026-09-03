@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Runner-specific DNA, RNA, and constraint input contracts with pre-execution
+  validation, OpenFold3 nucleic-acid/pocket translation, and manual backend
+  acceptance fixtures.
 - Comprehensive documentation with MkDocs Material
 - API reference documentation
 - User guides and tutorials

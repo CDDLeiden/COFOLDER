@@ -189,6 +189,12 @@ class Validate(object):
                 runner_options = self.runner.load_options(self.options_path)
 
             self.sys = system.System(system=copy.deepcopy(self.base_system.system))
+            with self._debug_timer("runner.system.validate.preparation_input"):
+                self.runner.validate_system(
+                    self.sys,
+                    runner_options,
+                    check_atom_names=False,
+                )
             with self._debug_timer("runner.prepare_system"):
                 preparation = self.runner.prepare_system(
                     # keep backend-specific prep behind the runner boundary
@@ -202,6 +208,12 @@ class Validate(object):
             preparation_runtime = preparation.runtime
             self.sys = preparation.system_obj
             runner_options = preparation.options_obj
+            with self._debug_timer("runner.system.validate.execution_input"):
+                self.runner.validate_system(
+                    self.sys,
+                    runner_options,
+                    check_atom_names=True,
+                )
             for warning in preparation.warnings:
                 self.logger.warning("%s", warning)
 

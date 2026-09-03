@@ -57,7 +57,7 @@ Notes for OpenFold3:
 
 - The COFOLDER `openfold3` extra installs the upstream `openfold3` package.
 - `scripts/setup_openfold3.sh` defaults `OPENFOLD_CACHE` to `~/.openfold3`, which matches the upstream standard cache location.
-- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions and selects parameter download choice `1` by default so the ambiguous interactive default is removed.
+- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions, selects parameter download choice `1`, and declines forced redownloads by default. Set `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes` only when you intentionally want to replace an existing checkpoint.
 - `scripts/setup_openfold3.sh` answers the upstream integration-test prompt with `no` by default so bootstrap does not hang in an unexpected interactive test path. If you intentionally want those tests, run `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh`.
 - If you want all published checkpoints instead of the default checkpoint only, run `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh`.
 - If you want a different cache root, set `OPENFOLD_CACHE` before running the setup script, for example `OPENFOLD_CACHE=/scratch/$USER/.openfold3 scripts/setup_openfold3.sh`.

@@ -9,6 +9,7 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 import yaml
 
 from cofolder.modules.input.system import System
@@ -40,6 +41,54 @@ def _make_system(*, smiles: str | None = "CCO", ccd: str | None = "ETH") -> Syst
             "properties": [{"affinity": {"binder": "B"}}],
         }
     )
+
+
+def test_openfold3_builds_nucleic_acids_and_translates_pocket_constraint():
+    system = System(
+        system={
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC"}},
+                {"dna": {"id": "D", "sequence": "AT"}},
+                {"rna": {"id": ["R", "S"], "sequence": "GU"}},
+                {"ligand": {"id": "L", "smiles": "CCO"}},
+            ],
+            "constraints": [
+                {
+                    "pocket": {
+                        "binder": "L",
+                        "contacts": [["A", 1], ["D", 2]],
+                        "max_distance": 7.5,
+                    }
+                }
+            ],
+        }
+    )
+
+    payload = OpenFold3Runner()._build_query_payload("mixed", system)
+    query = payload["queries"]["mixed"]
+
+    assert query["chains"] == [
+        {"molecule_type": "protein", "chain_ids": ["A"], "sequence": "AC"},
+        {"molecule_type": "dna", "chain_ids": ["D"], "sequence": "AT"},
+        {"molecule_type": "rna", "chain_ids": ["R", "S"], "sequence": "GU"},
+        {"molecule_type": "ligand", "chain_ids": ["L"], "smiles": "CCO"},
+    ]
+    assert query["pocket_constraint"] == {
+        "ligand_chain_id": "L",
+        "pocket_residues": [["A", 1], ["D", 2]],
+        "max_distance": 7.5,
+    }
+    assert OpenFold3Runner._chain_order(system) == ["A", "D", "R", "S", "L"]
+
+
+def test_openfold3_payload_never_silently_omits_unsupported_constraints():
+    system = _make_system(smiles="CCO", ccd=None)
+    system.system["constraints"] = [
+        {"bond": {"atom1": ["A", 1, "N"], "atom2": ["B", 1, "C1"]}}
+    ]
+
+    with pytest.raises(ValueError, match="bond.*unsupported"):
+        OpenFold3Runner().validate_system(system, {}, check_atom_names=False)
 
 
 def _write_options_yaml(temp_dir: Path, *, samples_per_seed: int = 2) -> Path:

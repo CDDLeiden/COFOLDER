@@ -93,10 +93,27 @@ Notes:
 
 - OpenFold3 upstream currently recommends `pixi` for reproducible environments, but the upstream `openfold3` pip package is also documented and is what the COFOLDER `openfold3` extra installs.
 - `scripts/setup_openfold3.sh` wraps upstream `setup_openfold`, exports `OPENFOLD_CACHE` to a standard location by default (`~/.openfold3`), and prepares the cache, model parameters, and CCD before you run the acceptance workflows.
-- The wrapper also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. Use `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh` if you want all published checkpoints instead.
+- The wrapper also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. It answers the force-redownload prompt with `no`; use `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes scripts/setup_openfold3.sh` only when you intentionally want to replace an existing checkpoint. Use `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh` if you want all published checkpoints instead.
 - The wrapper answers the upstream integration-test prompt with `no` by default. Use `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh` only when you intentionally want those upstream tests to run during setup.
 - Upstream docs note that first inference can also download default model parameters to `$HOME/.openfold3`, but for manual acceptance this project prefers the explicit setup script so environment readiness is checked before the expensive lane starts.
 - This first-pass acceptance lane is confidence-only. It does not claim affinity support for OpenFold3.
+
+### Input-contract acceptance lane
+
+The packaged acceptance inputs also include `system_nucleic_acid.yaml` plus
+runner-specific constrained systems. In each clean backend environment, run
+`validate` against the nucleic-acid fixture and the matching constrained fixture
+from `src/cofolder/acceptance/data/`. Confirm that `chain_metrics.csv` contains
+chains `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
+6 Å pocket form, Boltz-2/community exercise pocket and contact inputs, and the
+OpenFold3 fixture exercises pocket translation. These runs are opt-in because
+they execute the real prediction backends.
+
+Launch the shared lane with:
+
+```bash
+marimo run src/cofolder/acceptance/input_contract_backend_acceptance.py
+```
 
 If you prefer a non-editable install from the current checkout, replace:
 

@@ -11,6 +11,7 @@ Use these files when you want to copy a working starting point before editing it
 - `system_screen.yaml`: screening template used with a ligand library
 - `ligand_screen.csv`: small screening CSV used by the screen tutorial
 - `system_covalent.yaml`: example of a more specialized system definition
+- `system_nucleic_acid.yaml`: protein/DNA/RNA/ligand system with a pocket constraint
 - `4HJO.pdb` and `4HJO.cif`: structure fixtures that support examples and manual inspection
 
 ## Recommended Use

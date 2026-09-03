@@ -146,3 +146,29 @@ class TestSystemSaveSystemToYaml:
             loaded_data = yaml.safe_load(f)
 
         assert loaded_data == system_dict
+
+    @pytest.mark.parametrize(
+        ("entity_type", "sequence"),
+        [("dna", "ATGC"), ("rna", "AUGC")],
+    )
+    def test_nucleic_acid_and_constraints_round_trip_exactly(
+        self, temp_dir, entity_type, sequence
+    ):
+        system_dict = {
+            "version": 1,
+            "sequences": [
+                {entity_type: {"id": "N", "sequence": sequence}},
+                {"ligand": {"id": "L", "smiles": "CCO"}},
+            ],
+            "constraints": [
+                {"bond": {"atom1": ["N", 1, "P"], "atom2": ["L", 1, "C1"]}},
+                {"pocket": {"binder": "L", "contacts": [["N", 2]], "max_distance": 6.0}},
+                {"contact": {"token1": ["N", 1], "token2": ["N", 2], "force": True}},
+            ],
+        }
+        output_path = temp_dir / f"{entity_type}.yaml"
+
+        System(system=system_dict).save_system_to_yaml(output_path)
+        loaded = System(system_path=output_path)
+
+        assert loaded.system == system_dict

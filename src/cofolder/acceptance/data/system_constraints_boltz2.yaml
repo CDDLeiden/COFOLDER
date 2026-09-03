@@ -1,0 +1,25 @@
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: ACDEFGHIK
+  - dna:
+      id: D
+      sequence: ATGC
+  - rna:
+      id: R
+      sequence: AUGC
+  - ligand:
+      id: L
+      smiles: CCO
+constraints:
+  - pocket:
+      binder: L
+      contacts:
+        - [A, 2]
+        - [D, 2]
+      max_distance: 7.0
+  - contact:
+      token1: [A, 2]
+      token2: [R, 2]
+      max_distance: 6.0

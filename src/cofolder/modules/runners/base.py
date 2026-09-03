@@ -11,6 +11,7 @@ from cofolder.modules.runners.contracts import (
     RunnerExecutionResult,
     RunnerPreparationResult,
     RunnerRuntime,
+    RunnerInputCapabilities,
 )
 
 RunnerPreparation = RunnerPreparationResult
@@ -21,6 +22,10 @@ RunnerResult = RunnerExecutionResult
 class BaseRunner(ABC):
     name: str
     capabilities: set[str]
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset(),
+        constraint_types=frozenset(),
+    )
 
     @staticmethod
     def _distribution_installed(distribution_name: str) -> bool:
@@ -70,6 +75,29 @@ class BaseRunner(ABC):
             return
         raise RuntimeError(message or f"Runner '{self.name}' is not available.")
 
+    def validate_system(
+        self,
+        system_obj: Any,
+        options_obj: Any,
+        *,
+        check_atom_names: bool = True,
+    ) -> None:
+        """Validate the shared YAML contract against this runner's capabilities."""
+
+        from cofolder.modules.input.validation import validate_system_input
+
+        cache_path = None
+        find_value = getattr(options_obj, "find_value", None)
+        if callable(find_value):
+            cache_path = find_value(key="cache") or find_value(key="cache_path")
+        validate_system_input(
+            system_obj,
+            runner_name=self.name,
+            capabilities=self.input_capabilities,
+            cache_path=cache_path,
+            check_atom_names=check_atom_names,
+        )
+
     def prepare_system(
         self,
         system_obj: Any,
@@ -98,11 +126,21 @@ class BaseRunner(ABC):
 class Runner(Protocol):
     name: str
     capabilities: set[str]
+    input_capabilities: RunnerInputCapabilities
 
     def check_availability(self) -> tuple[bool, str | None]:
         ...
 
     def ensure_available(self) -> None:
+        ...
+
+    def validate_system(
+        self,
+        system_obj: Any,
+        options_obj: Any,
+        *,
+        check_atom_names: bool = True,
+    ) -> None:
         ...
 
     def load_options(self, options_path: Path):

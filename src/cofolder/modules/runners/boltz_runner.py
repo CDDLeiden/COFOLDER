@@ -14,6 +14,7 @@ import pandas as pd
 
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
+from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
@@ -568,17 +569,4 @@ class BoltzRunner(BaseRunner):
 
     @staticmethod
     def _ordered_chain_ids(system_obj: Any) -> list[str]:
-        ordered_chain_ids: list[str] = []
-        sequences = system_obj.find_value(key="sequences") or []
-        for seq_entry in sequences:
-            if not isinstance(seq_entry, dict):
-                continue
-            entity_type = next(iter(seq_entry))
-            entity_data = seq_entry[entity_type]
-            chain_ids = entity_data.get("id")
-            if chain_ids is None:
-                continue
-            if not isinstance(chain_ids, list):
-                chain_ids = [chain_ids]
-            ordered_chain_ids.extend([str(cid) for cid in chain_ids])
-        return ordered_chain_ids
+        return [chain.chain_id for chain in iter_system_chains(system_obj)]

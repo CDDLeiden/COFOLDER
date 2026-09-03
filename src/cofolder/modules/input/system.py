@@ -4,12 +4,57 @@ This module provides the System class for managing molecular system
 configurations, including proteins, ligands, and their properties.
 """
 import logging
+from dataclasses import dataclass
+from typing import Any, Iterator
 from cofolder.modules.utils import read
 from cofolder.modules.utils import write
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_ENTITY_TYPES = frozenset({"protein", "ligand", "dna", "rna"})
+
+
+@dataclass(frozen=True, slots=True)
+class SystemChain:
+    """One expanded chain from a system sequence entry."""
+
+    chain_id: str
+    entity_type: str
+    entity_data: dict[str, Any]
+    sequence_index: int
+
+
+def iter_system_chains(system_obj: Any) -> Iterator[SystemChain]:
+    """Yield chains in backend order, expanding list-valued ``id`` fields."""
+
+    if isinstance(system_obj, System):
+        sequences = system_obj.system.get("sequences", [])
+    elif isinstance(system_obj, dict):
+        sequences = system_obj.get("sequences", [])
+    else:
+        find_value = getattr(system_obj, "find_value", None)
+        sequences = find_value(key="sequences") if callable(find_value) else []
+    if not isinstance(sequences, list):
+        return
+    for sequence_index, entry in enumerate(sequences):
+        if not isinstance(entry, dict) or len(entry) != 1:
+            continue
+        entity_type, entity_data = next(iter(entry.items()))
+        if not isinstance(entity_data, dict):
+            continue
+        raw_ids = entity_data.get("id")
+        chain_ids = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+        for chain_id in chain_ids:
+            if chain_id is None:
+                continue
+            yield SystemChain(
+                chain_id=str(chain_id),
+                entity_type=str(entity_type).lower(),
+                entity_data=entity_data,
+                sequence_index=sequence_index,
+            )
 
 class System:
     """Manage molecular system configuration for Boltz predictions.
