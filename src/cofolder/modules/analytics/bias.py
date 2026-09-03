@@ -1204,11 +1204,13 @@ def _build_protein_training_view(
             sub["sequence_similarity"].isna() & sub["sequence_similarity_pairwise"].notna(),
             "sequence_similarity_method",
         ] = "pairwise_aligner"
-        sub["_effective_sequence_similarity"] = sub["sequence_similarity"].combine_first(
-            sub["sequence_similarity_pairwise"]
-        )
+        sub["_effective_sequence_similarity"] = sub["sequence_similarity"].copy()
+        missing_effective_similarity = sub["_effective_sequence_similarity"].isna()
+        sub.loc[missing_effective_similarity, "_effective_sequence_similarity"] = sub.loc[
+            missing_effective_similarity, "sequence_similarity_pairwise"
+        ]
         if minimum_similarity is not None:
-            sub = sub[sub["_effective_sequence_similarity"] >= minimum_similarity].copy()
+            sub = sub[sub["_effective_sequence_similarity"] > minimum_similarity].copy()
         sub = sub.sort_values("_effective_sequence_similarity", ascending=False)
         if top_n is not None:
             sub = sub.head(top_n).copy()
@@ -1300,7 +1302,7 @@ def _build_ligand_training_views(
         sub = sub.dropna(subset=["ecfp_similarity"]).copy()
         sub = sub.sort_values("ecfp_similarity", ascending=False, na_position="last")
         if minimum_similarity is not None:
-            above = sub[sub["ecfp_similarity"] >= minimum_similarity].copy()
+            above = sub[sub["ecfp_similarity"] > minimum_similarity].copy()
             if not above.empty:
                 sub = above
             elif fallback_top_n is not None:

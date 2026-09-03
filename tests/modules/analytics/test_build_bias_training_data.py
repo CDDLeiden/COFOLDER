@@ -64,7 +64,7 @@ def _run_builder(
     monkeypatch.setattr(
         builder,
         "_search_entries_for_ccd",
-        lambda _ccd_id, _timeout: ["LOW1", "NONE", "HIGH"],
+        lambda _ccd_id, _timeout: ["LOW1", "NONE", "EDGE", "HIGH"],
     )
     monkeypatch.setattr(
         builder,
@@ -74,6 +74,7 @@ def _run_builder(
     mmseqs_output = pd.DataFrame(
         [
             {"target": "low1_A", "pident": 24.0, "tseq": "AAAT"},
+            {"target": "edge_A", "pident": 25.0, "tseq": "AATT"},
             {"target": "high_A", "pident": 30.0, "tseq": "AAAA"},
         ]
     )
@@ -116,6 +117,36 @@ def test_below_threshold_mmseqs_hit_is_kept_for_combined_lookup(monkeypatch, tem
     assert low["sequence_similarity"] == 24.0
     assert low["sequence_similarity_method"] == builder.MMSEQS_PIDENT_METHOD
     assert not (combined["sequence_similarity"].dropna() > 30.0).any()
+
+
+def test_exact_threshold_mmseqs_hit_is_excluded_from_filtered_protein_view(
+    monkeypatch,
+    temp_dir,
+):
+    protein, combined = _run_builder(monkeypatch, temp_dir)
+
+    assert "EDGE" not in set(protein["pdb_id"])
+    edge = combined.loc[combined["pdb_id"].eq("EDGE")].iloc[0]
+    assert edge["sequence_similarity"] == 25.0
+    assert edge["sequence_similarity_method"] == builder.MMSEQS_PIDENT_METHOD
+
+
+def test_find_ccd_hits_excludes_exact_ligand_threshold(monkeypatch):
+    monkeypatch.setattr(builder, "_morgan_fp", lambda _smiles: object())
+    monkeypatch.setattr(
+        builder.DataStructs,
+        "TanimotoSimilarity",
+        lambda _query, _reference: 0.35,
+    )
+
+    hits = builder._find_ccd_hits(
+        query_smiles="QUERY",
+        ccd_df=pd.DataFrame([{"ligand_id": "EDGE", "smiles": "REFERENCE"}]),
+        threshold=0.35,
+        top_k=10,
+    )
+
+    assert hits == []
 
 
 def test_missing_mmseqs_hit_is_unavailable(monkeypatch, temp_dir):

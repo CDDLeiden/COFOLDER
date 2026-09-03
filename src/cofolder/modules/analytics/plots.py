@@ -96,8 +96,8 @@ def plot_reference_overlap_scatter(
     plot_df["_plot_y"] = plot_df[y_col]
     plot_df.loc[plot_df["_plot_y"].isna() & has_query_2, "_plot_y"] = 0.0
     plot_df = plot_df[
-        (plot_df["_plot_x"] >= x_threshold)
-        | (plot_df["_plot_y"] >= y_threshold)
+        (plot_df["_plot_x"] > x_threshold)
+        | (plot_df["_plot_y"] > y_threshold)
     ].copy()
     if plot_df.empty:
         return []

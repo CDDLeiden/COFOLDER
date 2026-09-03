@@ -279,7 +279,7 @@ def _find_ccd_hits(
         if fp is None:
             continue
         sim = float(DataStructs.TanimotoSimilarity(qfp, fp))
-        if sim >= threshold:
+        if sim > threshold:
             scored.append((ccd_id, smiles, sim))
 
     scored.sort(key=lambda x: x[2], reverse=True)
@@ -1025,7 +1025,7 @@ def main() -> int:
             )
         else:
             thresholded_hits = raw_mmseqs_hits[
-                raw_mmseqs_hits["sequence_similarity"] >= float(args.protein_similarity_threshold)
+                raw_mmseqs_hits["sequence_similarity"] > float(args.protein_similarity_threshold)
             ].copy()
 
             unique_pdb = sorted(thresholded_hits["pdb_id"].unique())
