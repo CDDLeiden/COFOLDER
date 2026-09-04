@@ -1,11 +1,34 @@
 """Tests for cofolder.modules.utils.gather alignment orchestration."""
 
 from pathlib import Path
+import warnings
 
 import pandas as pd
 
 from cofolder.modules.utils import gather
 from cofolder.modules.input.system import System
+
+
+def test_bitstring_similarity_with_one_pair_has_no_runtime_warning(temp_dir):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = gather.assess_bitstring_similarity(
+            [[1, 0], [1, 1]],
+            prefix="ifp_distance",
+            id="ligand",
+            wrk_dir=temp_dir,
+        )
+
+    assert result == {
+        "ifp_distance_mean": 0.5,
+        "ifp_distance_std": None,
+    }
+    assert (
+        temp_dir
+        / "results"
+        / "matrices"
+        / "similarity_matrix_ifp_distance_ligand.csv"
+    ).exists()
 
 
 def _make_system_df():

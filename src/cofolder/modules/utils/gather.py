@@ -305,9 +305,10 @@ def assess_bitstring_similarity(
 
     # Flatten off-diagonal for summary statistics
     off_diag = mat[np.triu_indices(n, k=1)]
+    pairwise_std = float(off_diag.std(ddof=1)) if len(off_diag) > 1 else None
     return {
         f"{prefix}_mean": float(off_diag.mean()),
-        f"{prefix}_std": float(off_diag.std(ddof=1)),
+        f"{prefix}_std": pairwise_std,
     }
 
 def gather_robustness_results(
