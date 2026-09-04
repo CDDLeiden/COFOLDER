@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Python Oracle composite objectives, structured custom scoring callbacks, and
+  auditable structure gates with down-weight, fixed-penalty, or non-binder outcomes.
+- Qualified Oracle metric selectors plus documented ligand-bias and custom-pocket
+  coverage examples.
 - Screen-level reuse of fixed-protein MSAs for Boltz-family runners, plus a stable
   manuscript-facing consolidated output schema and a DataFrame return value from
   `Screen.run()`.
