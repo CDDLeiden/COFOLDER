@@ -21,6 +21,23 @@ The `bias` parts of the tutorial set can run without a prediction backend, but t
 `validate`, `screen`, `oracle`, and some ligand-helper demonstrations assume a backend
 environment such as `.[boltz2]`.
 
+The backend system-input tutorials require a dedicated backend environment and a
+CUDA-capable machine. For example:
+
+```bash
+python -m pip install -e ".[tutorials,boltz2]"
+marimo edit tutorials/boltz_system_inputs.py
+```
+
+For OpenFold3, prepare its cache before launching the notebook:
+
+```bash
+python -m pip install -e ".[tutorials,openfold3]"
+export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
+scripts/setup_openfold3.sh
+marimo edit tutorials/openfold3_system_inputs.py
+```
+
 ## Recommended Order
 
 1. `bias.py`
@@ -29,6 +46,7 @@ environment such as `.[boltz2]`.
 4. `oracle.py`
 5. `ligand_handling.py`
 6. `runners.py`
+7. `boltz_system_inputs.py` or `openfold3_system_inputs.py` in the matching backend environment
 
 ## Notebook Roles
 
@@ -38,3 +56,12 @@ environment such as `.[boltz2]`.
 - `oracle.py`: single-metric oracle workflow
 - `ligand_handling.py`: specific ligand preparation and conformer-handling tutorial
 - `runners.py`: contributor notebook for authoring new runners plus backend-acceptance launch guidance
+- `boltz_system_inputs.py`: real-backend walkthrough for protein, DNA, RNA, ligand,
+  constraints, and runner-specific rejection across the Boltz family
+- `openfold3_system_inputs.py`: real-backend walkthrough for nucleic acids, OpenFold3
+  pocket translation, and rejection of unsupported bonds
+
+The system-input notebooks keep inference behind explicit checkboxes, show the actual
+backend input, and verify normalized chain metadata. The input-contract notebook in
+`src/cofolder/acceptance/` remains the stricter maintainer lane for recording release
+acceptance.

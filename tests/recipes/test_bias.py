@@ -78,10 +78,13 @@ class TestBiasRun:
         bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
         summary = pd.read_csv(output_dir / "reference_landscape_summary.csv")
 
-        assert float(system_df["bias_prot_sim_train_max"].iloc[0]) == 100.0
+        assert float(system_df["bias_prot_sim_train_pairwise_max"].iloc[0]) == 100.0
         assert float(system_df["bias_lig_sim_train_max"].iloc[0]) == 1.0
         assert protein_view["source"].tolist() == ["custom"]
         assert protein_view["dataset_name"].tolist() == ["private_proteins"]
+        assert protein_view["sequence_similarity"].isna().all()
+        assert protein_view["sequence_similarity_pairwise"].tolist() == [100.0]
+        assert protein_view["sequence_similarity_method"].tolist() == ["pairwise_aligner"]
         assert ligand_view["source"].tolist() == ["custom"]
         assert ligand_view["dataset_name"].tolist() == ["private_ligands"]
         assert bias_training["source"].tolist() == ["custom"]

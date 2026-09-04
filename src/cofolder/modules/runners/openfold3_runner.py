@@ -18,11 +18,13 @@ from typing import Sequence
 import pandas as pd
 import yaml
 
+from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerCompanionArtifact,
     RunnerExecutionRequest,
     RunnerExecutionResult,
+    RunnerInputCapabilities,
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
@@ -238,6 +240,13 @@ def run_openfold3(
 class OpenFold3Runner(BaseRunner):
     name = "openfold3"
     capabilities = {"confidence_metrics"}
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset({"protein", "ligand", "dna", "rna"}),
+        constraint_types=frozenset({"pocket"}),
+        max_pocket_constraints=1,
+        supports_constraint_force=False,
+        pocket_contacts_must_be_polymers=True,
+    )
 
     def check_availability(self) -> tuple[bool, str | None]:
         return self.check_distribution_available(
@@ -406,31 +415,70 @@ class OpenFold3Runner(BaseRunner):
             if not isinstance(entry, dict):
                 raise ValueError(f"Sequence entry {index} must be a mapping, got {type(entry)!r}.")
             if "protein" in entry:
-                chains.append(self._build_protein_chain(entry["protein"], index=index))
+                chains.append(self._build_polymer_chain("protein", entry["protein"], index=index))
+                continue
+            if "dna" in entry:
+                chains.append(self._build_polymer_chain("dna", entry["dna"], index=index))
+                continue
+            if "rna" in entry:
+                chains.append(self._build_polymer_chain("rna", entry["rna"], index=index))
                 continue
             if "ligand" in entry:
                 chains.append(self._build_ligand_chain(entry["ligand"], index=index))
                 continue
             raise ValueError(
-                f"Sequence entry {index} must contain either 'protein' or 'ligand' for OpenFold3."
+                f"Sequence entry {index} must contain protein, DNA, RNA, or ligand for OpenFold3."
             )
-        return {"queries": {system_name: {"chains": chains}}}
+        query: dict[str, Any] = {"chains": chains}
+        constraints = system_obj.find_value(key="constraints") or []
+        pockets = [
+            item["pocket"]
+            for item in constraints
+            if isinstance(item, dict) and "pocket" in item
+        ]
+        if pockets:
+            pocket = pockets[0]
+            pocket_residues: list[list[Any]] = []
+            for contact_index, contact in enumerate(pocket["contacts"]):
+                chain_id, residue_id = contact
+                try:
+                    residue_id = int(residue_id)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "OpenFold3 pocket contacts must reference polymer residues; "
+                        f"contact {contact_index} uses {contact!r}."
+                    ) from exc
+                pocket_residues.append([str(chain_id), residue_id])
+            query["pocket_constraint"] = {
+                "ligand_chain_id": str(pocket["binder"]),
+                "pocket_residues": pocket_residues,
+                "max_distance": float(pocket.get("max_distance", 6.0)),
+            }
+        return {"queries": {system_name: query}}
 
     @staticmethod
-    def _build_protein_chain(protein: Any, *, index: int) -> dict[str, Any]:
-        if not isinstance(protein, dict):
-            raise ValueError(f"Protein entry {index} must be a mapping.")
-        chain_ids = OpenFold3Runner._normalize_chain_ids(protein.get("id"), entry_label=f"protein[{index}]")
-        sequence = protein.get("sequence") or protein.get("fasta")
+    def _build_polymer_chain(entity_type: str, payload: Any, *, index: int) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError(f"{entity_type.title()} entry {index} must be a mapping.")
+        chain_ids = OpenFold3Runner._normalize_chain_ids(
+            payload.get("id"), entry_label=f"{entity_type}[{index}]"
+        )
+        sequence = payload.get("sequence") or payload.get("fasta")
         if not sequence:
             raise ValueError(
-                f"Protein entry {index} must define either 'sequence' or 'fasta' for OpenFold3."
+                f"{entity_type.title()} entry {index} must define 'sequence' for OpenFold3."
             )
         return {
-            "molecule_type": "protein",
+            "molecule_type": entity_type,
             "chain_ids": chain_ids,
             "sequence": str(sequence),
         }
+
+    @staticmethod
+    def _build_protein_chain(protein: Any, *, index: int) -> dict[str, Any]:
+        """Compatibility wrapper for the former protein-only helper."""
+
+        return OpenFold3Runner._build_polymer_chain("protein", protein, index=index)
 
     @staticmethod
     def _build_ligand_chain(ligand: Any, *, index: int) -> dict[str, Any]:
@@ -732,19 +780,7 @@ class OpenFold3Runner(BaseRunner):
 
     @staticmethod
     def _chain_order(system_obj: Any) -> list[str]:
-        chain_ids: list[str] = []
-        for entry in system_obj.find_value(key="sequences") or []:
-            if not isinstance(entry, dict):
-                continue
-            payload = entry.get("protein") or entry.get("ligand")
-            if not isinstance(payload, dict):
-                continue
-            ids = payload.get("id")
-            if isinstance(ids, list):
-                chain_ids.extend(str(value) for value in ids)
-            elif ids is not None:
-                chain_ids.append(str(ids))
-        return chain_ids
+        return [chain.chain_id for chain in iter_system_chains(system_obj)]
 
     @staticmethod
     def _normalize_pair_confidence_map(raw_value: Any) -> dict[str, dict[str, Any]]:

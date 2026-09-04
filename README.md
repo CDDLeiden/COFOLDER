@@ -103,7 +103,7 @@ These top-level paths now have distinct roles:
 - [`scripts/`](scripts/): helper utilities for optional setup and bias-data preparation
 - [`legacy/`](legacy/): archival material preserved for traceability, not the recommended public path
 - [`run_ui.sh`](run_ui.sh): optional launcher for the Streamlit UI in an environment where the UI extra is already installed
-- [`LICENSE`](LICENSE) and [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md): repository licensing and third-party attribution
+- [`LICENSE`](LICENSE) and [`THIRD_PARTY_SOFTWARE.md`](THIRD_PARTY_SOFTWARE.md): repository licensing and third-party attribution
 
 For a short tour of how these pieces fit together, see [docs/getting-started/repository-tour.md](docs/getting-started/repository-tour.md).
 
@@ -142,4 +142,4 @@ The docs site complements, rather than replaces, the repository tutorials:
 
 ## Licenses
 
-COFOLDER is released under the MIT License. Third-party attributions for adapted or bundled components are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+COFOLDER is released under the MIT License. Third-party attributions for adapted or bundled components are listed in [THIRD_PARTY_SOFTWARE.md](THIRD_PARTY_SOFTWARE.md).

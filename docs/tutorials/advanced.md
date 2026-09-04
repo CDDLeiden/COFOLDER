@@ -82,39 +82,57 @@ For covalent inhibitors, specify the covalent bond:
 version: 1
 sequences:
   - protein:
-      id: "protease"
-      fasta: "SEQUENCE..."
+      id: A
+      sequence: "SEQUENCE..."
   - ligand:
-      smiles: "COVALENT_SMILES"
-      ccd: "COV"
-      covalent:
-        protein_residue: "CYS145"
-        ligand_atom: 12
+      id: B
+      ccd: COV
+constraints:
+  - bond:
+      atom1: [A, 145, SG]
+      atom2: [B, 1, C12]
 ```
+
+Residues are 1-based. Bond endpoints use `[chain_id, residue_id, atom_name]`;
+the atom name must exist in the selected residue or ligand CCD.
 
 ## Custom Scoring Functions
 
-### Implement Custom Oracle
+### Implement a custom Oracle function
 
 ```python
 from cofolder.recipes.oracle import Oracle
-import numpy as np
 
 
-class CustomOracle(Oracle):
-    def score(self, prediction):
-        # Custom scoring logic
-        confidence = prediction['confidence']
-        rmsd = self.calculate_rmsd(prediction)
+def custom_score(context):
+    """Combine real, aggregated Validate outputs into one finite scalar."""
+    affinity = context.aggregated_metrics["ligand_B__pIC50"]
+    confidence = context.aggregated_metrics["system__confidence_score"]
+    pocket_coverage = context.aggregated_metrics[
+        "ligand_B__pocket_coverage_custom"
+    ]
+    return affinity * confidence * pocket_coverage
 
-        # Combined score
-        score = confidence * np.exp(-rmsd)
-        return score
 
-    def calculate_rmsd(self, prediction):
-        # RMSD calculation
-        pass
+score = Oracle(
+    wrk_dir="oracle_custom",
+    system_path="examples/system.yaml",
+    options_path="examples/options.yaml",
+    input_smiles="CCO",
+    scoring_functions=[
+        "confidence_metrics",
+        "affinity_metrics_ext",
+        "ifp_distance",
+    ],
+    pocket_coverage_reference="A25 G48 Y51",
+    reproduction_metrics=["pocket_coverage"],
+    scoring_function=custom_score,
+).run()
 ```
+
+The callable receives raw metric DataFrames as well as qualified, aggregated numeric
+metrics. See the [Oracle guide](../user-guide/oracle.md) for weighted composites,
+SASA/IFP gates, and explicit down-weight, penalty, and non-binder policies.
 
 ## Batch Processing
 

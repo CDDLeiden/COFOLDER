@@ -9,6 +9,18 @@ from typing import Mapping
 from typing import Sequence
 
 
+@dataclass(frozen=True, slots=True)
+class RunnerInputCapabilities:
+    """Molecular-system inputs a runner can faithfully consume."""
+
+    entity_types: frozenset[str]
+    constraint_types: frozenset[str]
+    max_pocket_constraints: int | None = None
+    required_pocket_distance: float | None = None
+    supports_constraint_force: bool = True
+    pocket_contacts_must_be_polymers: bool = False
+
+
 @dataclass(slots=True)
 class RunnerRuntime:
     """Shared runtime metadata that recipes may safely consume."""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from cofolder.modules.runners.boltz_runner import BoltzRunner
+from cofolder.modules.runners.contracts import RunnerInputCapabilities
 
 
 class BoltzCommunityRunner(BoltzRunner):
@@ -13,6 +14,10 @@ class BoltzCommunityRunner(BoltzRunner):
         "affinity_metrics_ext",
     }
     model_name = "boltz2"
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset({"protein", "ligand", "dna", "rna"}),
+        constraint_types=frozenset({"bond", "pocket", "contact"}),
+    )
 
     def check_availability(self) -> tuple[bool, str | None]:
         return self.check_distribution_available(

@@ -109,10 +109,11 @@ class BaseRecipe:
             nargs='+',
             choices=SCORING_FUNCTIONS,
             metavar="SCORING_FUNCTION",
-            default=DEFAULT_SCORING_FUNCTIONS,
+            default=None,
             help=(
                 "Scoring functions to compute. "
-                f"Choices: {', '.join(SCORING_FUNCTIONS)}"
+                f"Choices: {', '.join(SCORING_FUNCTIONS)}. "
+                f"Defaults to: {', '.join(DEFAULT_SCORING_FUNCTIONS)}"
             ),
         )
 
@@ -248,7 +249,9 @@ class BaseRecipe:
                 "Path to a custom protein reference CSV. "
                 "Required column: sequence. Optional columns: pdb_id, release_date, "
                 "source, dataset_name, source_structure_path, source_reference_path, "
-                "sequence_similarity."
+                "sequence_similarity (MMseqs pident only), "
+                "sequence_similarity_pairwise (PairwiseAligner only), "
+                "sequence_similarity_method."
             ),
         )
         parser.add_argument(
@@ -525,6 +528,36 @@ class ScreenRecipe(BaseRecipe):
             type=str,
             help='Comma-separated list of metadata fields to merge.'
         )
+        parser.add_argument(
+            "--ifp_filter_threshold",
+            type=float,
+            default=None,
+            help=(
+                "Annotate rows by distance-IFP reference overlap at this inclusive "
+                "threshold ([0, 1]); filtering is disabled when omitted."
+            ),
+        )
+        parser.add_argument(
+            "--ifp_ligand_chain",
+            type=str,
+            default=None,
+            help="Ligand chain to evaluate; required for systems with multiple ligand chains.",
+        )
+        parser.add_argument(
+            "--cluster_ifps",
+            action="store_true",
+            default=False,
+            help="Cluster valid binary distance IFPs after screening.",
+        )
+        parser.add_argument(
+            "--ifp_cluster_similarity_threshold",
+            type=float,
+            default=0.5,
+            help=(
+                "Minimum Jaccard similarity for the average-linkage cluster cut "
+                "([0, 1]; default: 0.5)."
+            ),
+        )
 
         BaseRecipe.add_final_arguments(parser)
 
@@ -548,6 +581,10 @@ class ScreenRecipe(BaseRecipe):
             col_variable=args.col_variable,
             col_id=args.col_id,
             merge_data=args.merge_data,
+            ifp_filter_threshold=args.ifp_filter_threshold,
+            ifp_ligand_chain=args.ifp_ligand_chain,
+            cluster_ifps=args.cluster_ifps,
+            ifp_cluster_similarity_threshold=args.ifp_cluster_similarity_threshold,
             **BaseRecipe.common_kwargs(args),
         )
 

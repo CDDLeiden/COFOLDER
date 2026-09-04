@@ -1,17 +1,79 @@
 """Tests for Boltz-2 runner timing parsing."""
 
 import json
+import pickle
 from pathlib import Path
 from unittest.mock import patch
 from importlib.metadata import PackageNotFoundError
 
 import pandas as pd
+import pytest
 import yaml
+from rdkit import Chem
 
 from cofolder.modules.input.command import Command
+from cofolder.modules.input.system import System
+from cofolder.modules.input.validation import SystemInputValidationError
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
 from cofolder.modules.runners.boltz_runner import _parse_boltz_stage_timings
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+
+
+def _prepared_constrained_system(atom_name: str) -> System:
+    return System(
+        system={
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC"}},
+                {"ligand": {"id": "L", "ccd": "NEW"}},
+            ],
+            "constraints": [
+                {"bond": {"atom1": ["A", 2, "SG"], "atom2": ["L", 1, atom_name]}}
+            ],
+        }
+    )
+
+
+def test_conformer_preparation_preserves_compatible_constraint(monkeypatch, temp_dir):
+    cache = temp_dir / "cache"
+    mols = cache / "mols"
+    mols.mkdir(parents=True)
+    mol = Chem.MolFromSmiles("CCO")
+    for index, atom in enumerate(mol.GetAtoms(), 1):
+        atom.SetProp("name", f"{atom.GetSymbol().upper()}{index}")
+    with (mols / "NEW.pkl").open("wb") as handle:
+        pickle.dump(mol, handle)
+
+    system = _prepared_constrained_system("O3")
+    original_constraints = json.loads(json.dumps(system.system["constraints"]))
+    runner = Boltz2Runner()
+    options = Command(options={"options": [{"cache": str(cache)}]})
+    monkeypatch.setattr(
+        "cofolder.modules.entities.ligand.handle_conformers",
+        lambda **kwargs: {"L": "NEW"},
+    )
+
+    prepared = runner.prepare_system(system, options, temp_dir, "3D", None, None)
+    runner.validate_system(prepared.system_obj, options, check_atom_names=True)
+
+    assert prepared.system_obj.system["constraints"] == original_constraints
+
+
+def test_post_conformer_validation_rejects_missing_ligand_atom(temp_dir):
+    cache = temp_dir / "cache"
+    mols = cache / "mols"
+    mols.mkdir(parents=True)
+    mol = Chem.MolFromSmiles("CCO")
+    for index, atom in enumerate(mol.GetAtoms(), 1):
+        atom.SetProp("name", f"{atom.GetSymbol().upper()}{index}")
+    with (mols / "NEW.pkl").open("wb") as handle:
+        pickle.dump(mol, handle)
+
+    with pytest.raises(SystemInputValidationError, match="atom 'N99'.*does not exist"):
+        Boltz2Runner().validate_system(
+            _prepared_constrained_system("N99"),
+            Command(options={"options": [{"cache": str(cache)}]}),
+            check_atom_names=True,
+        )
 
 
 def test_parse_boltz_stage_timings_with_msa_and_affinity():
@@ -62,6 +124,29 @@ def test_parse_boltz_stage_timings_ignores_incomplete_msa_window():
 
     assert "boltz.msa" not in out
     assert out["boltz.affinity_prediction"] == 5.0
+
+
+def test_msa_reuse_settings_include_generation_options_and_backend_version(monkeypatch):
+    runner = Boltz2Runner()
+    options = Command(
+        options={
+            "options": [
+                {"msa_server_url": "https://msa.example.test"},
+                {"msa_pairing_strategy": "complete"},
+                {"max_msa_seqs": 4096},
+                {"msa_server_password": "must-not-be-persisted"},
+                {"diffusion_samples": 2},
+            ]
+        }
+    )
+    monkeypatch.setattr(runner, "get_distribution_version", lambda name: "2.2.1")
+
+    assert runner.msa_reuse_settings(options) == {
+        "msa_server_url": "https://msa.example.test",
+        "msa_pairing_strategy": "complete",
+        "max_msa_seqs": 4096,
+        "backend_version": "2.2.1",
+    }
 
 
 class _MockSystem:

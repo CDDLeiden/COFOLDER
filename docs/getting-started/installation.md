@@ -49,15 +49,16 @@ The integrated `openfold3` runner still has a second setup step after installati
 # Install the COFOLDER package with the OpenFold3 backend extra
 pip install -e ".[openfold3]"
 
-# Prepare the upstream cache, parameters, and CCD in the standard location
+# Keep the downloaded cache, parameters, and CCD in the repository cache folder
+export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 scripts/setup_openfold3.sh
 ```
 
 Notes for OpenFold3:
 
 - The COFOLDER `openfold3` extra installs the upstream `openfold3` package.
-- `scripts/setup_openfold3.sh` defaults `OPENFOLD_CACHE` to `~/.openfold3`, which matches the upstream standard cache location.
-- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions and selects parameter download choice `1` by default so the ambiguous interactive default is removed.
+- The example above sets `OPENFOLD_CACHE` to the gitignored `cache/.openfold3-cache` directory. If the variable is omitted, `scripts/setup_openfold3.sh` retains the upstream `~/.openfold3` default.
+- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions, selects parameter download choice `1`, and declines forced redownloads by default. Set `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes` only when you intentionally want to replace an existing checkpoint.
 - `scripts/setup_openfold3.sh` answers the upstream integration-test prompt with `no` by default so bootstrap does not hang in an unexpected interactive test path. If you intentionally want those tests, run `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh`.
 - If you want all published checkpoints instead of the default checkpoint only, run `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh`.
 - If you want a different cache root, set `OPENFOLD_CACHE` before running the setup script, for example `OPENFOLD_CACHE=/scratch/$USER/.openfold3 scripts/setup_openfold3.sh`.
@@ -143,6 +144,18 @@ cofolder bias \
   --custom_protein_reference_path /path/to/custom_protein.csv \
   --custom_ligand_reference_path /path/to/custom_ligand.csv
 ```
+
+When the builder writes `bias_training_data.csv`, its `sequence_similarity` values are
+MMseqs `pident` percentages. The accompanying `sequence_similarity_method` column is
+`mmseqs_pident` when a hit exists and `unavailable` when MMseqs returned no result; an
+unavailable protein similarity is left empty so it cannot pass a protein-similarity
+threshold. The configured threshold filters the standalone `protein_training_data.csv`
+but does not discard MMseqs hits needed to annotate PDBs in the combined table.
+
+Downstream bias analysis never puts a PairwiseAligner result in `sequence_similarity`.
+When PairwiseAligner is used for sequence-only custom references, its percentage is
+written to `sequence_similarity_pairwise`, with method `pairwise_aligner`; the MMseqs
+column remains empty.
 
 `cofolder bias` writes diagnostic artifacts under `<wrk_dir>/results/bias_train/`.
 These are reference-overlap outputs for pre-cofolding decision support. They are not

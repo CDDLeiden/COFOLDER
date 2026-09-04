@@ -75,6 +75,12 @@ The screen command will process each compound sequentially. Monitor with:
 tail -f screening_output/log.log
 ```
 
+For Boltz-family runners, the first ligand also resolves any missing protein MSA.
+COFOLDER stages it in `screening_output/shared/msa/<runner>/` and injects that path into all
+later ligand systems and repeats. If `system_template.yaml` already contains an `msa`
+path, COFOLDER preserves it and skips generation. Relative paths are interpreted from
+the directory containing the original system YAML.
+
 ## Step 6: Analyze Results
 
 Results are saved in a CSV file:
@@ -90,6 +96,37 @@ top_hits = results.sort_values("system__confidence_score", ascending=False).head
 print("Top 10 Compounds:")
 print(top_hits[["compound_id", "system__confidence_score", "mw", "logp"]])
 ```
+
+The same table is returned directly when calling `Screen.run()` from Python. Its
+stable columns include model affinity/pIC50 and binding likelihood when supported,
+confidence scores, ligand SASA, distance IFPs, bias similarities, and configured
+pocket/reference metrics. Metrics that are unavailable for a runner remain empty.
+
+### Discover contact-pattern families without a reference
+
+Add clustering when no experimental pose or predefined pocket is available:
+
+```bash
+cofolder screen \
+  -s system_template.yaml -o screening_options.yaml -c library.csv \
+  --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --scoring_functions confidence_metrics affinity_metrics affinity_metrics_ext \
+    sasa sasa_normalized ifp_distance \
+  --cluster_ifps \
+  --ifp_cluster_similarity_threshold 0.5 \
+  -w ./screening_output
+```
+
+Read `ifp_cluster_summary.csv` to inspect cluster sizes, member IDs, medoids,
+consensus fingerprints, and within-cluster Jaccard similarity. The row-level
+`ifp_cluster_id` is also present in both consolidated screening CSVs. This workflow
+does not need `--reference_path` or `--pocket_coverage_reference`.
+
+Reference-overlap filtering is a separate, non-destructive decision layer. It marks
+every result as accepted, rejected, not evaluable, or not applied and never removes
+predictions. You may enable filtering and clustering together when both reference
+agreement and reference-free contact-pattern diversity matter.
 
 ## Step 7: Visualize Top Hits
 

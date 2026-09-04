@@ -100,6 +100,21 @@ Bias outputs are reference-overlap diagnostics:
 - `bias_training_data.csv` is the merged plotting dataset behind the bias scatter plot
 - `reference_landscape_summary.csv` compares nearest overall, public, and custom references
 
+Protein similarity fields are deliberately method-specific:
+
+- `sequence_similarity` and `plot_sequence_similarity` contain only MMseqs `pident`
+  (percent and 0-1 normalized, respectively).
+- `sequence_similarity_pairwise` and `plot_sequence_similarity_pairwise` contain only
+  Biopython PairwiseAligner identity (percent and 0-1 normalized, respectively).
+- `sequence_similarity_method` is `mmseqs_pident`, `pairwise_aligner`, or `unavailable`.
+  A protein row cannot contain both score types.
+- `bias_prot_sim_train_max` summarizes only MMseqs values, while
+  `bias_prot_sim_train_pairwise_max` summarizes only PairwiseAligner values.
+
+The nearest-reference columns in `reference_landscape_summary.csv` include matching
+`*_similarity_method` columns so consumers do not have to infer which scale produced a
+reported similarity.
+
 Keep these outputs separate from other COFOLDER surfaces:
 
 - They are not binding-affinity predictions.

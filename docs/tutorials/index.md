@@ -31,6 +31,8 @@ These live in the repository root under `tutorials/`:
 - `oracle.py`
 - `ligand_handling.py`
 - `runners.py`
+- `boltz_system_inputs.py`
+- `openfold3_system_inputs.py`
 
 Launch them with marimo:
 
@@ -40,3 +42,33 @@ marimo edit tutorials/bias.py
 ```
 
 Use the notebooks when you want to inspect intermediate outputs, execute cells step by step, or adapt the tutorial flow to your own systems. The workflow-first set centers on `bias`, `validate`, `screen`, and `oracle`, then adds cross-cutting ligand handling plus one contributor notebook for runners and backend acceptance.
+
+## Real-Backend System Inputs
+
+The two system-input notebooks introduce DNA, RNA, and top-level constraints. Real
+inference runs only after you enable a checkbox. A successful run displays the exact
+backend input and checks the normalized chain order; a separate safe example shows an
+actionable preflight failure without launching inference.
+
+Use a dedicated CUDA-capable environment for the selected backend:
+
+```bash
+python -m pip install -e ".[tutorials,boltz2]"
+marimo edit tutorials/boltz_system_inputs.py
+```
+
+The Boltz notebook also supports the `boltz1` and `boltz-community` extras through its
+runner selector. Install only one Boltz package line in an environment.
+
+OpenFold3 additionally requires its downloaded cache and setup marker:
+
+```bash
+python -m pip install -e ".[tutorials,openfold3]"
+export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
+scripts/setup_openfold3.sh
+marimo edit tutorials/openfold3_system_inputs.py
+```
+
+These notebooks teach the user workflow. Maintainers should still use
+[Backend Acceptance](backend-acceptance.md) to record release acceptance across every
+claimed backend route.

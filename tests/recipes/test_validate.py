@@ -20,6 +20,7 @@ from cofolder.modules.runners.boltz1_runner import Boltz1Runner
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 from cofolder.modules.runners.validators import RunnerBundleValidationError
+from cofolder.recipes.screen import Screen
 from cofolder.recipes.validate import Validate
 
 
@@ -161,6 +162,9 @@ class _FakeRunner:
     def ensure_available(self):
         return None
 
+    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+        return None
+
     def load_options(self, options_path):
         return {"options_path": str(options_path)}
 
@@ -236,7 +240,6 @@ class _NoMetricsRunner(_FakeRunner):
                 runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
             )
         )
-
         return RunnerExecutionResult(
             runner_name="boltz2",
             raw_output_dir=request.repeat_dir,
@@ -254,6 +257,24 @@ class _NoMetricsRunner(_FakeRunner):
                 "affinity_metrics_ext": RunnerMetricOutcome(state="unsupported"),
             },
         )
+
+
+class _CapturingRunner(_FakeRunner):
+    def __init__(self, system_name="system"):
+        super().__init__(system_name)
+        self.validation_snapshots = []
+        self.execution_constraints = None
+
+    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+        self.validation_snapshots.append(
+            (check_atom_names, json.loads(json.dumps(system_obj.system.get("constraints", []))))
+        )
+
+    def run(self, request):
+        self.execution_constraints = json.loads(
+            json.dumps(request.system_obj.system.get("constraints", []))
+        )
+        return super().run(request)
 
 
 class _ManifestOnlyRuntimeRunner(_FakeRunner):
@@ -761,6 +782,45 @@ class TestValidateInit:
 
 
 class TestValidateRun:
+    def test_constraints_reach_runner_unchanged(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        _patch_validate_pipeline(monkeypatch, system_name="constrained")
+        constraints = [
+            {
+                "pocket": {
+                    "binder": "B",
+                    "contacts": [["A", 1]],
+                    "max_distance": 6.0,
+                }
+            }
+        ]
+        system_path = temp_dir / "constrained.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ],
+                    "constraints": constraints,
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _CapturingRunner(system_name="constrained")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        assert runner.validation_snapshots == [(False, constraints), (True, constraints)]
+        assert runner.execution_constraints == constraints
+
     def test_debug_run_logs_timing_summary(
         self,
         monkeypatch,
@@ -1301,12 +1361,13 @@ class TestValidateRun:
         assert (Path(temp_dir) / "results" / "system_metrics.csv").exists()
         assert (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
 
-    def test_reference_runner_mixed_metric_outcomes_allow_unrequested_missing_groups(
+    def test_default_unactivated_affinity_outcomes_warn_continue_and_write_empty_columns(
         self,
         monkeypatch,
         sample_system_yaml,
         sample_options_yaml,
         temp_dir,
+        caplog,
     ):
         monkeypatch.setattr(
             "cofolder.recipes.validate.helpers.get_seeds",
@@ -1322,7 +1383,19 @@ class TestValidateRun:
         )
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.merge_runner_results",
-            lambda raw_dir, repeats, logger: _make_runner_results(),
+            lambda raw_dir, repeats, logger: (
+                _make_runner_results()[0],
+                _make_runner_results()[1].drop(
+                    columns=[
+                        "affinity_pred_value",
+                        "affinity_probability_binary",
+                        "pIC50",
+                        "IC50_M",
+                        "pIC50_kcal_per_mol",
+                    ]
+                ),
+                _make_runner_results()[2],
+            ),
         )
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.add_chain_info",
@@ -1340,16 +1413,123 @@ class TestValidateRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            scoring_functions=["confidence_metrics"],
         )
 
-        validator.run()
+        with caplog.at_level(logging.WARNING, logger="cofolder.recipes.validate"):
+            validator.run()
 
         raw_chain_df = pd.read_csv(Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "chain_metrics.csv")
         system_df = pd.read_csv(Path(temp_dir) / "results" / "system_metrics.csv")
+        chain_df = pd.read_csv(Path(temp_dir) / "results" / "chain_metrics.csv")
         assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
         assert "affinity_pred_value" not in raw_chain_df.columns
-        assert (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
+        affinity_columns = {
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "pIC50",
+            "IC50_M",
+            "pIC50_kcal_per_mol",
+        }
+        assert affinity_columns.issubset(chain_df.columns)
+        assert chain_df[list(affinity_columns)].isna().all().all()
+        assert "did not produce optional scoring group 'affinity_metrics'" in caplog.text
+        assert "did not produce optional scoring group 'affinity_metrics_ext'" in caplog.text
+        assert "The run will continue" in caplog.text
+
+    def test_explicit_unactivated_affinity_outcome_remains_required(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.helpers.get_seeds",
+            lambda repeats, seed, logger: (123, [123]),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.get_runner",
+            lambda name: _MixedOutcomeRunner(),
+        )
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=["confidence_metrics", "affinity_metrics"],
+        )
+
+        with pytest.raises(
+            RunnerBundleValidationError,
+            match="cannot satisfy requested metric groups: affinity_metrics",
+        ):
+            validator.run()
+
+    def test_screen_rows_succeed_through_default_optional_affinity_validation(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.helpers.get_seeds",
+            lambda repeats, seed, logger: (123, [123]),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.get_runner",
+            lambda name: _MixedOutcomeRunner(),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.gather_structures",
+            lambda base_dir, system_name, repeats, logger: None,
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.merge_runner_results",
+            lambda raw_dir, repeats, logger: (
+                _make_runner_results()[0],
+                _make_runner_results()[1].drop(
+                    columns=[
+                        "affinity_pred_value",
+                        "affinity_probability_binary",
+                        "pIC50",
+                        "IC50_M",
+                        "pIC50_kcal_per_mol",
+                    ]
+                ),
+                _make_runner_results()[2],
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.add_chain_info",
+            lambda chain_df, sys: chain_df,
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.scaffold_reproduction_metrics",
+            lambda system_df, chain_df, **kwargs: (system_df, chain_df),
+        )
+
+        screen_dir = Path(temp_dir) / "screen"
+        screener = Screen(
+            wrk_dir=str(screen_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+        )
+
+        screener.run()
+
+        summary = pd.read_csv(screen_dir / "screen_results.csv")
+        merged = pd.read_csv(screen_dir / "screen_results_with_scores.csv")
+        assert summary["status"].tolist() == ["success", "success"]
+        assert merged["status"].tolist() == ["success", "success"]
+        assert "system__confidence_score" in merged.columns
+        assert "ligand_B__affinity_pred_value" in merged.columns
+        assert merged["ligand_B__affinity_pred_value"].isna().all()
 
     def test_unsupported_metric_groups_warn_and_write_empty_columns(
         self,

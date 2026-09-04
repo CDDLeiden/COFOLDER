@@ -36,12 +36,14 @@ For the current contract, `Boltz2Runner` backed by `BoltzRunner` is the in-tree 
 
 ## Runner Lifecycle
 
-At a high level, COFOLDER calls a runner in four steps:
+At a high level, COFOLDER calls a runner in six steps:
 
 1. `check_availability()` / `ensure_available()`
 2. `load_options(options_path)`
-3. `prepare_system(system_obj, options_obj, wrk_dir, conformers, sdf_file, logger)` if the backend needs preparation
-4. `run(request)`
+3. `validate_system(..., check_atom_names=False)` on the source system
+4. `prepare_system(system_obj, options_obj, wrk_dir, conformers, sdf_file, logger)` if the backend needs preparation
+5. `validate_system(..., check_atom_names=True)` on the prepared system
+6. `run(request)`
 
 The supported contract types live in `src/cofolder/modules/runners/contracts.py`, and `src/cofolder/modules/runners/base.py` provides the default no-op preparation path for simple runners.
 
@@ -49,6 +51,12 @@ Compatibility note:
 
 - Import and author against `RunnerExecutionRequest`, `RunnerExecutionResult`, and `RunnerPreparationResult`.
 - Legacy alias names such as `RunnerRequest`, `RunnerResult`, and `RunnerPreparation` may remain importable for compatibility, but they are not the recommended authoring surface for new code or docs.
+
+Every runner must also declare `input_capabilities = RunnerInputCapabilities(...)`.
+List only entity and constraint types that the adapter preserves and the backend
+actually consumes. `BaseRunner.validate_system()` applies this declaration and
+produces runner-specific preflight errors; override it only for additional native
+schema rules.
 
 ## Input Provided By COFOLDER
 
@@ -452,12 +460,14 @@ When adding a new runner, this is the safest sequence:
 2. Implement `check_availability()` first, so CLI selection fails early with a useful install message.
 3. Implement `load_options()` and only override `prepare_system()` if you truly need backend-specific mutation.
 4. Implement `run()` to write a complete normalized bundle even before all metrics are available.
-5. Declare only the metric groups you can truly support in `capabilities`.
+5. Declare only the metric groups you can truly support in `capabilities` and
+   molecular inputs you can faithfully consume in `input_capabilities`.
 6. Add targeted tests for:
    - runner discovery
    - availability checking
    - normalized bundle creation
    - any version- or backend-line-specific behavior
+   - supported and rejected entity/constraint inputs
 
 ## Testing a New Runner
 

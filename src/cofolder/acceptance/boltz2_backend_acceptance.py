@@ -14,10 +14,11 @@ def _():
 
     from cofolder.acceptance.shared import (
         AFFINITY_COLUMNS,
-        SCREEN_AFFINITY_COLUMNS,
-        assert_runner_available,
+        SCREEN_MANUSCRIPT_COLUMNS,
         assert_csv_columns_have_values,
         assert_file_exists,
+        assert_runner_available,
+        assert_screen_msa_reused_once,
         build_oracle_command,
         build_screen_command,
         build_validate_command,
@@ -60,10 +61,11 @@ def _():
     return (
         AFFINITY_COLUMNS,
         Path,
-        SCREEN_AFFINITY_COLUMNS,
+        SCREEN_MANUSCRIPT_COLUMNS,
         assert_csv_columns_have_values,
         assert_file_exists,
         assert_runner_available,
+        assert_screen_msa_reused_once,
         build_oracle_command,
         build_screen_command,
         build_validate_command,
@@ -247,9 +249,10 @@ def _(mo, validate_output):
 
 @app.cell
 def _(
-    SCREEN_AFFINITY_COLUMNS,
+    SCREEN_MANUSCRIPT_COLUMNS,
     assert_csv_columns_have_values,
     assert_file_exists,
+    assert_screen_msa_reused_once,
     build_screen_command,
     fixtures,
     mo,
@@ -272,19 +275,32 @@ def _(
         options_path=fixtures.options_path,
         variable_csv=fixtures.ligand_csv_path,
         scoring_functions=scoring,
+        protein_training_data_path=fixtures.protein_training_data_path,
+        ligand_training_data_path=fixtures.ligand_training_data_path,
+        pocket_coverage_reference="F1",
     )
+    screen_command.append("--cluster_ifps")
     screen_output = stream_cli_in_notebook(screen_command, workspace)
     summary_csv = screen_dir / "screen_results.csv"
     merged_csv = screen_dir / "screen_results_with_scores.csv"
+    cluster_summary_csv = screen_dir / "ifp_cluster_summary.csv"
     assert_file_exists(summary_csv)
     assert_file_exists(merged_csv)
-    assert_csv_columns_have_values(merged_csv, SCREEN_AFFINITY_COLUMNS)
-    return (screen_output,)
+    assert_file_exists(cluster_summary_csv)
+    assert_csv_columns_have_values(merged_csv, SCREEN_MANUSCRIPT_COLUMNS)
+    assert_csv_columns_have_values(
+        summary_csv,
+        ("ifp_cluster_id", "ifp_cluster_status"),
+    )
+    msa_reuse_message = assert_screen_msa_reused_once(screen_dir, runner)
+    return msa_reuse_message, screen_output
 
 
 @app.cell
-def _(mo, screen_output):
+def _(mo, msa_reuse_message, screen_output):
     mo.md(f"""
+    **MSA reuse check:** `{msa_reuse_message}`
+
     ### Screen output\n```text\n{screen_output}\n```
     """)
     return

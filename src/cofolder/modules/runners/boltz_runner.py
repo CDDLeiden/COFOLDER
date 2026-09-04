@@ -14,6 +14,7 @@ import pandas as pd
 
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
+from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
@@ -22,6 +23,7 @@ from cofolder.modules.runners.contracts import (
     RunnerPreparationResult,
     RunnerRuntime,
 )
+from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -76,7 +78,10 @@ def _parse_boltz_stage_timings(
         ):
             finalize_msa_window()
 
-        if line.startswith("Running affinity prediction for") and affinity_start is None:
+        if (
+            line.startswith("Running affinity prediction for")
+            and affinity_start is None
+        ):
             affinity_start = offset
 
     finalize_msa_window()
@@ -101,7 +106,9 @@ def _record_boltz_timings(
     active_logger = timings.logger or logger
     prefix = f"{label_prefix}." if label_prefix else ""
     timings.record(f"{prefix}boltz.total", total_elapsed, logger=active_logger)
-    for label, elapsed in _parse_boltz_stage_timings(timed_lines, total_elapsed).items():
+    for label, elapsed in _parse_boltz_stage_timings(
+        timed_lines, total_elapsed
+    ).items():
         timings.record(f"{prefix}{label}", elapsed, logger=active_logger)
 
 
@@ -165,6 +172,59 @@ class BoltzRunner(BaseRunner):
         "affinity_metrics_ext",
     }
     model_name: str | None = "boltz2"
+    supports_msa_reuse = True
+
+    _msa_reuse_option_names = (
+        "msa_server_url",
+        "msa_pairing_strategy",
+        "max_msa_seqs",
+    )
+
+    def msa_reuse_settings(self, options_obj: Command) -> dict[str, Any]:
+        """Return the Boltz settings that determine generated MSA artifacts."""
+
+        configured: dict[str, Any] = {}
+        for item in options_obj.options.get("options", []):
+            if not isinstance(item, dict):
+                continue
+            for name in self._msa_reuse_option_names:
+                if name in item and item[name] not in (None, "None"):
+                    configured[name] = item[name]
+
+        distribution = "boltz-community" if self.name == "boltz-community" else "boltz"
+        version = self.get_distribution_version(distribution)
+        if version is not None:
+            configured["backend_version"] = version
+        return configured
+
+    def inject_reusable_msas(
+        self,
+        system_obj: Any,
+        cache_dir: Path,
+        *,
+        settings: dict[str, Any] | None = None,
+    ) -> int:
+        """Inject sequence-matched MSAs staged by an earlier screen iteration."""
+
+        return inject_cached_msas(system_obj, cache_dir, settings=settings)
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+        settings: dict[str, Any] | None = None,
+    ) -> int:
+        """Stage Boltz-generated MSAs for later repeats and screen rows."""
+
+        return capture_generated_msas(
+            system_obj,
+            generated_dir=generated_dir,
+            cache_dir=cache_dir,
+            runner_name=self.name,
+            settings=settings,
+        )
 
     def load_options(self, options_path: Path) -> Command:
         command = Command(options_path=str(options_path))
@@ -253,7 +313,9 @@ class BoltzRunner(BaseRunner):
             diffusion_samples=diffusion_samples,
             model_name=self.model_name,
         )
-        metric_outcomes = self._build_metric_outcomes(system_df=system_df, chain_df=chain_df)
+        metric_outcomes = self._build_metric_outcomes(
+            system_df=system_df, chain_df=chain_df
+        )
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
             "runner": self.name,
@@ -339,7 +401,10 @@ class BoltzRunner(BaseRunner):
         binder_chain_id = self._resolve_binder_chain_id(request.system_obj)
 
         for sample_idx in range(diffusion_samples):
-            conf_path = raw_output_dir / f"confidence_{request.system_name}_model_{sample_idx}.json"
+            conf_path = (
+                raw_output_dir
+                / f"confidence_{request.system_name}_model_{sample_idx}.json"
+            )
             conf_data = read.read_json(conf_path) if conf_path.exists() else {}
             system_row = {
                 "cif_file": f"{request.repeat}_{request.system_name}_model_{sample_idx}.cif",
@@ -378,7 +443,9 @@ class BoltzRunner(BaseRunner):
                 if conf_chain_id in chain_metrics:
                     row["chains_ptm"] = chain_metrics[conf_chain_id]
 
-                for other_chain_id, value in (pair_chain_metrics.get(conf_chain_id) or {}).items():
+                for other_chain_id, value in (
+                    pair_chain_metrics.get(conf_chain_id) or {}
+                ).items():
                     row[f"pair_chains_iptm_{other_chain_id}"] = value
 
                 if (
@@ -465,7 +532,9 @@ class BoltzRunner(BaseRunner):
             state="missing",
             required_columns=tuple(
                 column
-                for column, present in zip(required_columns, column_presence, strict=False)
+                for column, present in zip(
+                    required_columns, column_presence, strict=False
+                )
                 if not present
             ),
             message=f"Boltz normalized output is missing required columns for {group_name}.",
@@ -510,7 +579,9 @@ class BoltzRunner(BaseRunner):
 
         if supports_affinity_ext:
             pIC50, IC50_M = stats.affinity_to_pic50_and_ic50(affinity_pred_value)
-            pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(affinity_pred_value)
+            pIC50_kcal_per_mol = stats.affinity_to_pic50_kcal_per_mol(
+                affinity_pred_value
+            )
             payload.update(
                 {
                     "pIC50": pIC50,
@@ -568,17 +639,4 @@ class BoltzRunner(BaseRunner):
 
     @staticmethod
     def _ordered_chain_ids(system_obj: Any) -> list[str]:
-        ordered_chain_ids: list[str] = []
-        sequences = system_obj.find_value(key="sequences") or []
-        for seq_entry in sequences:
-            if not isinstance(seq_entry, dict):
-                continue
-            entity_type = next(iter(seq_entry))
-            entity_data = seq_entry[entity_type]
-            chain_ids = entity_data.get("id")
-            if chain_ids is None:
-                continue
-            if not isinstance(chain_ids, list):
-                chain_ids = [chain_ids]
-            ordered_chain_ids.extend([str(cid) for cid in chain_ids])
-        return ordered_chain_ids
+        return [chain.chain_id for chain in iter_system_chains(system_obj)]

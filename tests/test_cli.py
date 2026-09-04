@@ -153,6 +153,23 @@ class TestValidateRecipe:
         assert args.reference_path == "reference.pdb"
         assert args.pocket_coverage_reference == "A2 S8 T10"
         assert args.reproduction_metrics == ["sucos"]
+        assert args.scoring_functions is None
+
+    def test_scoring_functions_preserve_explicit_selection(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        subparser = parser.add_subparsers()
+        validate_parser = subparser.add_parser("validate")
+        cli.ValidateRecipe.add_arguments(validate_parser)
+
+        args = validate_parser.parse_args([
+            "-s", "system.yaml",
+            "-o", "options.yaml",
+            "--scoring_functions", "confidence_metrics", "affinity_metrics",
+        ])
+
+        assert args.scoring_functions == ["confidence_metrics", "affinity_metrics"]
 
     def test_runner_help_lists_available_runners(self):
         import argparse
@@ -227,11 +244,20 @@ class TestScreenRecipe:
             "--col_variable", "smiles",
             "-v", "sequences,0,ligand,ccd",
             "--col_variable", "ccd",
+            "--ifp_filter_threshold", "0.75",
+            "--ifp_ligand_chain", "B",
+            "--cluster_ifps",
+            "--ifp_cluster_similarity_threshold", "0.8",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.variable == ["sequences,0,ligand,smiles", "sequences,0,ligand,ccd"]
         assert args.col_variable == ["smiles", "ccd"]
+        assert args.ifp_filter_threshold == 0.75
+        assert args.ifp_ligand_chain == "B"
+        assert args.cluster_ifps is True
+        assert args.ifp_cluster_similarity_threshold == 0.8
+        assert args.scoring_functions is None
 
     def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):
         """Test that screen main rejects mismatched --variable/--col_variable counts."""

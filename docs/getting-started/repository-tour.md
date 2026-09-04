@@ -14,7 +14,7 @@ This page explains the role of the main publication-facing files and folders in 
 - `scripts/`: optional setup and data-preparation helpers
 - `run_ui.sh`: launcher for the optional Streamlit UI
 - `LICENSE`: repository license
-- `THIRD_PARTY_LICENSES.md`: attribution for adapted or bundled third-party components
+- `THIRD_PARTY_SOFTWARE.md`: attribution for adapted or bundled third-party components
 
 ## Archived Material
 

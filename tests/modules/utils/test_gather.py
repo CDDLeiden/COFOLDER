@@ -1,10 +1,34 @@
 """Tests for cofolder.modules.utils.gather alignment orchestration."""
 
 from pathlib import Path
+import warnings
 
 import pandas as pd
 
 from cofolder.modules.utils import gather
+from cofolder.modules.input.system import System
+
+
+def test_bitstring_similarity_with_one_pair_has_no_runtime_warning(temp_dir):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = gather.assess_bitstring_similarity(
+            [[1, 0], [1, 1]],
+            prefix="ifp_distance",
+            id="ligand",
+            wrk_dir=temp_dir,
+        )
+
+    assert result == {
+        "ifp_distance_mean": 0.5,
+        "ifp_distance_std": None,
+    }
+    assert (
+        temp_dir
+        / "results"
+        / "matrices"
+        / "similarity_matrix_ifp_distance_ligand.csv"
+    ).exists()
 
 
 def _make_system_df():
@@ -103,3 +127,25 @@ def test_gather_robustness_aligns_all_runs_to_first_predicted_when_no_reference(
     ]
     assert captured["aligned_names"] == captured["cif_paths"]
     assert captured["aligned_names"][0] == "1_system_model_0.cif"
+
+
+def test_add_chain_info_preserves_protein_nucleic_acid_ligand_order():
+    system = System(
+        system={
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC"}},
+                {"dna": {"id": ["D", "E"], "sequence": "AT"}},
+                {"rna": {"id": "R", "sequence": "GU"}},
+                {"ligand": {"id": "L", "smiles": "CCO"}},
+            ]
+        }
+    )
+    frame = pd.DataFrame({"conf_chain_id": range(5), "score": [1, 2, 3, 4, 5]})
+
+    result = gather.add_chain_info(frame, system)
+
+    assert result["CHAIN_ID"].tolist() == ["A", "D", "E", "R", "L"]
+    assert result["ENTITY_TYPE"].tolist() == ["protein", "dna", "dna", "rna", "ligand"]
+    assert result["ligand_molecule_id"].tolist() == [
+        "protein_A", "dna_D", "dna_E", "rna_R", "CCO"
+    ]

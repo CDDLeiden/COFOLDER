@@ -83,7 +83,7 @@ OpenFold3 now installs through a COFOLDER optional extra. Use a fresh environmen
 ```bash
 conda create -n cofolder-acceptance-openfold3 python=3.12
 python -m pip install -e ".[acceptance,openfold3]"
-export OPENFOLD_CACHE="$PWD/.openfold3-cache"
+export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 scripts/setup_openfold3.sh
 python --version
 cofolder --help
@@ -92,11 +92,28 @@ cofolder --help
 Notes:
 
 - OpenFold3 upstream currently recommends `pixi` for reproducible environments, but the upstream `openfold3` pip package is also documented and is what the COFOLDER `openfold3` extra installs.
-- `scripts/setup_openfold3.sh` wraps upstream `setup_openfold`, exports `OPENFOLD_CACHE` to a standard location by default (`~/.openfold3`), and prepares the cache, model parameters, and CCD before you run the acceptance workflows.
-- The wrapper also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. Use `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh` if you want all published checkpoints instead.
+- `scripts/setup_openfold3.sh` wraps upstream `setup_openfold` and prepares the cache, model parameters, and CCD before you run the acceptance workflows. The command above places those downloads in the repository's gitignored `cache/.openfold3-cache` directory; without an explicit `OPENFOLD_CACHE`, the wrapper retains the upstream `~/.openfold3` default.
+- The wrapper also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. It answers the force-redownload prompt with `no`; use `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes scripts/setup_openfold3.sh` only when you intentionally want to replace an existing checkpoint. Use `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh` if you want all published checkpoints instead.
 - The wrapper answers the upstream integration-test prompt with `no` by default. Use `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh` only when you intentionally want those upstream tests to run during setup.
 - Upstream docs note that first inference can also download default model parameters to `$HOME/.openfold3`, but for manual acceptance this project prefers the explicit setup script so environment readiness is checked before the expensive lane starts.
 - This first-pass acceptance lane is confidence-only. It does not claim affinity support for OpenFold3.
+
+### Input-contract acceptance lane
+
+The packaged acceptance inputs also include `system_nucleic_acid.yaml` plus
+runner-specific constrained systems. In each clean backend environment, run
+`validate` against the nucleic-acid fixture and the matching constrained fixture
+from `src/cofolder/acceptance/data/`. Confirm that `chain_metrics.csv` contains
+chains `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
+6 Å pocket form, Boltz-2/community exercise pocket and contact inputs, and the
+OpenFold3 fixture exercises pocket translation. These runs are opt-in because
+they execute the real prediction backends.
+
+Launch the shared lane with:
+
+```bash
+marimo run src/cofolder/acceptance/input_contract_backend_acceptance.py
+```
 
 If you prefer a non-editable install from the current checkout, replace:
 
@@ -168,6 +185,14 @@ For `openfold3`, the positive path is:
 - `boltz1`: `validate` and `screen` should warn that affinity scoring groups are unsupported while leaving downstream affinity-related columns present-but-empty; `oracle` should use `confidence_score` as the supported positive-path metric.
 - `openfold3`: `validate`, `screen`, and `oracle` should produce populated confidence outputs, including OpenFold3-native confidence fields. This lane does not request affinity groups, and it must not imply that structural-confidence outputs are affinity proxies.
 
+The Boltz2 screen cell additionally requests SASA and distance IFPs, evaluates a
+custom pocket reference, enables non-destructive filtering and IFP clustering, and
+runs bias diagnostics against packaged acceptance references. It checks populated
+manuscript-facing confidence, affinity, SASA, IFP, protein/ligand proximity, pocket
+coverage, and filter columns and requires `ifp_cluster_summary.csv`. It also verifies
+that exactly one fixed-protein MSA generation attempt populated the shared manifest
+and that every ligand row YAML uses that same staged artifact.
+
 Keep scientific wording disciplined when reviewing these outputs:
 
 - validation metrics, confidence metrics, and affinity metrics are distinct concepts
@@ -175,6 +200,8 @@ Keep scientific wording disciplined when reviewing these outputs:
 
 ## Optional Bias Setup
 
-Bias-related setup is intentionally outside the first-pass backend acceptance lane.
+Bias-related setup is outside the first-pass lanes except for Boltz2, whose Screen
+acceptance cell uses small packaged protein and ligand references to verify populated
+proximity outputs.
 
 If you need `--assess_bias`, install `mmseqs2` in the same environment and follow the bias setup documented in [Installation](../getting-started/installation.md). Keep that work separate from the base backend acceptance pass unless the change under review specifically affects bias behavior.

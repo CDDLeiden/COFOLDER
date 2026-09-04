@@ -21,8 +21,10 @@ def _load_module(path: Path) -> None:
 def test_expected_marimo_tutorial_files_exist() -> None:
     expected = {
         "bias.py",
+        "boltz_system_inputs.py",
         "oracle.py",
         "ligand_handling.py",
+        "openfold3_system_inputs.py",
         "runners.py",
         "screen.py",
         "validate.py",

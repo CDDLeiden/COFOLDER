@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
     RunnerExecutionResult,
+    RunnerInputCapabilities,
     RunnerPreparationResult,
     RunnerRuntime,
 )
@@ -21,6 +22,11 @@ RunnerResult = RunnerExecutionResult
 class BaseRunner(ABC):
     name: str
     capabilities: set[str]
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset(),
+        constraint_types=frozenset(),
+    )
+    supports_msa_reuse = False
 
     @staticmethod
     def _distribution_installed(distribution_name: str) -> bool:
@@ -48,7 +54,9 @@ class BaseRunner(ABC):
             return False, missing_message
 
         installed_conflicts = [
-            name for name in conflicting_distributions if BaseRunner._distribution_installed(name)
+            name
+            for name in conflicting_distributions
+            if BaseRunner._distribution_installed(name)
         ]
         if installed_conflicts:
             if conflict_message is not None:
@@ -70,6 +78,29 @@ class BaseRunner(ABC):
             return
         raise RuntimeError(message or f"Runner '{self.name}' is not available.")
 
+    def validate_system(
+        self,
+        system_obj: Any,
+        options_obj: Any,
+        *,
+        check_atom_names: bool = True,
+    ) -> None:
+        """Validate the shared YAML contract against this runner's capabilities."""
+
+        from cofolder.modules.input.validation import validate_system_input
+
+        cache_path = None
+        find_value = getattr(options_obj, "find_value", None)
+        if callable(find_value):
+            cache_path = find_value(key="cache") or find_value(key="cache_path")
+        validate_system_input(
+            system_obj,
+            runner_name=self.name,
+            capabilities=self.input_capabilities,
+            cache_path=cache_path,
+            check_atom_names=check_atom_names,
+        )
+
     def prepare_system(
         self,
         system_obj: Any,
@@ -86,6 +117,34 @@ class BaseRunner(ABC):
             options_obj=options_obj,
         )
 
+    def inject_reusable_msas(
+        self,
+        system_obj: Any,
+        cache_dir: Path,
+        *,
+        settings: dict[str, Any] | None = None,
+    ) -> int:
+        """Inject runner-compatible cached MSAs, returning the entity count."""
+
+        return 0
+
+    def msa_reuse_settings(self, options_obj: Any) -> dict[str, Any]:
+        """Return non-secret settings that affect reusable MSA generation."""
+
+        return {}
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+        settings: dict[str, Any] | None = None,
+    ) -> int:
+        """Persist runner-generated MSAs, returning the captured entity count."""
+
+        return 0
+
     @abstractmethod
     def load_options(self, options_path: Path):
         """Load any runner-specific options from disk."""
@@ -98,15 +157,22 @@ class BaseRunner(ABC):
 class Runner(Protocol):
     name: str
     capabilities: set[str]
+    input_capabilities: RunnerInputCapabilities
+    supports_msa_reuse: bool
 
-    def check_availability(self) -> tuple[bool, str | None]:
-        ...
+    def check_availability(self) -> tuple[bool, str | None]: ...
 
-    def ensure_available(self) -> None:
-        ...
+    def ensure_available(self) -> None: ...
 
-    def load_options(self, options_path: Path):
-        ...
+    def validate_system(
+        self,
+        system_obj: Any,
+        options_obj: Any,
+        *,
+        check_atom_names: bool = True,
+    ) -> None: ...
+
+    def load_options(self, options_path: Path): ...
 
     def prepare_system(
         self,
@@ -116,8 +182,25 @@ class Runner(Protocol):
         conformers: str | None,
         sdf_file: Path | None,
         logger: logging.Logger | None,
-    ) -> RunnerPreparationResult:
-        ...
+    ) -> RunnerPreparationResult: ...
 
-    def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:
-        ...
+    def inject_reusable_msas(
+        self,
+        system_obj: Any,
+        cache_dir: Path,
+        *,
+        settings: dict[str, Any] | None = None,
+    ) -> int: ...
+
+    def msa_reuse_settings(self, options_obj: Any) -> dict[str, Any]: ...
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+        settings: dict[str, Any] | None = None,
+    ) -> int: ...
+
+    def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult: ...

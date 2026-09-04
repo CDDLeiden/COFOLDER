@@ -107,3 +107,21 @@ class TestCommandSetCommand:
         idx = command_list.index("--devices")
         # The actual implementation converts list to string representation
         assert "[0, 1]" in command_list[idx + 1] or "0,1" in command_list[idx + 1]
+
+    def test_set_command_requests_only_missing_protein_msas(self):
+        cmd = Command(options={"options": []})
+        sys = System(
+            system={
+                "sequences": [
+                    {"protein": {"id": "A", "sequence": "AAAA", "msa": "/tmp/a.a3m"}},
+                    {"protein": {"id": "B", "sequence": "BBBB"}},
+                ]
+            }
+        )
+        cmd.out_dir = "/tmp/output"
+        cmd.system_path = "/tmp/system.yaml"
+
+        assert "--use_msa_server" in cmd.set_command(system=sys)
+
+        sys.system["sequences"][1]["protein"]["msa"] = "/tmp/b.a3m"
+        assert "--use_msa_server" not in cmd.set_command(system=sys)

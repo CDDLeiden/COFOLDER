@@ -7,7 +7,7 @@ Adapted conceptually from susanhleung/SuCOS:
 
 License notice:
 This file contains adapted logic from susanhleung/SuCOS (MIT License).
-See `THIRD_PARTY_LICENSES.md` in the repository root for attribution and
+See `THIRD_PARTY_SOFTWARE.md` in the repository root for attribution and
 the full MIT license text.
 """
 
