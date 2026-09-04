@@ -7,10 +7,11 @@ import json
 import logging
 import math
 import operator
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -94,8 +95,10 @@ class OracleScoreContext:
 class Oracle:
     """Run Validate once for one ligand and return a finite scalar score."""
 
-    _AGGREGATORS = {"first", "mean", "max", "min", "median"}
-    _COMPARISONS = {
+    _AGGREGATORS: ClassVar[frozenset[str]] = frozenset(
+        {"first", "mean", "max", "min", "median"}
+    )
+    _COMPARISONS: ClassVar[Mapping[str, Callable[[float, float], bool]]] = {
         "gt": operator.gt,
         "ge": operator.ge,
         "lt": operator.lt,
@@ -264,16 +267,14 @@ class Oracle:
             return
 
         required_group: set[str] | None = None
-        if metric in {"sasa", "sasa_norm_heavy"}:
-            required_group = {"sasa", "sasa_normalized"}
-        elif metric in {
-            "affinity_pred_value",
-            "affinity_probability_binary",
-            "pIC50",
-            "IC50_M",
-            "pIC50_kcal_per_mol",
-        }:
-            required_group = {"affinity_metrics", "affinity_metrics_ext"}
+        if metric == "sasa":
+            required_group = {"sasa"}
+        elif metric == "sasa_norm_heavy":
+            required_group = {"sasa_normalized"}
+        elif metric in {"affinity_pred_value", "affinity_probability_binary"}:
+            required_group = {"affinity_metrics"}
+        elif metric in {"pIC50", "IC50_M", "pIC50_kcal_per_mol"}:
+            required_group = {"affinity_metrics_ext"}
         elif metric.startswith("pair_chains_iptm_") or metric in {
             "chains_ptm",
             "ptm",
@@ -281,7 +282,7 @@ class Oracle:
             "confidence_score",
         }:
             required_group = {"confidence_metrics"}
-        elif metric == "pocket_coverage_custom":
+        elif metric in {"pocket_coverage_custom", "pocket_coverage_custom_mean"}:
             required_group = {"ifp_distance"}
             if not self.validate_kwargs.get("pocket_coverage_reference"):
                 raise ValueError(
@@ -292,13 +293,34 @@ class Oracle:
                 raise ValueError(
                     f"Metric '{selector}' requires the pocket_coverage reproduction metric."
                 )
-        elif metric == "pocket_coverage_ref":
+        elif metric in {"pocket_coverage_ref", "pocket_coverage_ref_mean"}:
             if not self.validate_kwargs.get("reference_path"):
                 raise ValueError(f"Metric '{selector}' requires reference_path.")
             reproduction = self.validate_kwargs.get("reproduction_metrics")
             if reproduction is not None and "pocket_coverage" not in reproduction:
                 raise ValueError(
                     f"Metric '{selector}' requires the pocket_coverage reproduction metric."
+                )
+        elif metric in {
+            "ligand_rmsd_ref",
+            "protein_rmsd_ref",
+            "sucos_shape_ref",
+            "sucos_feature_ref",
+            "sucos_ref",
+            "ligand_pose_overlap_ref",
+        }:
+            if not self.validate_kwargs.get("reference_path"):
+                raise ValueError(f"Metric '{selector}' requires reference_path.")
+            reproduction_metric = (
+                "ligand_rmsd"
+                if metric == "ligand_rmsd_ref"
+                else "protein_rmsd" if metric == "protein_rmsd_ref" else "sucos"
+            )
+            reproduction = self.validate_kwargs.get("reproduction_metrics")
+            if reproduction is not None and reproduction_metric not in reproduction:
+                raise ValueError(
+                    f"Metric '{selector}' requires the {reproduction_metric} "
+                    "reproduction metric."
                 )
         if required_group is not None and not (required_group & scoring):
             raise ValueError(
@@ -487,7 +509,7 @@ class Oracle:
     @staticmethod
     def _finite_score(value, source):
         if isinstance(value, bool):
-            raise ValueError(f"{source} must return a finite numeric scalar, not bool.")
+            raise TypeError(f"{source} must return a finite numeric scalar, not bool.")
         try:
             score = float(value)
         except (TypeError, ValueError) as exc:

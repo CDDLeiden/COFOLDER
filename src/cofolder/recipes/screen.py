@@ -689,7 +689,7 @@ class Screen:
         try:
             system_df, chain_df = read_metric_frames(run_dir)
             out.update(primary_metric_values(system_df, chain_df))
-        except Exception as exc:
+        except (OSError, UnicodeError, pd.errors.ParserError) as exc:
             self.logger.warning("Failed reading metrics from %s: %s", run_dir, exc)
 
         self._ensure_screen_metric_schema(out)

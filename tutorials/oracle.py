@@ -14,7 +14,6 @@ def _():
         sys.path.insert(0, str(notebook_dir))
 
     import marimo as mo
-
     from _marimo_helpers import (
         EXAMPLES_DIR,
         REPO_ROOT,
