@@ -54,6 +54,30 @@ cofolder screen \
   - bias options (`--assess_bias`, `--bias_*`)
   - reproduction options (`--reference_path`, `--reproduction_metrics`)
   - robustness options
+- `--ifp_filter_threshold FLOAT`: annotate compounds using inclusive reference
+  overlap (`0` to `1`). Omit this option to disable filtering.
+- `--ifp_ligand_chain CHAIN`: ligand chain to evaluate. A single ligand is
+  selected automatically; this option is required when multiple ligand chains
+  are present.
+
+Reference-overlap filtering requires `ifp_distance` scoring and
+`--pocket_coverage_reference`. The reference can be a binary bitstring, residue
+numbers or labels, or a file containing one of those forms:
+
+```bash
+cofolder screen \
+  -s system.yaml -o options.yaml -c compounds.csv \
+  --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --scoring_functions ifp_distance \
+  --pocket_coverage_reference "A25 G48 Y51" \
+  --ifp_filter_threshold 0.6
+```
+
+Overlap is the fraction of active reference-pocket bits also present in the
+predicted distance IFP. A row passes when overlap is greater than or equal to
+the threshold. Filtering only annotates results; it never deletes rejected
+rows or their prediction artifacts.
 
 If you only need pre-cofolding bias diagnostics for one system, prefer the dedicated
 [`bias`](bias.md) workflow instead of running `screen`.
@@ -90,6 +114,9 @@ Summary columns include:
 - `run_dir`
 - mapped `col_variable` values
 - optional `merge_data` values
+- filter audit columns: `ifp_filter_pass`, `ifp_filter_status`,
+  `ifp_filter_reason`, `ifp_filter_overlap`, `ifp_filter_threshold`, and
+  `ifp_filter_reference`
 
 `screen_results_with_scores.csv` includes:
 
@@ -97,6 +124,11 @@ Summary columns include:
 - run metadata (`index`, `status`, `error_message`, `run_dir`)
 - extracted system-level score columns prefixed as `system__...`
 - extracted chain-level score columns prefixed as `<entity>_<chain_id>__...`
+- the same six filter audit columns as the summary CSV
+
+Filter status is `accepted`, `rejected`, `not_evaluable`, or `not_applied`.
+Missing or malformed IFPs, all-zero references, and unequal vector lengths are
+`not_evaluable`; vectors are never truncated for filtering.
 
 The consolidated schema always includes the manuscript-facing confidence, affinity,
 SASA, distance-IFP, training-set-proximity, and pocket-coverage columns. Unsupported or

@@ -244,11 +244,15 @@ class TestScreenRecipe:
             "--col_variable", "smiles",
             "-v", "sequences,0,ligand,ccd",
             "--col_variable", "ccd",
+            "--ifp_filter_threshold", "0.75",
+            "--ifp_ligand_chain", "B",
         ])
 
         assert args.system_path == "system.yaml"
         assert args.variable == ["sequences,0,ligand,smiles", "sequences,0,ligand,ccd"]
         assert args.col_variable == ["smiles", "ccd"]
+        assert args.ifp_filter_threshold == 0.75
+        assert args.ifp_ligand_chain == "B"
         assert args.scoring_functions is None
 
     def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):

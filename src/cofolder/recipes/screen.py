@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,10 @@ import pandas as pd
 
 from cofolder.modules.input import system
 from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.analytics.reproduction import (
+    _build_reference_ifp_from_custom,
+    _parse_custom_pocket_reference,
+)
 from cofolder.modules.runners import get_runner
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import read, write
@@ -86,6 +92,8 @@ class Screen:
         reference_path: str | None = None,
         pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
+        ifp_filter_threshold: float | None = None,
+        ifp_ligand_chain: str | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -97,6 +105,12 @@ class Screen:
         self.col_id = col_id
         self.variable_csv = Path(variable_csv) if variable_csv else None
         self.merge_data = self._parse_list(merge_data)
+        self.ifp_filter_threshold = ifp_filter_threshold
+        self.ifp_ligand_chain = (
+            str(ifp_ligand_chain).strip() if ifp_ligand_chain is not None else None
+        )
+        self.pocket_coverage_reference = pocket_coverage_reference
+        self._ifp_filter_reference_spec: dict[str, Any] | None = None
 
         self.variable_paths = [self._parse_path(v) for v in self.variable_raw]
 
@@ -154,6 +168,66 @@ class Screen:
                 f"Got variable={len(self.variable_raw)} col_variable={len(self.col_variable)}."
             )
 
+        if self.ifp_filter_threshold is None:
+            return
+
+        try:
+            self.ifp_filter_threshold = float(self.ifp_filter_threshold)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("--ifp_filter_threshold must be a number in [0, 1].") from exc
+        if not math.isfinite(self.ifp_filter_threshold) or not 0 <= self.ifp_filter_threshold <= 1:
+            raise ValueError("--ifp_filter_threshold must be in [0, 1].")
+
+        scoring_functions = self.validate_kwargs.get("scoring_functions")
+        if scoring_functions is not None and "ifp_distance" not in scoring_functions:
+            raise ValueError(
+                "--ifp_filter_threshold requires distance IFP scoring; include "
+                "'ifp_distance' in --scoring_functions."
+            )
+
+        self._validate_filter_reference()
+        ligand_count = self._configured_ligand_count()
+        if ligand_count == 0:
+            raise ValueError("--ifp_filter_threshold requires a system containing a ligand.")
+        if ligand_count > 1 and not self.ifp_ligand_chain:
+            raise ValueError(
+                "--ifp_ligand_chain is required when the system contains multiple ligand chains."
+            )
+
+    def _validate_filter_reference(self) -> None:
+        """Parse the filter reference before any prediction work starts."""
+        value = self.pocket_coverage_reference
+        if value is None or not str(value).strip():
+            raise ValueError(
+                "--ifp_filter_threshold requires --pocket_coverage_reference."
+            )
+
+        raw = str(value).strip()
+        path = Path(raw).expanduser()
+        looks_like_path = bool(path.suffix) or "/" in raw or "\\" in raw
+        if looks_like_path and not path.exists():
+            raise ValueError(f"--pocket_coverage_reference file does not exist: {path}")
+        if path.exists() and not path.is_file():
+            raise ValueError(f"--pocket_coverage_reference is not a file: {path}")
+
+        try:
+            reference_value = str(path) if path.exists() else raw
+            self._ifp_filter_reference_spec = _parse_custom_pocket_reference(reference_value)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"Invalid --pocket_coverage_reference: {exc}") from exc
+        if self._ifp_filter_reference_spec is None:
+            raise ValueError("--pocket_coverage_reference must not be empty.")
+
+    def _configured_ligand_count(self) -> int:
+        count = 0
+        for entry in self.base_system.get("sequences", []):
+            if not isinstance(entry, dict) or "ligand" not in entry:
+                continue
+            ligand = entry.get("ligand")
+            identifier = ligand.get("id") if isinstance(ligand, dict) else None
+            count += len(identifier) if isinstance(identifier, list) else 1
+        return count
+
     def run(self) -> pd.DataFrame:
         """Run the screen, write both CSV summaries, and return the merged results."""
 
@@ -182,6 +256,8 @@ class Screen:
                 "error_message": "",
                 "run_dir": str(run_dir),
             }
+            filter_result = self._default_filter_result()
+            summary.update(filter_result)
             detailed: dict[str, Any] = {k: row.get(k) for k in df.columns}
             detailed.update(summary)
             self._ensure_screen_metric_schema(detailed)
@@ -253,6 +329,9 @@ class Screen:
                     )
                     write.write_yaml(sys_obj, path=row_system_path)
                 detailed.update(self._collect_score_columns(run_dir=run_dir))
+                filter_result = self._evaluate_ifp_filter(run_dir=run_dir)
+                summary.update(filter_result)
+                detailed.update(filter_result)
             except Exception as exc:
                 if self.reusable_msa_dir is not None and sys_obj is not None:
                     try:
@@ -271,15 +350,22 @@ class Screen:
                 summary["error_message"] = str(exc)
                 detailed["status"] = "failed"
                 detailed["error_message"] = str(exc)
+                if self.ifp_filter_threshold is not None:
+                    filter_result = self._not_evaluable_filter_result("row_failed")
+                    summary.update(filter_result)
+                    detailed.update(filter_result)
                 self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
 
             records.append(summary)
             records_with_scores.append(detailed)
 
         out_csv = self.wrk_dir / "screen_results.csv"
-        pd.DataFrame(records).to_csv(out_csv, index=False)
+        summary_df = pd.DataFrame(records)
+        self._set_filter_dtypes(summary_df)
+        summary_df.to_csv(out_csv, index=False)
         out_scores_csv = self.wrk_dir / "screen_results_with_scores.csv"
         results_df = pd.DataFrame(records_with_scores)
+        self._set_filter_dtypes(results_df)
         results_df.to_csv(out_scores_csv, index=False)
 
         failures = sum(1 for r in records if r["status"] == "failed")
@@ -293,6 +379,159 @@ class Screen:
             out_scores_csv,
         )
         return results_df
+
+    def _default_filter_result(self) -> dict[str, Any]:
+        if self.ifp_filter_threshold is not None:
+            return self._not_evaluable_filter_result("missing_ifp")
+        return {
+            "ifp_filter_pass": pd.NA,
+            "ifp_filter_status": "not_applied",
+            "ifp_filter_reason": "filtering_disabled",
+            "ifp_filter_overlap": None,
+            "ifp_filter_threshold": None,
+            "ifp_filter_reference": None,
+        }
+
+    def _not_evaluable_filter_result(self, reason: str) -> dict[str, Any]:
+        return {
+            "ifp_filter_pass": pd.NA,
+            "ifp_filter_status": "not_evaluable",
+            "ifp_filter_reason": reason,
+            "ifp_filter_overlap": None,
+            "ifp_filter_threshold": self.ifp_filter_threshold,
+            "ifp_filter_reference": self.pocket_coverage_reference,
+        }
+
+    def _evaluate_ifp_filter(self, run_dir: Path) -> dict[str, Any]:
+        """Evaluate strict reference overlap for one completed screen row."""
+        if self.ifp_filter_threshold is None:
+            return self._default_filter_result()
+
+        chain_csv = run_dir / "results" / "chain_metrics.csv"
+        if not chain_csv.exists():
+            return self._not_evaluable_filter_result("missing_chain_metrics")
+        try:
+            chain_df = pd.read_csv(chain_csv)
+        except Exception:
+            return self._not_evaluable_filter_result("malformed_chain_metrics")
+        required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
+        if chain_df.empty or not required.issubset(chain_df.columns):
+            return self._not_evaluable_filter_result("missing_ifp")
+
+        chain_df = self._select_chain_metrics_rows(chain_df)
+        ligand_rows = chain_df[
+            chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
+        ]
+        if self.ifp_ligand_chain:
+            ligand_rows = ligand_rows[
+                ligand_rows["CHAIN_ID"].astype(str) == self.ifp_ligand_chain
+            ]
+        elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
+            return self._not_evaluable_filter_result("ambiguous_ligand_chain")
+        if ligand_rows.empty:
+            return self._not_evaluable_filter_result("ligand_chain_not_found")
+
+        ligand_row = ligand_rows.iloc[0]
+        pred_ifp, parse_reason = self._parse_binary_ifp(ligand_row.get("ifp_distance"))
+        if pred_ifp is None:
+            return self._not_evaluable_filter_result(parse_reason)
+
+        ref_ifp = self._resolve_filter_reference(
+            run_dir=run_dir,
+            chain_df=chain_df,
+            ligand_row=ligand_row,
+        )
+        if ref_ifp is None:
+            return self._not_evaluable_filter_result("reference_resolution_failed")
+        if len(pred_ifp) != len(ref_ifp):
+            return self._not_evaluable_filter_result("incompatible_vector_lengths")
+        if not any(ref_ifp):
+            return self._not_evaluable_filter_result("empty_reference")
+
+        overlap = sum(p and r for p, r in zip(pred_ifp, ref_ifp)) / sum(ref_ifp)
+        passed = overlap >= self.ifp_filter_threshold
+        return {
+            "ifp_filter_pass": bool(passed),
+            "ifp_filter_status": "accepted" if passed else "rejected",
+            "ifp_filter_reason": "threshold_met" if passed else "below_threshold",
+            "ifp_filter_overlap": float(overlap),
+            "ifp_filter_threshold": self.ifp_filter_threshold,
+            "ifp_filter_reference": self.pocket_coverage_reference,
+        }
+
+    def _resolve_filter_reference(
+        self,
+        run_dir: Path,
+        chain_df: pd.DataFrame,
+        ligand_row: pd.Series,
+    ) -> list[int] | None:
+        spec = self._ifp_filter_reference_spec
+        if spec is None:
+            return None
+        if spec["kind"] == "bits":
+            return list(spec["bits"])
+
+        cif_name = ligand_row.get("cif_file")
+        if pd.isna(cif_name) or "cif_file" not in chain_df.columns:
+            return None
+        model_rows = chain_df[chain_df["cif_file"] == cif_name]
+        receptor_rows = model_rows[
+            model_rows["ENTITY_TYPE"].astype(str).str.lower() == "protein"
+        ]
+        receptor_ids = receptor_rows["CHAIN_ID"].dropna().astype(str).unique()
+        if len(receptor_ids) != 1:
+            return None
+
+        structure_path = run_dir / "results" / "structures" / str(cif_name)
+        if not structure_path.exists():
+            return None
+        try:
+            import gemmi
+
+            model = gemmi.read_structure(str(structure_path))[0]
+            receptor_chain = model[receptor_ids[0]]
+            residues = list(receptor_chain)
+            residue_order = [(" ", int(res.seqid.num), " ") for res in residues]
+            residue_names = {
+                residue_id: str(res.name)
+                for residue_id, res in zip(residue_order, residues)
+            }
+        except Exception as exc:
+            self.logger.warning("Unable to resolve filter reference from %s: %s", structure_path, exc)
+            return None
+
+        return _build_reference_ifp_from_custom(
+            spec,
+            residue_order=residue_order,
+            residue_names=residue_names,
+            logger=self.logger,
+            warn_key=f"cif={cif_name},chain={ligand_row.get('CHAIN_ID')}",
+        )
+
+    @staticmethod
+    def _parse_binary_ifp(value: Any) -> tuple[list[int] | None, str]:
+        if value is None or (not isinstance(value, (list, tuple)) and pd.isna(value)):
+            return None, "missing_ifp"
+        parsed = value
+        if isinstance(value, str):
+            if not value.strip():
+                return None, "missing_ifp"
+            try:
+                parsed = json.loads(value)
+            except (TypeError, json.JSONDecodeError):
+                return None, "malformed_ifp"
+        if not isinstance(parsed, (list, tuple)):
+            return None, "malformed_ifp"
+        if not parsed:
+            return None, "missing_ifp"
+        if any(item not in (0, 1, False, True) for item in parsed):
+            return None, "malformed_ifp"
+        return [int(item) for item in parsed], ""
+
+    @staticmethod
+    def _set_filter_dtypes(df: pd.DataFrame) -> None:
+        if "ifp_filter_pass" in df.columns:
+            df["ifp_filter_pass"] = df["ifp_filter_pass"].astype("boolean")
 
     def _collect_score_columns(self, run_dir: Path) -> dict[str, Any]:
         """Collect computed scores from per-row validate outputs."""

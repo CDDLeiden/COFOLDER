@@ -528,6 +528,21 @@ class ScreenRecipe(BaseRecipe):
             type=str,
             help='Comma-separated list of metadata fields to merge.'
         )
+        parser.add_argument(
+            "--ifp_filter_threshold",
+            type=float,
+            default=None,
+            help=(
+                "Annotate rows by distance-IFP reference overlap at this inclusive "
+                "threshold ([0, 1]); filtering is disabled when omitted."
+            ),
+        )
+        parser.add_argument(
+            "--ifp_ligand_chain",
+            type=str,
+            default=None,
+            help="Ligand chain to evaluate; required for systems with multiple ligand chains.",
+        )
 
         BaseRecipe.add_final_arguments(parser)
 
@@ -551,6 +566,8 @@ class ScreenRecipe(BaseRecipe):
             col_variable=args.col_variable,
             col_id=args.col_id,
             merge_data=args.merge_data,
+            ifp_filter_threshold=args.ifp_filter_threshold,
+            ifp_ligand_chain=args.ifp_ligand_chain,
             **BaseRecipe.common_kwargs(args),
         )
 
