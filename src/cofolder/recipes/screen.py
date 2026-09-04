@@ -11,10 +11,48 @@ from typing import Any
 import pandas as pd
 
 from cofolder.modules.input import system
+from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.runners import get_runner
+from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import read, write
 from cofolder.recipes.validate import Validate
 
 logger = logging.getLogger(__name__)
+
+
+SYSTEM_SCREEN_METRICS = (
+    "confidence_score",
+    "ptm",
+    "iptm",
+    "bias_prot_sim_train_max",
+    "bias_prot_sim_train_pairwise_max",
+    "bias_lig_sim_train_max",
+    "pocket_coverage_ref",
+    "pocket_coverage_ref_mean",
+    "pocket_coverage_custom",
+    "pocket_coverage_custom_mean",
+)
+PROTEIN_SCREEN_METRICS = (
+    "chains_ptm",
+    "bias_prot_sim_train",
+    "bias_prot_sim_train_pairwise",
+)
+LIGAND_SCREEN_METRICS = (
+    "chains_ptm",
+    "affinity_pred_value",
+    "affinity_probability_binary",
+    "pIC50",
+    "IC50_M",
+    "pIC50_kcal_per_mol",
+    "sasa",
+    "sasa_norm_heavy",
+    "ifp_distance",
+    "ifp_prolif",
+    "bias_lig_sim_train",
+    "pocket_coverage_ref",
+    "pocket_coverage_custom",
+    "ligand_pose_overlap_ref",
+)
 
 
 class Screen:
@@ -83,6 +121,18 @@ class Screen:
         }
 
         self.base_system = read.read_yaml(path=self.system_path)
+        self.base_system_obj = system.System(system=self.base_system)
+        resolve_declared_msa_paths(
+            self.base_system_obj,
+            base_dir=self.system_path.parent,
+        )
+        self.base_system = self.base_system_obj.system
+        self.runner_impl = get_runner(self.runner)
+        self.reusable_msa_dir = (
+            self.wrk_dir / "shared" / "msa" / self.runner
+            if getattr(self.runner_impl, "supports_msa_reuse", False)
+            else None
+        )
         self.logger = logging.getLogger("cofolder.screen")
 
         self._validate_config()
@@ -104,7 +154,9 @@ class Screen:
                 f"Got variable={len(self.variable_raw)} col_variable={len(self.col_variable)}."
             )
 
-    def run(self) -> None:
+    def run(self) -> pd.DataFrame:
+        """Run the screen, write both CSV summaries, and return the merged results."""
+
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         df = pd.read_csv(self.variable_csv)
 
@@ -132,6 +184,7 @@ class Screen:
             }
             detailed: dict[str, Any] = {k: row.get(k) for k in df.columns}
             detailed.update(summary)
+            self._ensure_screen_metric_schema(detailed)
             for col in self.col_variable:
                 summary[col] = row.get(col)
             for col in self.merge_data:
@@ -139,6 +192,7 @@ class Screen:
 
             self.logger.info("(%d/%d) screening %s", i, total, compound_id)
 
+            sys_obj: system.System | None = None
             try:
                 sys_obj = system.System(system=copy.deepcopy(self.base_system))
                 for path, col in zip(self.variable_paths, self.col_variable):
@@ -152,6 +206,18 @@ class Screen:
                             f"Invalid SMILES in column '{col}' for row {i} ({compound_id}): {value}"
                         )
                     sys_obj.update_system(value=value, path=path)
+
+                if self.reusable_msa_dir is not None:
+                    injected = self.runner_impl.inject_reusable_msas(
+                        sys_obj,
+                        self.reusable_msa_dir,
+                    )
+                    if injected:
+                        self.logger.info(
+                            "Reusing %d shared protein MSA(s) for %s.",
+                            injected,
+                            compound_id,
+                        )
 
                 write.write_yaml(sys_obj, path=row_system_path)
 
@@ -172,11 +238,35 @@ class Screen:
                     system_path=str(row_system_path),
                     options_path=str(self.options_path),
                     runner=self.runner,
+                    reusable_msa_dir=(
+                        str(self.reusable_msa_dir)
+                        if self.reusable_msa_dir is not None
+                        else None
+                    ),
                     **row_validate_kwargs,
                 )
                 validator.run()
+                if self.reusable_msa_dir is not None:
+                    self.runner_impl.inject_reusable_msas(
+                        sys_obj,
+                        self.reusable_msa_dir,
+                    )
+                    write.write_yaml(sys_obj, path=row_system_path)
                 detailed.update(self._collect_score_columns(run_dir=run_dir))
             except Exception as exc:
+                if self.reusable_msa_dir is not None and sys_obj is not None:
+                    try:
+                        injected = self.runner_impl.inject_reusable_msas(
+                            sys_obj,
+                            self.reusable_msa_dir,
+                        )
+                        if injected and row_system_path.exists():
+                            write.write_yaml(sys_obj, path=row_system_path)
+                    except Exception as cache_exc:
+                        self.logger.warning(
+                            "Could not update failed row YAML from reusable MSA cache: %s",
+                            cache_exc,
+                        )
                 summary["status"] = "failed"
                 summary["error_message"] = str(exc)
                 detailed["status"] = "failed"
@@ -189,7 +279,8 @@ class Screen:
         out_csv = self.wrk_dir / "screen_results.csv"
         pd.DataFrame(records).to_csv(out_csv, index=False)
         out_scores_csv = self.wrk_dir / "screen_results_with_scores.csv"
-        pd.DataFrame(records_with_scores).to_csv(out_scores_csv, index=False)
+        results_df = pd.DataFrame(records_with_scores)
+        results_df.to_csv(out_scores_csv, index=False)
 
         failures = sum(1 for r in records if r["status"] == "failed")
         successes = len(records) - failures
@@ -201,6 +292,7 @@ class Screen:
             out_csv,
             out_scores_csv,
         )
+        return results_df
 
     def _collect_score_columns(self, run_dir: Path) -> dict[str, Any]:
         """Collect computed scores from per-row validate outputs."""
@@ -225,6 +317,18 @@ class Screen:
                 cdf = pd.read_csv(chain_csv)
                 if not cdf.empty and {"CHAIN_ID", "ENTITY_TYPE"}.issubset(cdf.columns):
                     cdf = self._select_chain_metrics_rows(cdf)
+                    conf_chain_ids = {
+                        str(int(row["conf_chain_id"])): str(row["CHAIN_ID"])
+                        for _, row in cdf.iterrows()
+                        if pd.notna(row.get("conf_chain_id"))
+                        and str(row.get("CHAIN_ID", "")).strip()
+                    }
+                    observed_protein_ids = [
+                        str(row["CHAIN_ID"])
+                        for _, row in cdf.iterrows()
+                        if str(row.get("ENTITY_TYPE", "")).strip() == "protein"
+                        and str(row.get("CHAIN_ID", "")).strip()
+                    ]
                     for _, crow in cdf.iterrows():
                         chain_id = str(crow.get("CHAIN_ID", "")).strip() or "NA"
                         entity_type = str(crow.get("ENTITY_TYPE", "")).strip() or "unknown"
@@ -243,10 +347,56 @@ class Screen:
                             }:
                                 continue
                             out[f"{prefix}__{col}"] = value
+                            pair_match = re.fullmatch(r"pair_chains_iptm_(\d+)", str(col))
+                            if pair_match and pair_match.group(1) in conf_chain_ids:
+                                semantic_col = (
+                                    f"pair_chains_iptm_{conf_chain_ids[pair_match.group(1)]}"
+                                )
+                                out[f"{prefix}__{semantic_col}"] = value
+                        expected_metrics = (
+                            PROTEIN_SCREEN_METRICS
+                            if entity_type == "protein"
+                            else LIGAND_SCREEN_METRICS
+                            if entity_type == "ligand"
+                            else ()
+                        )
+                        for column in expected_metrics:
+                            out.setdefault(f"{prefix}__{column}", None)
+                        if entity_type == "ligand":
+                            for protein_id in observed_protein_ids:
+                                out.setdefault(
+                                    f"{prefix}__pair_chains_iptm_{protein_id}",
+                                    None,
+                                )
             except Exception as exc:
                 self.logger.warning("Failed reading chain metrics from %s: %s", chain_csv, exc)
 
+        self._ensure_screen_metric_schema(out)
         return out
+
+    def _ensure_screen_metric_schema(self, output: dict[str, Any]) -> None:
+        """Populate stable manuscript-facing score columns, using nulls when unavailable."""
+
+        for column in SYSTEM_SCREEN_METRICS:
+            output.setdefault(f"system__{column}", None)
+
+        chains = list(iter_system_chains(self.base_system_obj))
+        protein_ids = [chain.chain_id for chain in chains if chain.entity_type == "protein"]
+        for chain in chains:
+            prefix = f"{chain.entity_type}_{chain.chain_id}"
+            metrics: tuple[str, ...] = ()
+            if chain.entity_type == "protein":
+                metrics = PROTEIN_SCREEN_METRICS
+            elif chain.entity_type == "ligand":
+                metrics = LIGAND_SCREEN_METRICS
+            for column in metrics:
+                output.setdefault(f"{prefix}__{column}", None)
+            if chain.entity_type == "ligand":
+                for protein_id in protein_ids:
+                    output.setdefault(
+                        f"{prefix}__pair_chains_iptm_{protein_id}",
+                        None,
+                    )
 
     @staticmethod
     def _select_metrics_row(df: pd.DataFrame) -> pd.Series:

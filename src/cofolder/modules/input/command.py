@@ -124,10 +124,22 @@ class Command:
                "--seed",
                str(getattr(self, "seed", 0))]
 
-        # Include MSA server option if not defined in the system
-        if system.find_value(key="msa") is None:
+        # Include the MSA server option when at least one protein entity is
+        # unresolved. Checking entities individually also supports mixed
+        # precomputed/generated-MSA systems.
+        sequences = system.find_value(key="sequences") or []
+        missing_protein_msa = any(
+            isinstance(entry, dict)
+            and isinstance(entry.get("protein"), dict)
+            and not str(entry["protein"].get("msa") or "").strip()
+            for entry in sequences
+        )
+        if missing_protein_msa:
             cmd.append("--use_msa_server")
-            logger.info("No MSA defined in system; adding --use_msa_server to command.")
+            logger.info(
+                "At least one protein MSA is unresolved; "
+                "adding --use_msa_server to command."
+            )
 
         for item in self.options.get("options", []):
             for key, value in item.items():

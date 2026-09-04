@@ -26,6 +26,7 @@ class BaseRunner(ABC):
         entity_types=frozenset(),
         constraint_types=frozenset(),
     )
+    supports_msa_reuse = False
 
     @staticmethod
     def _distribution_installed(distribution_name: str) -> bool:
@@ -114,6 +115,22 @@ class BaseRunner(ABC):
             options_obj=options_obj,
         )
 
+    def inject_reusable_msas(self, system_obj: Any, cache_dir: Path) -> int:
+        """Inject runner-compatible cached MSAs, returning the entity count."""
+
+        return 0
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+    ) -> int:
+        """Persist runner-generated MSAs, returning the captured entity count."""
+
+        return 0
+
     @abstractmethod
     def load_options(self, options_path: Path):
         """Load any runner-specific options from disk."""
@@ -127,6 +144,7 @@ class Runner(Protocol):
     name: str
     capabilities: set[str]
     input_capabilities: RunnerInputCapabilities
+    supports_msa_reuse: bool
 
     def check_availability(self) -> tuple[bool, str | None]:
         ...
@@ -155,6 +173,18 @@ class Runner(Protocol):
         sdf_file: Path | None,
         logger: logging.Logger | None,
     ) -> RunnerPreparationResult:
+        ...
+
+    def inject_reusable_msas(self, system_obj: Any, cache_dir: Path) -> int:
+        ...
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+    ) -> int:
         ...
 
     def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:

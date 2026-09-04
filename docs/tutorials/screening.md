@@ -75,6 +75,12 @@ The screen command will process each compound sequentially. Monitor with:
 tail -f screening_output/log.log
 ```
 
+For Boltz-family runners, the first ligand also resolves any missing protein MSA.
+COFOLDER stages it in `screening_output/shared/msa/<runner>/` and injects that path into all
+later ligand systems and repeats. If `system_template.yaml` already contains an `msa`
+path, COFOLDER preserves it and skips generation. Relative paths are interpreted from
+the directory containing the original system YAML.
+
 ## Step 6: Analyze Results
 
 Results are saved in a CSV file:
@@ -90,6 +96,11 @@ top_hits = results.sort_values("system__confidence_score", ascending=False).head
 print("Top 10 Compounds:")
 print(top_hits[["compound_id", "system__confidence_score", "mw", "logp"]])
 ```
+
+The same table is returned directly when calling `Screen.run()` from Python. Its
+stable columns include model affinity/pIC50 and binding likelihood when supported,
+confidence scores, ligand SASA, distance IFPs, bias similarities, and configured
+pocket/reference metrics. Metrics that are unavailable for a runner remain empty.
 
 ## Step 7: Visualize Top Hits
 

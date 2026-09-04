@@ -15,6 +15,7 @@ import pandas as pd
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
 from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
@@ -166,6 +167,28 @@ class BoltzRunner(BaseRunner):
         "affinity_metrics_ext",
     }
     model_name: str | None = "boltz2"
+    supports_msa_reuse = True
+
+    def inject_reusable_msas(self, system_obj: Any, cache_dir: Path) -> int:
+        """Inject sequence-matched MSAs staged by an earlier screen iteration."""
+
+        return inject_cached_msas(system_obj, cache_dir)
+
+    def capture_reusable_msas(
+        self,
+        system_obj: Any,
+        *,
+        generated_dir: Path,
+        cache_dir: Path,
+    ) -> int:
+        """Stage Boltz-generated MSAs for later repeats and screen rows."""
+
+        return capture_generated_msas(
+            system_obj,
+            generated_dir=generated_dir,
+            cache_dir=cache_dir,
+            runner_name=self.name,
+        )
 
     def load_options(self, options_path: Path) -> Command:
         command = Command(options_path=str(options_path))

@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 .openfold3-cache/
+/cache/
 __marimo__/
 
 # Local BMAD and agent artifacts present in this checkout

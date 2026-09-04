@@ -1,4 +1,6 @@
 """Tests for cofolder.recipes.screen module."""
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -8,7 +10,125 @@ import yaml
 
 from cofolder.modules.input.system import System
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+from cofolder.modules.runners.contracts import (
+    RunnerExecutionResult,
+    RunnerMetricOutcome,
+    RunnerPreparationResult,
+    RunnerRuntime,
+)
+from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.recipes.screen import Screen
+
+
+class _ReusableScreenRunner:
+    name = "boltz2"
+    capabilities = {"confidence_metrics"}
+    supports_msa_reuse = True
+
+    def __init__(self, *, generate_msa=True):
+        self.msa_missing_at_run: list[bool] = []
+        self.generate_msa = generate_msa
+
+    def ensure_available(self):
+        return None
+
+    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+        return None
+
+    def load_options(self, options_path):
+        return {}
+
+    def prepare_system(self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger):
+        return RunnerPreparationResult(system_obj=system_obj, options_obj=options_obj)
+
+    def inject_reusable_msas(self, system_obj, cache_dir):
+        return inject_cached_msas(system_obj, cache_dir)
+
+    def capture_reusable_msas(self, system_obj, *, generated_dir, cache_dir):
+        return capture_generated_msas(
+            system_obj,
+            generated_dir=generated_dir,
+            cache_dir=cache_dir,
+            runner_name=self.name,
+        )
+
+    def run(self, request):
+        protein = request.system_obj.system["sequences"][0]["protein"]
+        missing = not bool(protein.get("msa"))
+        self.msa_missing_at_run.append(missing)
+        if missing and self.generate_msa:
+            msa_dir = (
+                request.repeat_dir
+                / f"boltz_results_{request.system_name}"
+                / "msa"
+            )
+            msa_dir.mkdir(parents=True, exist_ok=True)
+            (msa_dir / "generated.csv").write_text(
+                f"key,sequence\n-1,{protein['sequence']}\n",
+                encoding="utf-8",
+            )
+
+        normalized_dir = request.repeat_dir / "normalized"
+        structures_dir = normalized_dir / "structures"
+        structures_dir.mkdir(parents=True, exist_ok=True)
+        structure_name = f"{request.repeat}_{request.system_name}_model_0.cif"
+        (structures_dir / structure_name).write_text("data", encoding="utf-8")
+        system_metrics_path = normalized_dir / "system_metrics.csv"
+        chain_metrics_path = normalized_dir / "chain_metrics.csv"
+        manifest_path = normalized_dir / "manifest.json"
+        pd.DataFrame(
+            [
+                {
+                    "cif_file": structure_name,
+                    "model_name": request.system_name,
+                    "repeat": request.repeat,
+                    "diffusion_sample": 0,
+                    "ptm": 0.8,
+                    "iptm": 0.7,
+                    "confidence_score": 0.9,
+                }
+            ]
+        ).to_csv(system_metrics_path, index=False)
+        pd.DataFrame(
+            [
+                {
+                    "conf_chain_id": 0,
+                    "cif_file": structure_name,
+                    "model_name": request.system_name,
+                    "repeat": request.repeat,
+                    "diffusion_sample": 0,
+                    "chains_ptm": 0.8,
+                    "pair_chains_iptm_1": 0.7,
+                },
+                {
+                    "conf_chain_id": 1,
+                    "cif_file": structure_name,
+                    "model_name": request.system_name,
+                    "repeat": request.repeat,
+                    "diffusion_sample": 0,
+                    "chains_ptm": 0.7,
+                    "pair_chains_iptm_0": 0.7,
+                },
+            ]
+        ).to_csv(chain_metrics_path, index=False)
+        manifest_path.write_text(
+            json.dumps({"runner": self.name, "capabilities": ["confidence_metrics"]}),
+            encoding="utf-8",
+        )
+        return RunnerExecutionResult(
+            runner_name=self.name,
+            raw_output_dir=request.repeat_dir,
+            normalized_dir=normalized_dir,
+            structures_dir=structures_dir,
+            system_metrics_path=system_metrics_path,
+            chain_metrics_path=chain_metrics_path,
+            manifest_path=manifest_path,
+            capabilities=set(self.capabilities),
+            runtime=RunnerRuntime(diffusion_samples=1),
+            metric_outcomes={
+                "confidence_metrics": RunnerMetricOutcome(state="computed")
+            },
+        )
 
 
 class TestScreenInit:
@@ -66,6 +186,154 @@ class TestScreenInit:
 
 
 class TestScreenRun:
+    def test_screen_generates_msa_once_then_reuses_it_for_repeats_and_rows(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        system_path = temp_dir / "system_with_ids.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner()
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        results = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+            repeats=2,
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [True, False, False, False]
+        assert results["status"].tolist() == ["success", "success"]
+        assert results["ligand_B__pair_chains_iptm_A"].tolist() == [0.7, 0.7]
+        for row_index, compound_id in enumerate(("CMPD001", "CMPD002"), 1):
+            row_system = yaml.safe_load(
+                (
+                    temp_dir
+                    / "screen"
+                    / f"{row_index}_{compound_id}"
+                    / "screen_system.yaml"
+                ).read_text(encoding="utf-8")
+            )
+            msa_path = row_system["sequences"][0]["protein"]["msa"]
+            assert Path(msa_path).is_file()
+            assert str(temp_dir / "screen" / "shared" / "msa") in msa_path
+
+    def test_screen_preserves_precomputed_msa_without_generation(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        input_dir = temp_dir / "inputs"
+        input_dir.mkdir()
+        (input_dir / "protein.a3m").write_text(">query\nMKRAAT\n", encoding="utf-8")
+        system_path = input_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {
+                            "protein": {
+                                "id": "A",
+                                "sequence": "MKRAAT",
+                                "msa": "protein.a3m",
+                            }
+                        },
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner()
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [False, False]
+        row_system = yaml.safe_load(
+            (temp_dir / "screen" / "1_CMPD001" / "screen_system.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert row_system["sequences"][0]["protein"]["msa"] == str(
+            (input_dir / "protein.a3m").resolve()
+        )
+
+    def test_screen_does_not_retry_when_runner_omits_generated_msa(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        system_path = temp_dir / "system_with_ids.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner(generate_msa=False)
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        results = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            variable=["sequences,1,ligand,smiles"],
+            variable_csv=str(sample_csv_file),
+            col_variable=["smiles"],
+            col_id="compound_id",
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [True]
+        assert results["status"].tolist() == ["failed", "failed"]
+        assert "system__confidence_score" in results.columns
+        assert "ligand_B__ifp_distance" in results.columns
+        assert "without producing valid reusable MSAs" in results.loc[0, "error_message"]
+        assert "already attempted" in results.loc[1, "error_message"]
+
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_preserves_constraints_unrelated_to_ligand_replacement(
         self, mock_validate_run, sample_options_yaml, temp_dir
@@ -270,24 +538,41 @@ class TestScreenRun:
                         "repeat": 1,
                         "diffusion_sample": 0,
                         "confidence_score": 0.9,
+                        "bias_prot_sim_train_max": 42.0,
+                        "bias_lig_sim_train_max": 0.35,
+                        "pocket_coverage_custom_mean": 0.75,
                     }
                 ]
             ).to_csv(results_dir / "system_metrics.csv", index=False)
             pd.DataFrame(
                 [
                     {
+                        "conf_chain_id": 0,
                         "CHAIN_ID": "A",
                         "ENTITY_TYPE": "protein",
                         "repeat": 1,
                         "diffusion_sample": 0,
+                        "chains_ptm": 0.8,
+                        "pair_chains_iptm_1": 0.72,
+                        "bias_prot_sim_train": 42.0,
                         "sasa_norm_heavy": 5.1,
                     },
                     {
+                        "conf_chain_id": 1,
                         "CHAIN_ID": "B",
                         "ENTITY_TYPE": "ligand",
                         "repeat": 1,
                         "diffusion_sample": 0,
+                        "chains_ptm": 0.7,
+                        "pair_chains_iptm_0": 0.72,
                         "affinity_pred_value": 6.2,
+                        "affinity_probability_binary": 0.88,
+                        "pIC50": 6.2,
+                        "sasa": 12.5,
+                        "sasa_norm_heavy": 1.25,
+                        "ifp_distance": "[1, 0, 1]",
+                        "bias_lig_sim_train": 0.35,
+                        "pocket_coverage_custom": 0.75,
                     },
                 ]
             ).to_csv(results_dir / "chain_metrics.csv", index=False)
@@ -302,12 +587,27 @@ class TestScreenRun:
             col_id="compound_id",
             merge_data="mw",
         )
-        screener.run()
+        returned_df = screener.run()
 
         merged_df = pd.read_csv(temp_dir / "screen_results_with_scores.csv")
+        assert returned_df.columns.tolist() == merged_df.columns.tolist()
+        assert returned_df["compound_id"].tolist() == merged_df["compound_id"].tolist()
+        assert returned_df["ligand_B__affinity_pred_value"].tolist() == [6.2, 6.2]
         assert "system__confidence_score" in merged_df.columns
         assert "protein_A__sasa_norm_heavy" in merged_df.columns
         assert "ligand_B__affinity_pred_value" in merged_df.columns
+        assert "ligand_B__affinity_probability_binary" in merged_df.columns
+        assert "ligand_B__ifp_distance" in merged_df.columns
+        assert "system__bias_prot_sim_train_max" in merged_df.columns
+        assert "system__bias_lig_sim_train_max" in merged_df.columns
+        assert "ligand_B__pocket_coverage_custom" in merged_df.columns
+        assert merged_df["ligand_B__affinity_probability_binary"].tolist() == [0.88, 0.88]
+        assert merged_df["ligand_B__pair_chains_iptm_A"].tolist() == [0.72, 0.72]
+        assert merged_df["ligand_B__sasa_norm_heavy"].tolist() == [1.25, 1.25]
+        assert merged_df["ligand_B__ifp_distance"].tolist() == ["[1, 0, 1]"] * 2
+        assert merged_df["system__bias_prot_sim_train_max"].tolist() == [42.0, 42.0]
+        assert merged_df["system__bias_lig_sim_train_max"].tolist() == [0.35, 0.35]
+        assert merged_df["ligand_B__pocket_coverage_custom"].tolist() == [0.75, 0.75]
         assert "mw" in merged_df.columns
         assert "compound_id" in merged_df.columns
 

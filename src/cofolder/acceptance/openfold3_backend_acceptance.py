@@ -151,7 +151,7 @@ def _(
 def _(cache_path_default, mo):
     cache_path_input = mo.ui.text(
         value=cache_path_default,
-        placeholder="/absolute/path/to/.openfold3-cache",
+        placeholder="/absolute/path/to/cache/.openfold3-cache",
         label="OpenFold3 cache root",
         full_width=True,
     )
@@ -182,7 +182,11 @@ def _(
     setup_ready = setup_status.ready
     setup_message = setup_status.message
     openfold_cache_display = str(openfold_cache) if openfold_cache is not None else "(not configured)"
-    export_target = openfold_cache_display if openfold_cache is not None else "$PWD/.openfold3-cache"
+    export_target = (
+        openfold_cache_display
+        if openfold_cache is not None
+        else "$PWD/cache/.openfold3-cache"
+    )
     if openfold_cache is not None:
         rewrite_openfold3_options_cache_path(
             fixtures.options_path,

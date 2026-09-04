@@ -64,7 +64,7 @@ OpenFold3 additionally requires its downloaded cache and setup marker:
 
 ```bash
 python -m pip install -e ".[tutorials,openfold3]"
-export OPENFOLD_CACHE="$PWD/.openfold3-cache"
+export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 scripts/setup_openfold3.sh
 marimo edit tutorials/openfold3_system_inputs.py
 ```

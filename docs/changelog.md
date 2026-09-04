@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Screen-level reuse of fixed-protein MSAs for Boltz-family runners, plus a stable
+  manuscript-facing consolidated output schema and a DataFrame return value from
+  `Screen.run()`.
 - Runner-specific DNA, RNA, and constraint input contracts with pre-execution
   validation, OpenFold3 nucleic-acid/pocket translation, and manual backend
   acceptance fixtures.

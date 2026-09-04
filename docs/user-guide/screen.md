@@ -58,6 +58,21 @@ cofolder screen \
 If you only need pre-cofolding bias diagnostics for one system, prefer the dedicated
 [`bias`](bias.md) workflow instead of running `screen`.
 
+## Protein MSA Reuse
+
+For Boltz-family runners, `screen` resolves each missing protein MSA once and stores
+the reusable artifact under `<wrk_dir>/shared/msa/<runner>/`. The resolved MSA is injected into
+later repeats and every subsequent ligand-specific system YAML, so the MSA server is
+not called again for the fixed protein system.
+
+If the original system YAML already supplies `msa` for a protein, that file is used
+directly and the server is not called for that protein. Relative MSA paths are resolved
+relative to the original system YAML before row-specific YAML files are written. A
+system may mix supplied and missing MSAs; only missing protein MSAs are generated.
+
+The shared cache is matched by protein sequence and includes a manifest. A missing,
+corrupt, or sequence-mismatched cached artifact is not silently injected.
+
 ## Output
 
 `screen` writes:
@@ -82,6 +97,15 @@ Summary columns include:
 - run metadata (`index`, `status`, `error_message`, `run_dir`)
 - extracted system-level score columns prefixed as `system__...`
 - extracted chain-level score columns prefixed as `<entity>_<chain_id>__...`
+
+The consolidated schema always includes the manuscript-facing confidence, affinity,
+SASA, distance-IFP, training-set-proximity, and pocket-coverage columns. Unsupported or
+unconfigured metrics are represented by empty values rather than omitted columns.
+Pairwise confidence retains the runner's numeric-chain column and also exposes a
+chain-ID alias such as `ligand_B__pair_chains_iptm_A`.
+
+When used from Python, `Screen.run()` returns the same merged results as a
+`pandas.DataFrame` after writing the CSV files.
 
 ## Failure Behavior
 

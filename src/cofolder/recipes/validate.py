@@ -15,6 +15,11 @@ from cofolder.modules.runners import (
     merge_runner_runtime,
 )
 from cofolder.modules.runners.validators import validate_runner_bundle
+from cofolder.modules.runners.msa import (
+    resolve_declared_msa_paths,
+    sequence_key,
+    unresolved_protein_sequences,
+)
 from cofolder.recipes.bias import BiasAssessmentWorkflow
 from cofolder.modules.utils import gather, helpers, read, write
 from cofolder.modules.utils.timing import DebugTimingCollector
@@ -72,6 +77,7 @@ class Validate(object):
         reference_path: str | None = None,
         pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
+        reusable_msa_dir: str | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -105,6 +111,7 @@ class Validate(object):
         self.reference_path = Path(reference_path) if reference_path else None
         self.pocket_coverage_reference = pocket_coverage_reference
         self.reproduction_metrics = set(reproduction_metrics or DEFAULT_REPRODUCTION_METRICS)
+        self.reusable_msa_dir = Path(reusable_msa_dir) if reusable_msa_dir else None
 
         if self.reference_path is not None:
             if not self.reference_path.exists():
@@ -125,6 +132,10 @@ class Validate(object):
 
         self._system = read.read_yaml(path=self.system_path)
         self.base_system = system.System(system=self._system)
+        resolve_declared_msa_paths(
+            self.base_system,
+            base_dir=self.system_path.parent,
+        )
 
         self.logger.debug(
             "Initializing Validate with parameters: %s",
@@ -149,6 +160,7 @@ class Validate(object):
                 "pocket_coverage_reference": self.pocket_coverage_reference,
                 "reproduction_metrics": sorted(self.reproduction_metrics),
                 "scoring_functions": sorted(self.scoring_functions),
+                "reusable_msa_dir": self.reusable_msa_dir,
             },
         )
 
@@ -189,6 +201,19 @@ class Validate(object):
                 runner_options = self.runner.load_options(self.options_path)
 
             self.sys = system.System(system=copy.deepcopy(self.base_system.system))
+            if self.reusable_msa_dir is not None and getattr(
+                self.runner, "supports_msa_reuse", False
+            ):
+                injected = self.runner.inject_reusable_msas(
+                    self.sys,
+                    self.reusable_msa_dir,
+                )
+                if injected:
+                    self.logger.info(
+                        "Injected %d reusable protein MSA(s) from %s.",
+                        injected,
+                        self.reusable_msa_dir,
+                    )
             with self._debug_timer("runner.system.validate.preparation_input"):
                 self.runner.validate_system(
                     self.sys,
@@ -247,7 +272,59 @@ class Validate(object):
                     label_prefix=f"repeat_{i}",
                     runtime=preparation_runtime,
                 )
-                runner_results.append(self.runner.run(request))
+                unresolved_before_run = []
+                if self.reusable_msa_dir is not None and getattr(
+                    self.runner, "supports_msa_reuse", False
+                ):
+                    unresolved_before_run = unresolved_protein_sequences(self.sys)
+                    if unresolved_before_run:
+                        self.reusable_msa_dir.mkdir(parents=True, exist_ok=True)
+                        attempt_markers = [
+                            self.reusable_msa_dir
+                            / f".generation_attempted_{sequence_key(sequence)[:16]}"
+                            for sequence in unresolved_before_run
+                        ]
+                        if any(marker.exists() for marker in attempt_markers):
+                            raise RuntimeError(
+                                "Protein MSA generation was already attempted for this screen, "
+                                "but no valid reusable artifact resolved every protein. "
+                                "Refusing to call the MSA server again silently."
+                            )
+                        for marker in attempt_markers:
+                            marker.write_text(
+                                "MSA generation was requested once by the screen workflow.\n",
+                                encoding="utf-8",
+                            )
+                try:
+                    result = self.runner.run(request)
+                finally:
+                    if self.reusable_msa_dir is not None and getattr(
+                        self.runner, "supports_msa_reuse", False
+                    ):
+                        captured = self.runner.capture_reusable_msas(
+                            self.sys,
+                            generated_dir=request.repeat_dir,
+                            cache_dir=self.reusable_msa_dir,
+                        )
+                        injected = self.runner.inject_reusable_msas(
+                            self.sys,
+                            self.reusable_msa_dir,
+                        )
+                        if captured or injected:
+                            write.write_yaml(self.sys, path=yaml_path)
+                            self.logger.info(
+                                "Staged %d and injected %d reusable protein MSA(s); "
+                                "later repeats will not call the MSA server.",
+                                captured,
+                                injected,
+                            )
+                        if unresolved_before_run and unresolved_protein_sequences(self.sys):
+                            raise RuntimeError(
+                                "The runner completed without producing valid reusable MSAs "
+                                "for every unresolved protein. Refusing to recalculate them "
+                                "on a later repeat or ligand."
+                            )
+                runner_results.append(result)
 
             selected_runner_metric_groups = self.scoring_functions & RUNNER_METRIC_GROUPS
             requested_runner_metric_groups = self._required_runner_metric_groups()
