@@ -52,6 +52,7 @@ def _(code_block, format_command, mo, options_path, read_text, screen_csv, syste
         workspace,
         "--runner",
         "boltz2",
+        "--cluster_ifps",
     ]
     mo.md(
         f"""

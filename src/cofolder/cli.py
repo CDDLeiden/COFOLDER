@@ -543,6 +543,21 @@ class ScreenRecipe(BaseRecipe):
             default=None,
             help="Ligand chain to evaluate; required for systems with multiple ligand chains.",
         )
+        parser.add_argument(
+            "--cluster_ifps",
+            action="store_true",
+            default=False,
+            help="Cluster valid binary distance IFPs after screening.",
+        )
+        parser.add_argument(
+            "--ifp_cluster_similarity_threshold",
+            type=float,
+            default=0.5,
+            help=(
+                "Minimum Jaccard similarity for the average-linkage cluster cut "
+                "([0, 1]; default: 0.5)."
+            ),
+        )
 
         BaseRecipe.add_final_arguments(parser)
 
@@ -568,6 +583,8 @@ class ScreenRecipe(BaseRecipe):
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
             ifp_ligand_chain=args.ifp_ligand_chain,
+            cluster_ifps=args.cluster_ifps,
+            ifp_cluster_similarity_threshold=args.ifp_cluster_similarity_threshold,
             **BaseRecipe.common_kwargs(args),
         )
 

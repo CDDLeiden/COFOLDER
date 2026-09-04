@@ -199,6 +199,31 @@ class TestCommandBuilders:
         assert "--col_variable" in command
         assert "--merge_data" in command
 
+    def test_assert_screen_msa_reused_once_checks_every_row(self, temp_dir):
+        screen_dir = temp_dir / "screen"
+        shared_dir = screen_dir / "shared" / "msa" / "boltz2"
+        shared_dir.mkdir(parents=True)
+        msa_path = shared_dir / "protein.csv"
+        msa_path.write_text("key,sequence\n-1,AAAA\n", encoding="utf-8")
+        (shared_dir / ".generation_attempted_key").write_text("attempted\n")
+        (shared_dir / "manifest.json").write_text(
+            json.dumps({"proteins": {"key": {"path": msa_path.name}}}),
+            encoding="utf-8",
+        )
+        for position in (1, 2):
+            row_dir = screen_dir / f"{position}_compound"
+            row_dir.mkdir(parents=True)
+            (row_dir / "screen_system.yaml").write_text(
+                yaml.safe_dump(
+                    {"sequences": [{"protein": {"sequence": "AAAA", "msa": str(msa_path)}}]}
+                ),
+                encoding="utf-8",
+            )
+
+        message = shared.assert_screen_msa_reused_once(screen_dir, "boltz2")
+
+        assert message == "One MSA-server attempt supplied 2 screen rows."
+
     def test_build_oracle_command_contains_supported_metric(self, temp_dir):
         command = shared.build_oracle_command(
             runner="boltz-community",

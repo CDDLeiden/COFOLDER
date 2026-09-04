@@ -102,6 +102,32 @@ stable columns include model affinity/pIC50 and binding likelihood when supporte
 confidence scores, ligand SASA, distance IFPs, bias similarities, and configured
 pocket/reference metrics. Metrics that are unavailable for a runner remain empty.
 
+### Discover contact-pattern families without a reference
+
+Add clustering when no experimental pose or predefined pocket is available:
+
+```bash
+cofolder screen \
+  -s system_template.yaml -o screening_options.yaml -c library.csv \
+  --col_id compound_id \
+  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --scoring_functions confidence_metrics affinity_metrics affinity_metrics_ext \
+    sasa sasa_normalized ifp_distance \
+  --cluster_ifps \
+  --ifp_cluster_similarity_threshold 0.5 \
+  -w ./screening_output
+```
+
+Read `ifp_cluster_summary.csv` to inspect cluster sizes, member IDs, medoids,
+consensus fingerprints, and within-cluster Jaccard similarity. The row-level
+`ifp_cluster_id` is also present in both consolidated screening CSVs. This workflow
+does not need `--reference_path` or `--pocket_coverage_reference`.
+
+Reference-overlap filtering is a separate, non-destructive decision layer. It marks
+every result as accepted, rejected, not evaluable, or not applied and never removes
+predictions. You may enable filtering and clustering together when both reference
+agreement and reference-free contact-pattern diversity matter.
+
 ## Step 7: Visualize Top Hits
 
 ```python

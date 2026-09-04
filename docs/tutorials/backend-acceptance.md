@@ -185,6 +185,12 @@ For `openfold3`, the positive path is:
 - `boltz1`: `validate` and `screen` should warn that affinity scoring groups are unsupported while leaving downstream affinity-related columns present-but-empty; `oracle` should use `confidence_score` as the supported positive-path metric.
 - `openfold3`: `validate`, `screen`, and `oracle` should produce populated confidence outputs, including OpenFold3-native confidence fields. This lane does not request affinity groups, and it must not imply that structural-confidence outputs are affinity proxies.
 
+The Boltz2 screen cell additionally requests SASA and distance IFPs, enables IFP
+clustering, checks the manuscript-facing confidence/affinity/SASA/IFP columns, and
+requires `ifp_cluster_summary.csv`. It also verifies that exactly one fixed-protein
+MSA generation attempt populated the shared manifest and that every ligand row YAML
+uses that same staged artifact.
+
 Keep scientific wording disciplined when reviewing these outputs:
 
 - validation metrics, confidence metrics, and affinity metrics are distinct concepts

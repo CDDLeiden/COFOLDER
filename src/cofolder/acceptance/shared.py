@@ -28,6 +28,18 @@ AFFINITY_COLUMNS = (
     "pIC50_kcal_per_mol",
 )
 SCREEN_AFFINITY_COLUMNS = tuple(f"ligand_B__{column}" for column in AFFINITY_COLUMNS)
+SCREEN_MANUSCRIPT_COLUMNS = (
+    "system__confidence_score",
+    "system__ptm",
+    "system__iptm",
+    "ligand_B__pair_chains_iptm_A",
+    "ligand_B__affinity_pred_value",
+    "ligand_B__affinity_probability_binary",
+    "ligand_B__pIC50",
+    "ligand_B__sasa",
+    "ligand_B__sasa_norm_heavy",
+    "ligand_B__ifp_distance",
+)
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
 _BACKEND_INSTALL_COMMANDS = {
     "boltz1": 'pip install "cofolder[acceptance,boltz1]"',
@@ -49,7 +61,14 @@ _BACKEND_ORACLE_SCORING = {
 }
 _BACKEND_ACCEPTANCE_SCORING = {
     "boltz1": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
-    "boltz2": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "boltz2": [
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+        "ifp_distance",
+        "sasa",
+        "sasa_normalized",
+    ],
     "boltz-community": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
     "openfold3": ["confidence_metrics"],
 }
@@ -204,6 +223,49 @@ def assert_runner_available(runner: str) -> str:
             f"Expected a clean {runner} environment before running expensive acceptance cells. {detail}"
         )
     return message or f"Runner '{runner}' is available."
+
+
+def assert_screen_msa_reused_once(screen_dir: Path, runner: str) -> str:
+    """Verify one fixed-protein generation attempt and reuse in every row YAML."""
+
+    shared_dir = screen_dir / "shared" / "msa" / runner
+    attempt_markers = sorted(shared_dir.glob(".generation_attempted_*"))
+    if len(attempt_markers) != 1:
+        raise AssertionError(
+            "Expected exactly one fixed-protein MSA-server generation attempt, "
+            f"found {len(attempt_markers)} markers in {shared_dir}."
+        )
+    manifest_path = shared_dir / "manifest.json"
+    assert_file_exists(manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    proteins = manifest.get("proteins", {})
+    if len(proteins) != 1:
+        raise AssertionError(
+            f"Expected one reusable protein MSA manifest entry, found {len(proteins)}."
+        )
+
+    row_yamls = sorted(screen_dir.glob("[0-9]*_*/screen_system.yaml"))
+    if len(row_yamls) < 2:
+        raise AssertionError("Expected at least two completed screen row YAMLs.")
+    staged_paths: set[str] = set()
+    for row_yaml in row_yamls:
+        payload = yaml.safe_load(row_yaml.read_text(encoding="utf-8"))
+        proteins_in_row = [
+            entry["protein"]
+            for entry in payload.get("sequences", [])
+            if isinstance(entry, dict) and isinstance(entry.get("protein"), dict)
+        ]
+        if len(proteins_in_row) != 1 or not proteins_in_row[0].get("msa"):
+            raise AssertionError(f"Expected one resolved protein MSA in {row_yaml}.")
+        msa_path = Path(str(proteins_in_row[0]["msa"])).resolve()
+        if not msa_path.is_file() or shared_dir.resolve() not in msa_path.parents:
+            raise AssertionError(f"Row YAML does not use the shared MSA artifact: {row_yaml}.")
+        staged_paths.add(str(msa_path))
+    if len(staged_paths) != 1:
+        raise AssertionError(
+            f"Expected every screen row to reuse one MSA artifact, found {len(staged_paths)}."
+        )
+    return f"One MSA-server attempt supplied {len(row_yamls)} screen rows."
 
 
 def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None) -> str:

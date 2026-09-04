@@ -246,6 +246,8 @@ class TestScreenRecipe:
             "--col_variable", "ccd",
             "--ifp_filter_threshold", "0.75",
             "--ifp_ligand_chain", "B",
+            "--cluster_ifps",
+            "--ifp_cluster_similarity_threshold", "0.8",
         ])
 
         assert args.system_path == "system.yaml"
@@ -253,6 +255,8 @@ class TestScreenRecipe:
         assert args.col_variable == ["smiles", "ccd"]
         assert args.ifp_filter_threshold == 0.75
         assert args.ifp_ligand_chain == "B"
+        assert args.cluster_ifps is True
+        assert args.ifp_cluster_similarity_threshold == 0.8
         assert args.scoring_functions is None
 
     def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):

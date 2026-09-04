@@ -12,12 +12,16 @@ from typing import Any
 
 import pandas as pd
 
-from cofolder.modules.input import system
-from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.analytics.ifp_clustering import (
+    SUMMARY_COLUMNS as IFP_CLUSTER_SUMMARY_COLUMNS,
+)
+from cofolder.modules.analytics.ifp_clustering import cluster_binary_ifps
 from cofolder.modules.analytics.reproduction import (
     _build_reference_ifp_from_custom,
     _parse_custom_pocket_reference,
 )
+from cofolder.modules.input import system
+from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import get_runner
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import read, write
@@ -62,7 +66,14 @@ LIGAND_SCREEN_METRICS = (
 
 
 class Screen:
-    """Run Validate for each molecule row in a CSV by adapting system.yaml."""
+    """Run Validate for each CSV row and consolidate optional IFP analyses.
+
+    ``cluster_ifps`` applies deterministic average-linkage clustering to compatible
+    binary distance IFPs after prediction. ``ifp_cluster_similarity_threshold`` is
+    the inclusive Jaccard-similarity cut and defaults to ``0.5``. Both consolidated
+    CSVs always contain cluster ID/status columns; an enabled run additionally writes
+    ``ifp_cluster_summary.csv``.
+    """
 
     def __init__(
         self,
@@ -94,6 +105,8 @@ class Screen:
         reproduction_metrics: list[str] | None = None,
         ifp_filter_threshold: float | None = None,
         ifp_ligand_chain: str | None = None,
+        cluster_ifps: bool = False,
+        ifp_cluster_similarity_threshold: float = 0.5,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -110,6 +123,8 @@ class Screen:
             str(ifp_ligand_chain).strip() if ifp_ligand_chain is not None else None
         )
         self.pocket_coverage_reference = pocket_coverage_reference
+        self.cluster_ifps = bool(cluster_ifps)
+        self.ifp_cluster_similarity_threshold = ifp_cluster_similarity_threshold
         self._ifp_filter_reference_spec: dict[str, Any] | None = None
 
         self.variable_paths = [self._parse_path(v) for v in self.variable_raw]
@@ -168,7 +183,34 @@ class Screen:
                 f"Got variable={len(self.variable_raw)} col_variable={len(self.col_variable)}."
             )
 
+        try:
+            self.ifp_cluster_similarity_threshold = float(
+                self.ifp_cluster_similarity_threshold
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "--ifp_cluster_similarity_threshold must be a number in [0, 1]."
+            ) from exc
+        if (
+            not math.isfinite(self.ifp_cluster_similarity_threshold)
+            or not 0 <= self.ifp_cluster_similarity_threshold <= 1
+        ):
+            raise ValueError("--ifp_cluster_similarity_threshold must be in [0, 1].")
+
+        scoring_functions = self.validate_kwargs.get("scoring_functions")
+        if (
+            self.cluster_ifps
+            and scoring_functions is not None
+            and "ifp_distance" not in scoring_functions
+        ):
+            raise ValueError(
+                "--cluster_ifps requires distance IFP scoring; include "
+                "'ifp_distance' in --scoring_functions."
+            )
+
         if self.ifp_filter_threshold is None:
+            if self.cluster_ifps:
+                self._validate_ifp_ligand_selection("--cluster_ifps")
             return
 
         try:
@@ -178,7 +220,6 @@ class Screen:
         if not math.isfinite(self.ifp_filter_threshold) or not 0 <= self.ifp_filter_threshold <= 1:
             raise ValueError("--ifp_filter_threshold must be in [0, 1].")
 
-        scoring_functions = self.validate_kwargs.get("scoring_functions")
         if scoring_functions is not None and "ifp_distance" not in scoring_functions:
             raise ValueError(
                 "--ifp_filter_threshold requires distance IFP scoring; include "
@@ -186,12 +227,16 @@ class Screen:
             )
 
         self._validate_filter_reference()
+        self._validate_ifp_ligand_selection("--ifp_filter_threshold")
+
+    def _validate_ifp_ligand_selection(self, option: str) -> None:
         ligand_count = self._configured_ligand_count()
         if ligand_count == 0:
-            raise ValueError("--ifp_filter_threshold requires a system containing a ligand.")
+            raise ValueError(f"{option} requires a system containing a ligand.")
         if ligand_count > 1 and not self.ifp_ligand_chain:
             raise ValueError(
-                "--ifp_ligand_chain is required when the system contains multiple ligand chains."
+                f"--ifp_ligand_chain is required with {option} when the system "
+                "contains multiple ligand chains."
             )
 
     def _validate_filter_reference(self) -> None:
@@ -261,6 +306,8 @@ class Screen:
             detailed: dict[str, Any] = {k: row.get(k) for k in df.columns}
             detailed.update(summary)
             self._ensure_screen_metric_schema(detailed)
+            detailed.update(self._default_cluster_result())
+            summary.update(self._default_cluster_result())
             for col in self.col_variable:
                 summary[col] = row.get(col)
             for col in self.merge_data:
@@ -359,12 +406,14 @@ class Screen:
             records.append(summary)
             records_with_scores.append(detailed)
 
-        out_csv = self.wrk_dir / "screen_results.csv"
         summary_df = pd.DataFrame(records)
+        results_df = pd.DataFrame(records_with_scores)
+        self._apply_ifp_clustering(summary_df, results_df)
+
+        out_csv = self.wrk_dir / "screen_results.csv"
         self._set_filter_dtypes(summary_df)
         summary_df.to_csv(out_csv, index=False)
         out_scores_csv = self.wrk_dir / "screen_results_with_scores.csv"
-        results_df = pd.DataFrame(records_with_scores)
         self._set_filter_dtypes(results_df)
         results_df.to_csv(out_scores_csv, index=False)
 
@@ -379,6 +428,83 @@ class Screen:
             out_scores_csv,
         )
         return results_df
+
+    def _default_cluster_result(self) -> dict[str, Any]:
+        return {
+            "ifp_cluster_id": None,
+            "ifp_cluster_status": (
+                "not_evaluable" if self.cluster_ifps else "not_applied"
+            ),
+        }
+
+    def _apply_ifp_clustering(
+        self,
+        summary_df: pd.DataFrame,
+        results_df: pd.DataFrame,
+    ) -> None:
+        """Annotate both outputs and write a deterministic cluster summary."""
+
+        if not self.cluster_ifps:
+            return
+
+        parsed_rows: list[tuple[int, list[int], str]] = []
+        expected_width: int | None = None
+        for position, row in summary_df.iterrows():
+            if row.get("status") != "success":
+                continue
+            fingerprint, _ = self._load_selected_ligand_ifp(Path(row["run_dir"]))
+            if fingerprint is None:
+                continue
+            if expected_width is None:
+                expected_width = len(fingerprint)
+            if len(fingerprint) != expected_width:
+                continue
+            parsed_rows.append((position, fingerprint, str(row[self.col_id])))
+
+        if parsed_rows:
+            clustered = cluster_binary_ifps(
+                [row[1] for row in parsed_rows],
+                [row[2] for row in parsed_rows],
+                similarity_threshold=self.ifp_cluster_similarity_threshold,
+            )
+            for (position, _, _), cluster_id in zip(
+                parsed_rows, clustered.cluster_ids
+            ):
+                for frame in (summary_df, results_df):
+                    frame.at[position, "ifp_cluster_id"] = cluster_id
+                    frame.at[position, "ifp_cluster_status"] = "clustered"
+            cluster_summary = clustered.summary
+        else:
+            cluster_summary = pd.DataFrame(columns=IFP_CLUSTER_SUMMARY_COLUMNS)
+
+        cluster_summary.to_csv(self.wrk_dir / "ifp_cluster_summary.csv", index=False)
+
+    def _load_selected_ligand_ifp(
+        self, run_dir: Path
+    ) -> tuple[list[int] | None, str]:
+        chain_csv = run_dir / "results" / "chain_metrics.csv"
+        if not chain_csv.exists():
+            return None, "missing_chain_metrics"
+        try:
+            chain_df = pd.read_csv(chain_csv)
+        except Exception:
+            return None, "malformed_chain_metrics"
+        required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
+        if chain_df.empty or not required.issubset(chain_df.columns):
+            return None, "missing_ifp"
+        chain_df = self._select_chain_metrics_rows(chain_df)
+        ligand_rows = chain_df[
+            chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
+        ]
+        if self.ifp_ligand_chain:
+            ligand_rows = ligand_rows[
+                ligand_rows["CHAIN_ID"].astype(str) == self.ifp_ligand_chain
+            ]
+        elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
+            return None, "ambiguous_ligand_chain"
+        if ligand_rows.empty:
+            return None, "ligand_chain_not_found"
+        return self._parse_binary_ifp(ligand_rows.iloc[0].get("ifp_distance"))
 
     def _default_filter_result(self) -> dict[str, Any]:
         if self.ifp_filter_threshold is not None:
