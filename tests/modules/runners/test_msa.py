@@ -9,8 +9,8 @@ from cofolder.modules.input.system import System
 from cofolder.modules.runners.msa import (
     capture_generated_msas,
     inject_cached_msas,
+    msa_cache_key,
     resolve_declared_msa_paths,
-    sequence_key,
 )
 
 
@@ -27,12 +27,15 @@ def test_capture_and_inject_generated_csv_msa(temp_dir):
         system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
     )
 
-    assert capture_generated_msas(
-        source,
-        generated_dir=repeat_dir,
-        cache_dir=cache_dir,
-        runner_name="boltz2",
-    ) == 1
+    assert (
+        capture_generated_msas(
+            source,
+            generated_dir=repeat_dir,
+            cache_dir=cache_dir,
+            runner_name="boltz2",
+        )
+        == 1
+    )
 
     target = System(
         system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
@@ -40,7 +43,51 @@ def test_capture_and_inject_generated_csv_msa(temp_dir):
     assert inject_cached_msas(target, cache_dir) == 1
     msa_path = target.system["sequences"][0]["protein"]["msa"]
     assert msa_path.startswith(str(cache_dir.resolve()))
-    assert json.loads((cache_dir / "manifest.json").read_text())["runner"] == "boltz2"
+    manifest = json.loads((cache_dir / "manifest.json").read_text())
+    assert manifest["runner"] == "boltz2"
+    assert manifest["version"] == 2
+
+
+def test_cache_identity_includes_msa_generation_settings(temp_dir):
+    generated_dir = temp_dir / "repeat" / "msa"
+    generated_dir.mkdir(parents=True)
+    (generated_dir / "generated.csv").write_text(
+        "key,sequence\n-1,MKRAAT\n",
+        encoding="utf-8",
+    )
+    cache_dir = temp_dir / "shared" / "msa" / "boltz2"
+    source = System(
+        system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
+    )
+    greedy = {"msa_pairing_strategy": "greedy", "max_msa_seqs": 8192}
+    complete = {"msa_pairing_strategy": "complete", "max_msa_seqs": 8192}
+
+    assert (
+        capture_generated_msas(
+            source,
+            generated_dir=generated_dir,
+            cache_dir=cache_dir,
+            runner_name="boltz2",
+            settings=greedy,
+        )
+        == 1
+    )
+
+    incompatible = System(
+        system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
+    )
+    assert inject_cached_msas(incompatible, cache_dir, settings=complete) == 0
+    assert "msa" not in incompatible.system["sequences"][0]["protein"]
+
+    compatible = System(
+        system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
+    )
+    assert inject_cached_msas(compatible, cache_dir, settings=greedy) == 1
+    entry = next(
+        iter(json.loads((cache_dir / "manifest.json").read_text())["proteins"].values())
+    )
+    assert entry["settings"] == greedy
+    assert entry["settings_sha256"]
 
 
 def test_mixed_precomputed_and_generated_msas_only_injects_missing_entity(temp_dir):
@@ -62,12 +109,15 @@ def test_mixed_precomputed_and_generated_msas_only_injects_missing_entity(temp_d
         }
     )
 
-    assert capture_generated_msas(
-        target,
-        generated_dir=generated_dir,
-        cache_dir=cache_dir,
-        runner_name="boltz2",
-    ) == 1
+    assert (
+        capture_generated_msas(
+            target,
+            generated_dir=generated_dir,
+            cache_dir=cache_dir,
+            runner_name="boltz2",
+        )
+        == 1
+    )
     assert inject_cached_msas(target, cache_dir) == 1
     assert target.system["sequences"][0]["protein"]["msa"] == str(supplied)
     assert Path(target.system["sequences"][1]["protein"]["msa"]).is_file()
@@ -82,11 +132,7 @@ def test_corrupt_or_sequence_mismatched_cached_msa_is_not_injected(temp_dir):
         json.dumps(
             {
                 "version": 1,
-                "proteins": {
-                    sequence_key("MKRAAT"): {
-                        "path": cached.name
-                    }
-                },
+                "proteins": {msa_cache_key("MKRAAT"): {"path": cached.name}},
             }
         ),
         encoding="utf-8",

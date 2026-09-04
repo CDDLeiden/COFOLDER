@@ -126,6 +126,29 @@ def test_parse_boltz_stage_timings_ignores_incomplete_msa_window():
     assert out["boltz.affinity_prediction"] == 5.0
 
 
+def test_msa_reuse_settings_include_generation_options_and_backend_version(monkeypatch):
+    runner = Boltz2Runner()
+    options = Command(
+        options={
+            "options": [
+                {"msa_server_url": "https://msa.example.test"},
+                {"msa_pairing_strategy": "complete"},
+                {"max_msa_seqs": 4096},
+                {"msa_server_password": "must-not-be-persisted"},
+                {"diffusion_samples": 2},
+            ]
+        }
+    )
+    monkeypatch.setattr(runner, "get_distribution_version", lambda name: "2.2.1")
+
+    assert runner.msa_reuse_settings(options) == {
+        "msa_server_url": "https://msa.example.test",
+        "msa_pairing_strategy": "complete",
+        "max_msa_seqs": 4096,
+        "backend_version": "2.2.1",
+    }
+
+
 class _MockSystem:
     def __init__(self):
         self._data = {

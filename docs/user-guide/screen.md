@@ -143,8 +143,10 @@ directly and the server is not called for that protein. Relative MSA paths are r
 relative to the original system YAML before row-specific YAML files are written. A
 system may mix supplied and missing MSAs; only missing protein MSAs are generated.
 
-The shared cache is matched by protein sequence and includes a manifest. A missing,
-corrupt, or sequence-mismatched cached artifact is not silently injected.
+The shared cache is matched by runner, protein sequence, and MSA-generation settings
+(server URL, pairing strategy, maximum MSA depth, and backend version), and includes
+a manifest. Credentials are not persisted. A missing, corrupt, sequence-mismatched,
+or settings-incompatible cached artifact is not silently injected.
 
 ## Output
 

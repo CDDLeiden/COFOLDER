@@ -9,13 +9,11 @@ import subprocess
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Iterable
-from typing import Mapping
+from typing import Iterable, Mapping
 
 import yaml
 
 from cofolder.modules.runners import get_runner
-
 
 PACKAGE_NAME = "cofolder.acceptance"
 DATA_PACKAGE = f"{PACKAGE_NAME}.data"
@@ -39,6 +37,15 @@ SCREEN_MANUSCRIPT_COLUMNS = (
     "ligand_B__sasa",
     "ligand_B__sasa_norm_heavy",
     "ligand_B__ifp_distance",
+    "system__bias_prot_sim_train_max",
+    "system__bias_lig_sim_train_max",
+    "protein_A__bias_prot_sim_train",
+    "ligand_B__bias_lig_sim_train",
+    "system__pocket_coverage_custom",
+    "system__pocket_coverage_custom_mean",
+    "ligand_B__pocket_coverage_custom",
+    "ifp_filter_pass",
+    "ifp_filter_overlap",
 )
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
 _BACKEND_INSTALL_COMMANDS = {
@@ -69,7 +76,11 @@ _BACKEND_ACCEPTANCE_SCORING = {
         "sasa",
         "sasa_normalized",
     ],
-    "boltz-community": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "boltz-community": [
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+    ],
     "openfold3": ["confidence_metrics"],
 }
 _BACKEND_OPTIONS_RESOURCES = {
@@ -86,6 +97,8 @@ class AcceptanceInputs:
     system_screen_path: Path
     options_path: Path
     ligand_csv_path: Path
+    protein_training_data_path: Path
+    ligand_training_data_path: Path
     nucleic_acid_system_path: Path
     constrained_system_paths: dict[str, Path]
 
@@ -136,9 +149,21 @@ def materialize_acceptance_inputs(
 ) -> AcceptanceInputs:
     target_dir.mkdir(parents=True, exist_ok=True)
     system_path = _write_package_file("system.yaml", target_dir / "system.yaml")
-    system_screen_path = _write_package_file("system_screen.yaml", target_dir / "system_screen.yaml")
-    options_path = _write_package_file(options_resource, target_dir / "options_acceptance.yaml")
-    ligand_csv_path = _write_package_file("ligand_screen.csv", target_dir / "ligand_screen.csv")
+    system_screen_path = _write_package_file(
+        "system_screen.yaml", target_dir / "system_screen.yaml"
+    )
+    options_path = _write_package_file(
+        options_resource, target_dir / "options_acceptance.yaml"
+    )
+    ligand_csv_path = _write_package_file(
+        "ligand_screen.csv", target_dir / "ligand_screen.csv"
+    )
+    protein_training_data_path = _write_package_file(
+        "protein_training_data.csv", target_dir / "protein_training_data.csv"
+    )
+    ligand_training_data_path = _write_package_file(
+        "ligand_training_data.csv", target_dir / "ligand_training_data.csv"
+    )
     nucleic_acid_system_path = _write_package_file(
         "system_nucleic_acid.yaml", target_dir / "system_nucleic_acid.yaml"
     )
@@ -159,6 +184,8 @@ def materialize_acceptance_inputs(
         system_screen_path=system_screen_path,
         options_path=options_path,
         ligand_csv_path=ligand_csv_path,
+        protein_training_data_path=protein_training_data_path,
+        ligand_training_data_path=ligand_training_data_path,
         nucleic_acid_system_path=nucleic_acid_system_path,
         constrained_system_paths=constrained_system_paths,
     )
@@ -238,10 +265,19 @@ def assert_screen_msa_reused_once(screen_dir: Path, runner: str) -> str:
     manifest_path = shared_dir / "manifest.json"
     assert_file_exists(manifest_path)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("version") != 2:
+        raise AssertionError(
+            "Expected a settings-aware reusable MSA manifest with version 2."
+        )
     proteins = manifest.get("proteins", {})
     if len(proteins) != 1:
         raise AssertionError(
             f"Expected one reusable protein MSA manifest entry, found {len(proteins)}."
+        )
+    entry = next(iter(proteins.values()))
+    if not isinstance(entry, dict) or not entry.get("settings_sha256"):
+        raise AssertionError(
+            "Expected the reusable MSA manifest entry to include its settings identity."
         )
 
     row_yamls = sorted(screen_dir.glob("[0-9]*_*/screen_system.yaml"))
@@ -259,7 +295,9 @@ def assert_screen_msa_reused_once(screen_dir: Path, runner: str) -> str:
             raise AssertionError(f"Expected one resolved protein MSA in {row_yaml}.")
         msa_path = Path(str(proteins_in_row[0]["msa"])).resolve()
         if not msa_path.is_file() or shared_dir.resolve() not in msa_path.parents:
-            raise AssertionError(f"Row YAML does not use the shared MSA artifact: {row_yaml}.")
+            raise AssertionError(
+                f"Row YAML does not use the shared MSA artifact: {row_yaml}."
+            )
         staged_paths.add(str(msa_path))
     if len(staged_paths) != 1:
         raise AssertionError(
@@ -301,13 +339,19 @@ def assert_chain_ids(path: Path, expected: Iterable[str]) -> None:
         )
 
 
-def assert_constraints_preserved(source_path: Path, prepared_path: Path) -> list[object]:
+def assert_constraints_preserved(
+    source_path: Path, prepared_path: Path
+) -> list[object]:
     """Assert that runner preparation preserved canonical top-level constraints."""
 
     source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
     prepared = yaml.safe_load(prepared_path.read_text(encoding="utf-8"))
-    source_constraints = source.get("constraints", []) if isinstance(source, dict) else []
-    prepared_constraints = prepared.get("constraints", []) if isinstance(prepared, dict) else []
+    source_constraints = (
+        source.get("constraints", []) if isinstance(source, dict) else []
+    )
+    prepared_constraints = (
+        prepared.get("constraints", []) if isinstance(prepared, dict) else []
+    )
     if prepared_constraints != source_constraints:
         raise AssertionError(
             "Runner preparation changed the canonical constraints: "
@@ -367,7 +411,8 @@ def assert_openfold3_query_translation(
     expected_pocket = {
         "ligand_chain_id": str(pocket["binder"]),
         "pocket_residues": [
-            [str(chain_id), int(residue_id)] for chain_id, residue_id in pocket["contacts"]
+            [str(chain_id), int(residue_id)]
+            for chain_id, residue_id in pocket["contacts"]
         ],
         "max_distance": float(pocket.get("max_distance", 6.0)),
     }
@@ -409,7 +454,9 @@ def materialize_invalid_constraint_input(
             None,
         )
         if contact is None:
-            raise AssertionError(f"Expected {runner} tutorial input to contain a contact constraint.")
+            raise AssertionError(
+                f"Expected {runner} tutorial input to contain a contact constraint."
+            )
         contact["token2"] = ["Z", 2]
     else:
         constraints.append(
@@ -549,9 +596,12 @@ def build_screen_command(
     options_path: Path,
     variable_csv: Path,
     scoring_functions: list[str],
+    protein_training_data_path: Path | None = None,
+    ligand_training_data_path: Path | None = None,
+    pocket_coverage_reference: str | None = None,
 ) -> list[str]:
     _validate_runner(runner)
-    return [
+    command = [
         "cofolder",
         "screen",
         "-s",
@@ -577,6 +627,28 @@ def build_screen_command(
         "--merge_data",
         "pIC50",
     ]
+    if protein_training_data_path is not None and ligand_training_data_path is not None:
+        command.extend(
+            [
+                "--assess_bias",
+                "--protein_training_data_path",
+                str(protein_training_data_path),
+                "--ligand_training_data_path",
+                str(ligand_training_data_path),
+            ]
+        )
+    if pocket_coverage_reference is not None:
+        command.extend(
+            [
+                "--reproduction_metrics",
+                "pocket_coverage",
+                "--pocket_coverage_reference",
+                pocket_coverage_reference,
+                "--ifp_filter_threshold",
+                "0.0",
+            ]
+        )
+    return command
 
 
 def build_oracle_command(
@@ -633,7 +705,9 @@ def assert_csv_columns_all_empty(path: Path, columns: Iterable[str]) -> None:
     assert_csv_has_columns(path, columns)
     for column in columns:
         if any(_has_value(row.get(column)) for row in rows):
-            raise AssertionError(f"Expected column '{column}' to remain empty in {path}")
+            raise AssertionError(
+                f"Expected column '{column}' to remain empty in {path}"
+            )
 
 
 def assert_csv_columns_have_values(path: Path, columns: Iterable[str]) -> None:
@@ -641,7 +715,9 @@ def assert_csv_columns_have_values(path: Path, columns: Iterable[str]) -> None:
     assert_csv_has_columns(path, columns)
     for column in columns:
         if not any(_has_value(row.get(column)) for row in rows):
-            raise AssertionError(f"Expected column '{column}' to contain at least one value in {path}")
+            raise AssertionError(
+                f"Expected column '{column}' to contain at least one value in {path}"
+            )
 
 
 def assert_output_contains(output: str, expected_text: str) -> None:
@@ -673,4 +749,6 @@ def _has_value(value: str | None) -> bool:
 def _validate_runner(runner: str) -> None:
     if runner not in SUPPORTED_BACKENDS:
         supported = ", ".join(SUPPORTED_BACKENDS)
-        raise ValueError(f"Unsupported backend '{runner}'. Expected one of: {supported}")
+        raise ValueError(
+            f"Unsupported backend '{runner}'. Expected one of: {supported}"
+        )

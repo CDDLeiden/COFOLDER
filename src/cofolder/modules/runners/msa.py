@@ -12,7 +12,6 @@ from typing import Any
 
 from cofolder.modules.input.system import iter_system_chains
 
-
 MANIFEST_NAME = "manifest.json"
 
 
@@ -27,6 +26,23 @@ def sequence_key(sequence: str) -> str:
     """Return the stable cache key for a normalized protein sequence."""
 
     return hashlib.sha256(sequence.encode("utf-8")).hexdigest()
+
+
+def settings_key(settings: dict[str, Any] | None = None) -> str:
+    """Return a stable key for non-secret MSA generation settings."""
+
+    serialized = json.dumps(settings or {}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def msa_cache_key(
+    sequence: str,
+    settings: dict[str, Any] | None = None,
+) -> str:
+    """Return the manifest key for a protein sequence and MSA settings."""
+
+    identity = f"{sequence_key(sequence)}:{settings_key(settings)}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def protein_payloads(system_obj: Any) -> list[dict[str, Any]]:
@@ -73,7 +89,12 @@ def unresolved_protein_sequences(system_obj: Any) -> list[str]:
     return unresolved
 
 
-def inject_cached_msas(system_obj: Any, cache_dir: Path) -> int:
+def inject_cached_msas(
+    system_obj: Any,
+    cache_dir: Path,
+    *,
+    settings: dict[str, Any] | None = None,
+) -> int:
     """Inject cached MSA paths into matching unresolved protein entities."""
 
     manifest = _read_manifest(cache_dir)
@@ -83,7 +104,7 @@ def inject_cached_msas(system_obj: Any, cache_dir: Path) -> int:
         if payload.get("msa") is not None and str(payload.get("msa")).strip():
             continue
         sequence = protein_sequence(payload)
-        key = sequence_key(sequence) if sequence else None
+        key = msa_cache_key(sequence, settings) if sequence else None
         if key is None or key not in entries:
             continue
         entry = entries[key]
@@ -119,6 +140,7 @@ def capture_generated_msas(
     generated_dir: Path,
     cache_dir: Path,
     runner_name: str,
+    settings: dict[str, Any] | None = None,
 ) -> int:
     """Copy generated MSAs into a stable screen-level sequence-keyed cache."""
 
@@ -149,17 +171,21 @@ def capture_generated_msas(
 
     cache_dir.mkdir(parents=True, exist_ok=True)
     manifest = _read_manifest(cache_dir)
-    manifest["version"] = 1
+    manifest["version"] = 2
     manifest["runner"] = str(runner_name)
     proteins = manifest.setdefault("proteins", {})
     for sequence, source in matched.items():
-        key = sequence_key(sequence)
+        sequence_hash = sequence_key(sequence)
+        settings_hash = settings_key(settings)
+        key = msa_cache_key(sequence, settings)
         destination = cache_dir / f"protein_{key[:16]}{source.suffix.lower()}"
         if source.resolve() != destination.resolve():
             shutil.copy2(source, destination)
         proteins[key] = {
             "path": destination.name,
-            "sequence_sha256": key,
+            "sequence_sha256": sequence_hash,
+            "settings_sha256": settings_hash,
+            "settings": settings or {},
             "source": str(source),
         }
     _write_manifest(cache_dir, manifest)
@@ -213,5 +239,7 @@ def _read_manifest(cache_dir: Path) -> dict[str, Any]:
 def _write_manifest(cache_dir: Path, manifest: dict[str, Any]) -> None:
     path = cache_dir / MANIFEST_NAME
     temporary = cache_dir / f".{MANIFEST_NAME}.tmp"
-    temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    temporary.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     temporary.replace(path)

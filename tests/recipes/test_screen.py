@@ -1,8 +1,8 @@
 """Tests for cofolder.recipes.screen module."""
+
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -38,18 +38,26 @@ class _ReusableScreenRunner:
     def load_options(self, options_path):
         return {}
 
-    def prepare_system(self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger):
+    def msa_reuse_settings(self, options_obj):
+        return {}
+
+    def prepare_system(
+        self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger
+    ):
         return RunnerPreparationResult(system_obj=system_obj, options_obj=options_obj)
 
-    def inject_reusable_msas(self, system_obj, cache_dir):
-        return inject_cached_msas(system_obj, cache_dir)
+    def inject_reusable_msas(self, system_obj, cache_dir, *, settings=None):
+        return inject_cached_msas(system_obj, cache_dir, settings=settings)
 
-    def capture_reusable_msas(self, system_obj, *, generated_dir, cache_dir):
+    def capture_reusable_msas(
+        self, system_obj, *, generated_dir, cache_dir, settings=None
+    ):
         return capture_generated_msas(
             system_obj,
             generated_dir=generated_dir,
             cache_dir=cache_dir,
             runner_name=self.name,
+            settings=settings,
         )
 
     def run(self, request):
@@ -58,9 +66,7 @@ class _ReusableScreenRunner:
         self.msa_missing_at_run.append(missing)
         if missing and self.generate_msa:
             msa_dir = (
-                request.repeat_dir
-                / f"boltz_results_{request.system_name}"
-                / "msa"
+                request.repeat_dir / f"boltz_results_{request.system_name}" / "msa"
             )
             msa_dir.mkdir(parents=True, exist_ok=True)
             (msa_dir / "generated.csv").write_text(
@@ -134,7 +140,9 @@ class _ReusableScreenRunner:
 class TestScreenInit:
     """Tests for Screen initialization."""
 
-    def test_init_basic(self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir):
+    def test_init_basic(
+        self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
+    ):
         screener = Screen(
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
@@ -148,7 +156,9 @@ class TestScreenInit:
         assert screener.variable_paths == [["sequences", 1, "ligand", "smiles"]]
         assert screener.col_variable == ["smiles"]
 
-    def test_pair_count_mismatch_raises(self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir):
+    def test_pair_count_mismatch_raises(
+        self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
+    ):
         with pytest.raises(ValueError, match="Number of --variable entries must match"):
             Screen(
                 wrk_dir=str(temp_dir),
@@ -160,7 +170,9 @@ class TestScreenInit:
                 col_id="compound_id",
             )
 
-    def test_missing_variable_csv_raises(self, sample_system_yaml, sample_options_yaml, temp_dir):
+    def test_missing_variable_csv_raises(
+        self, sample_system_yaml, sample_options_yaml, temp_dir
+    ):
         with pytest.raises(ValueError, match="--variable_csv is required"):
             Screen(
                 wrk_dir=str(temp_dir),
@@ -172,7 +184,9 @@ class TestScreenInit:
                 col_id="compound_id",
             )
 
-    def test_missing_col_id_raises(self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir):
+    def test_missing_col_id_raises(
+        self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
+    ):
         with pytest.raises(ValueError, match="--col_id is required"):
             Screen(
                 wrk_dir=str(temp_dir),
@@ -331,7 +345,9 @@ class TestScreenRun:
         assert results["status"].tolist() == ["failed", "failed"]
         assert "system__confidence_score" in results.columns
         assert "ligand_B__ifp_distance" in results.columns
-        assert "without producing valid reusable MSAs" in results.loc[0, "error_message"]
+        assert (
+            "without producing valid reusable MSAs" in results.loc[0, "error_message"]
+        )
         assert "already attempted" in results.loc[1, "error_message"]
 
     @patch("cofolder.recipes.screen.Validate.run")
@@ -369,7 +385,9 @@ class TestScreenRun:
         ).run()
 
         row_system = yaml.safe_load(
-            (temp_dir / "screen" / "1_one" / "screen_system.yaml").read_text(encoding="utf-8")
+            (temp_dir / "screen" / "1_one" / "screen_system.yaml").read_text(
+                encoding="utf-8"
+            )
         )
         assert row_system["constraints"] == constraints
 
@@ -492,9 +510,7 @@ class TestScreenRun:
     ):
         csv_path = temp_dir / "invalid_smiles.csv"
         csv_path.write_text(
-            "compound_id,smiles\n"
-            "CMPD_BAD,C1(\n"
-            "CMPD_OK,CCO\n",
+            "compound_id,smiles\nCMPD_BAD,C1(\nCMPD_OK,CCO\n",
             encoding="utf-8",
         )
 
@@ -601,7 +617,10 @@ class TestScreenRun:
         assert "system__bias_prot_sim_train_max" in merged_df.columns
         assert "system__bias_lig_sim_train_max" in merged_df.columns
         assert "ligand_B__pocket_coverage_custom" in merged_df.columns
-        assert merged_df["ligand_B__affinity_probability_binary"].tolist() == [0.88, 0.88]
+        assert merged_df["ligand_B__affinity_probability_binary"].tolist() == [
+            0.88,
+            0.88,
+        ]
         assert merged_df["ligand_B__pair_chains_iptm_A"].tolist() == [0.72, 0.72]
         assert merged_df["ligand_B__sasa_norm_heavy"].tolist() == [1.25, 1.25]
         assert merged_df["ligand_B__ifp_distance"].tolist() == ["[1, 0, 1]"] * 2
@@ -639,16 +658,26 @@ class TestScreenRun:
         assert out_csv.exists()
         out_df = pd.read_csv(out_csv)
         assert len(out_df) == 2
-        assert set(["index", "compound_id", "status", "error_message", "run_dir", "smiles", "mw"]).issubset(
-            out_df.columns
-        )
+        assert set(
+            [
+                "index",
+                "compound_id",
+                "status",
+                "error_message",
+                "run_dir",
+                "smiles",
+                "mw",
+            ]
+        ).issubset(out_df.columns)
         assert set(out_df["status"].tolist()) == {"success"}
 
         merged_csv = temp_dir / "screen_results_with_scores.csv"
         assert merged_csv.exists()
         merged_df = pd.read_csv(merged_csv)
         assert len(merged_df) == 2
-        assert set(["compound_id", "smiles", "status", "error_message", "run_dir"]).issubset(merged_df.columns)
+        assert set(
+            ["compound_id", "smiles", "status", "error_message", "run_dir"]
+        ).issubset(merged_df.columns)
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_multi_variable_updates_system_yaml(
@@ -660,8 +689,7 @@ class TestScreenRun:
     ):
         csv_path = temp_dir / "multi.csv"
         csv_path.write_text(
-            "compound_id,smiles,ccd\n"
-            "CMPD001,CCO,EDO\n",
+            "compound_id,smiles,ccd\nCMPD001,CCO,EDO\n",
             encoding="utf-8",
         )
 

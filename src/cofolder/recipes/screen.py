@@ -162,6 +162,18 @@ class Screen:
             if getattr(self.runner_impl, "supports_msa_reuse", False)
             else None
         )
+        if self.reusable_msa_dir is not None:
+            options_obj = self.runner_impl.load_options(self.options_path)
+            resolve_msa_reuse_settings = getattr(
+                self.runner_impl, "msa_reuse_settings", None
+            )
+            self.msa_reuse_settings = (
+                resolve_msa_reuse_settings(options_obj)
+                if callable(resolve_msa_reuse_settings)
+                else {}
+            )
+        else:
+            self.msa_reuse_settings = {}
         self.logger = logging.getLogger("cofolder.screen")
 
         self._validate_config()
@@ -216,8 +228,13 @@ class Screen:
         try:
             self.ifp_filter_threshold = float(self.ifp_filter_threshold)
         except (TypeError, ValueError) as exc:
-            raise ValueError("--ifp_filter_threshold must be a number in [0, 1].") from exc
-        if not math.isfinite(self.ifp_filter_threshold) or not 0 <= self.ifp_filter_threshold <= 1:
+            raise ValueError(
+                "--ifp_filter_threshold must be a number in [0, 1]."
+            ) from exc
+        if (
+            not math.isfinite(self.ifp_filter_threshold)
+            or not 0 <= self.ifp_filter_threshold <= 1
+        ):
             raise ValueError("--ifp_filter_threshold must be in [0, 1].")
 
         if scoring_functions is not None and "ifp_distance" not in scoring_functions:
@@ -257,7 +274,9 @@ class Screen:
 
         try:
             reference_value = str(path) if path.exists() else raw
-            self._ifp_filter_reference_spec = _parse_custom_pocket_reference(reference_value)
+            self._ifp_filter_reference_spec = _parse_custom_pocket_reference(
+                reference_value
+            )
         except (OSError, ValueError) as exc:
             raise ValueError(f"Invalid --pocket_coverage_reference: {exc}") from exc
         if self._ifp_filter_reference_spec is None:
@@ -320,11 +339,15 @@ class Screen:
                 sys_obj = system.System(system=copy.deepcopy(self.base_system))
                 for path, col in zip(self.variable_paths, self.col_variable):
                     value = row[col]
-                    if pd.isna(value) or (isinstance(value, str) and value.strip() == ""):
+                    if pd.isna(value) or (
+                        isinstance(value, str) and value.strip() == ""
+                    ):
                         raise ValueError(
                             f"Empty value for mapped column '{col}' in row {i} ({compound_id})."
                         )
-                    if self._path_targets_smiles(path) and not self._is_valid_smiles(str(value)):
+                    if self._path_targets_smiles(path) and not self._is_valid_smiles(
+                        str(value)
+                    ):
                         raise ValueError(
                             f"Invalid SMILES in column '{col}' for row {i} ({compound_id}): {value}"
                         )
@@ -334,6 +357,7 @@ class Screen:
                     injected = self.runner_impl.inject_reusable_msas(
                         sys_obj,
                         self.reusable_msa_dir,
+                        settings=self.msa_reuse_settings,
                     )
                     if injected:
                         self.logger.info(
@@ -345,9 +369,8 @@ class Screen:
                 write.write_yaml(sys_obj, path=row_system_path)
 
                 row_validate_kwargs = dict(self.validate_kwargs)
-                if (
-                    row_validate_kwargs.get("assess_bias")
-                    and row_validate_kwargs.get("build_bias_training_data")
+                if row_validate_kwargs.get("assess_bias") and row_validate_kwargs.get(
+                    "build_bias_training_data"
                 ):
                     bias_train_dir = run_dir / "results" / "bias_train"
                     bias_train_dir.mkdir(parents=True, exist_ok=True)
@@ -373,6 +396,7 @@ class Screen:
                     self.runner_impl.inject_reusable_msas(
                         sys_obj,
                         self.reusable_msa_dir,
+                        settings=self.msa_reuse_settings,
                     )
                     write.write_yaml(sys_obj, path=row_system_path)
                 detailed.update(self._collect_score_columns(run_dir=run_dir))
@@ -385,6 +409,7 @@ class Screen:
                         injected = self.runner_impl.inject_reusable_msas(
                             sys_obj,
                             self.reusable_msa_dir,
+                            settings=self.msa_reuse_settings,
                         )
                         if injected and row_system_path.exists():
                             write.write_yaml(sys_obj, path=row_system_path)
@@ -467,9 +492,7 @@ class Screen:
                 [row[2] for row in parsed_rows],
                 similarity_threshold=self.ifp_cluster_similarity_threshold,
             )
-            for (position, _, _), cluster_id in zip(
-                parsed_rows, clustered.cluster_ids
-            ):
+            for (position, _, _), cluster_id in zip(parsed_rows, clustered.cluster_ids):
                 for frame in (summary_df, results_df):
                     frame.at[position, "ifp_cluster_id"] = cluster_id
                     frame.at[position, "ifp_cluster_status"] = "clustered"
@@ -479,9 +502,7 @@ class Screen:
 
         cluster_summary.to_csv(self.wrk_dir / "ifp_cluster_summary.csv", index=False)
 
-    def _load_selected_ligand_ifp(
-        self, run_dir: Path
-    ) -> tuple[list[int] | None, str]:
+    def _load_selected_ligand_ifp(self, run_dir: Path) -> tuple[list[int] | None, str]:
         chain_csv = run_dir / "results" / "chain_metrics.csv"
         if not chain_csv.exists():
             return None, "missing_chain_metrics"
@@ -623,7 +644,9 @@ class Screen:
                 for residue_id, res in zip(residue_order, residues)
             }
         except Exception as exc:
-            self.logger.warning("Unable to resolve filter reference from %s: %s", structure_path, exc)
+            self.logger.warning(
+                "Unable to resolve filter reference from %s: %s", structure_path, exc
+            )
             return None
 
         return _build_reference_ifp_from_custom(
@@ -671,11 +694,19 @@ class Screen:
                 if not sdf.empty:
                     row = self._select_metrics_row(sdf)
                     for col, value in row.items():
-                        if col in {"idx", "cif_file", "model_name", "repeat", "diffusion_sample"}:
+                        if col in {
+                            "idx",
+                            "cif_file",
+                            "model_name",
+                            "repeat",
+                            "diffusion_sample",
+                        }:
                             continue
                         out[f"system__{col}"] = value
             except Exception as exc:
-                self.logger.warning("Failed reading system metrics from %s: %s", system_csv, exc)
+                self.logger.warning(
+                    "Failed reading system metrics from %s: %s", system_csv, exc
+                )
 
         if chain_csv.exists():
             try:
@@ -696,7 +727,9 @@ class Screen:
                     ]
                     for _, crow in cdf.iterrows():
                         chain_id = str(crow.get("CHAIN_ID", "")).strip() or "NA"
-                        entity_type = str(crow.get("ENTITY_TYPE", "")).strip() or "unknown"
+                        entity_type = (
+                            str(crow.get("ENTITY_TYPE", "")).strip() or "unknown"
+                        )
                         prefix = f"{entity_type}_{chain_id}"
                         for col, value in crow.items():
                             if col in {
@@ -712,11 +745,11 @@ class Screen:
                             }:
                                 continue
                             out[f"{prefix}__{col}"] = value
-                            pair_match = re.fullmatch(r"pair_chains_iptm_(\d+)", str(col))
+                            pair_match = re.fullmatch(
+                                r"pair_chains_iptm_(\d+)", str(col)
+                            )
                             if pair_match and pair_match.group(1) in conf_chain_ids:
-                                semantic_col = (
-                                    f"pair_chains_iptm_{conf_chain_ids[pair_match.group(1)]}"
-                                )
+                                semantic_col = f"pair_chains_iptm_{conf_chain_ids[pair_match.group(1)]}"
                                 out[f"{prefix}__{semantic_col}"] = value
                         expected_metrics = (
                             PROTEIN_SCREEN_METRICS
@@ -734,7 +767,9 @@ class Screen:
                                     None,
                                 )
             except Exception as exc:
-                self.logger.warning("Failed reading chain metrics from %s: %s", chain_csv, exc)
+                self.logger.warning(
+                    "Failed reading chain metrics from %s: %s", chain_csv, exc
+                )
 
         self._ensure_screen_metric_schema(out)
         return out
@@ -746,7 +781,9 @@ class Screen:
             output.setdefault(f"system__{column}", None)
 
         chains = list(iter_system_chains(self.base_system_obj))
-        protein_ids = [chain.chain_id for chain in chains if chain.entity_type == "protein"]
+        protein_ids = [
+            chain.chain_id for chain in chains if chain.entity_type == "protein"
+        ]
         for chain in chains:
             prefix = f"{chain.entity_type}_{chain.chain_id}"
             metrics: tuple[str, ...] = ()
@@ -787,7 +824,10 @@ class Screen:
     def _parse_path(path_str: str) -> list[Any]:
         if not path_str or not str(path_str).strip():
             raise ValueError("--variable path cannot be empty.")
-        return [int(v.strip()) if v.strip().isdigit() else v.strip() for v in str(path_str).split(",")]
+        return [
+            int(v.strip()) if v.strip().isdigit() else v.strip()
+            for v in str(path_str).split(",")
+        ]
 
     @staticmethod
     def _parse_list(input_str: str | None) -> list[str]:

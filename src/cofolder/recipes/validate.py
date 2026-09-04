@@ -14,15 +14,15 @@ from cofolder.modules.runners import (
     get_runner,
     merge_runner_runtime,
 )
-from cofolder.modules.runners.validators import validate_runner_bundle
 from cofolder.modules.runners.msa import (
+    msa_cache_key,
     resolve_declared_msa_paths,
-    sequence_key,
     unresolved_protein_sequences,
 )
-from cofolder.recipes.bias import BiasAssessmentWorkflow
+from cofolder.modules.runners.validators import validate_runner_bundle
 from cofolder.modules.utils import gather, helpers, read, write
 from cofolder.modules.utils.timing import DebugTimingCollector
+from cofolder.recipes.bias import BiasAssessmentWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ class Validate(object):
             Path(bias_training_components_cif) if bias_training_components_cif else None
         )
         normalized_bias_chains: set[str] = set()
-        for value in (bias_chains or []):
+        for value in bias_chains or []:
             for token in str(value).split(","):
                 token = token.strip()
                 if token:
@@ -110,12 +110,16 @@ class Validate(object):
         self.sdf_file = Path(sdf_file) if sdf_file else None
         self.reference_path = Path(reference_path) if reference_path else None
         self.pocket_coverage_reference = pocket_coverage_reference
-        self.reproduction_metrics = set(reproduction_metrics or DEFAULT_REPRODUCTION_METRICS)
+        self.reproduction_metrics = set(
+            reproduction_metrics or DEFAULT_REPRODUCTION_METRICS
+        )
         self.reusable_msa_dir = Path(reusable_msa_dir) if reusable_msa_dir else None
 
         if self.reference_path is not None:
             if not self.reference_path.exists():
-                raise ValueError(f"reference_path does not exist: {self.reference_path}")
+                raise ValueError(
+                    f"reference_path does not exist: {self.reference_path}"
+                )
             if not self.reference_path.is_file():
                 raise ValueError(f"reference_path is not a file: {self.reference_path}")
 
@@ -180,7 +184,8 @@ class Validate(object):
             self.logger.debug("Using raw directory for outputs: %s", self.raw_dir)
 
             unsupported_metric_groups = sorted(
-                (self.scoring_functions & RUNNER_METRIC_GROUPS) - set(self.runner.capabilities)
+                (self.scoring_functions & RUNNER_METRIC_GROUPS)
+                - set(self.runner.capabilities)
             )
             if unsupported_metric_groups:
                 self.logger.warning(
@@ -199,6 +204,14 @@ class Validate(object):
 
             with self._debug_timer("runner.options.load"):
                 runner_options = self.runner.load_options(self.options_path)
+            resolve_msa_reuse_settings = getattr(
+                self.runner, "msa_reuse_settings", None
+            )
+            msa_reuse_settings = (
+                resolve_msa_reuse_settings(runner_options)
+                if callable(resolve_msa_reuse_settings)
+                else {}
+            )
 
             self.sys = system.System(system=copy.deepcopy(self.base_system.system))
             if self.reusable_msa_dir is not None and getattr(
@@ -207,6 +220,7 @@ class Validate(object):
                 injected = self.runner.inject_reusable_msas(
                     self.sys,
                     self.reusable_msa_dir,
+                    settings=msa_reuse_settings,
                 )
                 if injected:
                     self.logger.info(
@@ -281,7 +295,7 @@ class Validate(object):
                         self.reusable_msa_dir.mkdir(parents=True, exist_ok=True)
                         attempt_markers = [
                             self.reusable_msa_dir
-                            / f".generation_attempted_{sequence_key(sequence)[:16]}"
+                            / f".generation_attempted_{msa_cache_key(sequence, msa_reuse_settings)[:16]}"
                             for sequence in unresolved_before_run
                         ]
                         if any(marker.exists() for marker in attempt_markers):
@@ -305,10 +319,12 @@ class Validate(object):
                             self.sys,
                             generated_dir=request.repeat_dir,
                             cache_dir=self.reusable_msa_dir,
+                            settings=msa_reuse_settings,
                         )
                         injected = self.runner.inject_reusable_msas(
                             self.sys,
                             self.reusable_msa_dir,
+                            settings=msa_reuse_settings,
                         )
                         if captured or injected:
                             write.write_yaml(self.sys, path=yaml_path)
@@ -318,7 +334,9 @@ class Validate(object):
                                 captured,
                                 injected,
                             )
-                        if unresolved_before_run and unresolved_protein_sequences(self.sys):
+                        if unresolved_before_run and unresolved_protein_sequences(
+                            self.sys
+                        ):
                             raise RuntimeError(
                                 "The runner completed without producing valid reusable MSAs "
                                 "for every unresolved protein. Refusing to recalculate them "
@@ -326,7 +344,9 @@ class Validate(object):
                             )
                 runner_results.append(result)
 
-            selected_runner_metric_groups = self.scoring_functions & RUNNER_METRIC_GROUPS
+            selected_runner_metric_groups = (
+                self.scoring_functions & RUNNER_METRIC_GROUPS
+            )
             requested_runner_metric_groups = self._required_runner_metric_groups()
             optional_runner_metric_groups = (
                 selected_runner_metric_groups - requested_runner_metric_groups
@@ -340,10 +360,16 @@ class Validate(object):
                     )
                     for group_name in sorted(optional_runner_metric_groups):
                         outcome = bundle.metric_outcomes.get(group_name)
-                        if outcome is None or outcome.state not in {"missing", "failed"}:
+                        if outcome is None or outcome.state not in {
+                            "missing",
+                            "failed",
+                        }:
                             continue
                         unavailable_metric_groups.add(group_name)
-                        reason = outcome.message or "runner did not produce the normalized payload"
+                        reason = (
+                            outcome.message
+                            or "runner did not produce the normalized payload"
+                        )
                         self.logger.warning(
                             "Runner '%s' did not produce optional scoring group '%s' for "
                             "repeat %d: %s The run will continue and the related output "
@@ -434,8 +460,13 @@ class Validate(object):
                 )
 
             with self._debug_timer("results.write.system_chain"):
-                write.write_csv(system_df, output_path=self.wrk_dir / "results" / "system_metrics.csv")
-                write.write_csv(chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv")
+                write.write_csv(
+                    system_df,
+                    output_path=self.wrk_dir / "results" / "system_metrics.csv",
+                )
+                write.write_csv(
+                    chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv"
+                )
 
             diffusion_samples = self._resolve_diffusion_samples(system_df, runtime)
             if self.assess_robustness and (self.repeats > 1 or diffusion_samples > 1):

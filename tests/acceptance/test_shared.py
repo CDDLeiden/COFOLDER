@@ -20,7 +20,10 @@ def _write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) ->
 
 class TestInstallAndRunnerSelection:
     def test_install_command_for_backend(self):
-        assert shared.install_command_for_backend("boltz2") == 'pip install "cofolder[acceptance,boltz2]"'
+        assert (
+            shared.install_command_for_backend("boltz2")
+            == 'pip install "cofolder[acceptance,boltz2]"'
+        )
         assert (
             shared.install_command_for_backend("openfold3")
             == 'python -m pip install -e ".[acceptance,openfold3]"'
@@ -64,7 +67,9 @@ class TestInstallAndRunnerSelection:
 
         monkeypatch.setattr(shared, "get_runner", lambda runner: FakeRunner())
 
-        assert shared.assert_runner_available("boltz2") == "Runner 'boltz2' is available."
+        assert (
+            shared.assert_runner_available("boltz2") == "Runner 'boltz2' is available."
+        )
 
     def test_assert_runner_available_surfaces_failure_message(self, monkeypatch):
         class FakeRunner:
@@ -76,24 +81,32 @@ class TestInstallAndRunnerSelection:
         with pytest.raises(AssertionError, match="clean boltz1 environment"):
             shared.assert_runner_available("boltz1")
 
-    def test_assert_runner_setup_ready_uses_openfold3_specific_preflight(self, monkeypatch):
+    def test_assert_runner_setup_ready_uses_openfold3_specific_preflight(
+        self, monkeypatch
+    ):
         monkeypatch.setattr(
             "cofolder.modules.runners.openfold3_runner.check_openfold3_setup_ready",
             lambda env=None: (True, "setup ready"),
         )
 
-        message = shared.assert_runner_setup_ready("openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"})
+        message = shared.assert_runner_setup_ready(
+            "openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"}
+        )
 
         assert message == "setup ready"
 
-    def test_assert_runner_setup_ready_surfaces_openfold3_preflight_failure(self, monkeypatch):
+    def test_assert_runner_setup_ready_surfaces_openfold3_preflight_failure(
+        self, monkeypatch
+    ):
         monkeypatch.setattr(
             "cofolder.modules.runners.openfold3_runner.check_openfold3_setup_ready",
             lambda env=None: (False, "run setup first"),
         )
 
         with pytest.raises(AssertionError, match="run setup first"):
-            shared.assert_runner_setup_ready("openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"})
+            shared.assert_runner_setup_ready(
+                "openfold3", env={"OPENFOLD_CACHE": "/tmp/cache"}
+            )
 
 
 class TestOpenFold3NotebookCacheHelpers:
@@ -132,7 +145,9 @@ class TestOpenFold3NotebookCacheHelpers:
         assert cache.source == "manual notebook override"
         assert cache.env["OPENFOLD_CACHE"] == "/tmp/override-cache"
 
-    def test_resolve_openfold3_notebook_cache_normalizes_relative_paths(self, monkeypatch, temp_dir):
+    def test_resolve_openfold3_notebook_cache_normalizes_relative_paths(
+        self, monkeypatch, temp_dir
+    ):
         monkeypatch.chdir(temp_dir)
 
         cache = shared.resolve_openfold3_notebook_cache(
@@ -144,11 +159,15 @@ class TestOpenFold3NotebookCacheHelpers:
         assert cache.configured_cache == expected
         assert cache.env["OPENFOLD_CACHE"] == str(expected)
 
-    def test_inspect_openfold3_notebook_setup_surfaces_unprepared_cache(self, monkeypatch):
+    def test_inspect_openfold3_notebook_setup_surfaces_unprepared_cache(
+        self, monkeypatch
+    ):
         monkeypatch.setattr(
             shared,
             "assert_runner_setup_ready",
-            lambda runner, env=None: (_ for _ in ()).throw(AssertionError("run setup first")),
+            lambda runner, env=None: (_ for _ in ()).throw(
+                AssertionError("run setup first")
+            ),
         )
         cache = shared.resolve_openfold3_notebook_cache(
             env={},
@@ -183,6 +202,8 @@ class TestCommandBuilders:
         ]
 
     def test_build_screen_command_contains_wrapper_arguments(self, temp_dir):
+        protein_training = temp_dir / "protein_training.csv"
+        ligand_training = temp_dir / "ligand_training.csv"
         command = shared.build_screen_command(
             runner="boltz1",
             wrk_dir=temp_dir / "screen",
@@ -190,6 +211,9 @@ class TestCommandBuilders:
             options_path=temp_dir / "options.yaml",
             variable_csv=temp_dir / "ligands.csv",
             scoring_functions=["confidence_metrics"],
+            protein_training_data_path=protein_training,
+            ligand_training_data_path=ligand_training,
+            pocket_coverage_reference="F1",
         )
 
         assert command[:2] == ["cofolder", "screen"]
@@ -198,6 +222,14 @@ class TestCommandBuilders:
         assert "--variable" in command
         assert "--col_variable" in command
         assert "--merge_data" in command
+        assert command[command.index("--protein_training_data_path") + 1] == str(
+            protein_training
+        )
+        assert command[command.index("--ligand_training_data_path") + 1] == str(
+            ligand_training
+        )
+        assert command[command.index("--pocket_coverage_reference") + 1] == "F1"
+        assert command[command.index("--ifp_filter_threshold") + 1] == "0.0"
 
     def test_assert_screen_msa_reused_once_checks_every_row(self, temp_dir):
         screen_dir = temp_dir / "screen"
@@ -207,7 +239,17 @@ class TestCommandBuilders:
         msa_path.write_text("key,sequence\n-1,AAAA\n", encoding="utf-8")
         (shared_dir / ".generation_attempted_key").write_text("attempted\n")
         (shared_dir / "manifest.json").write_text(
-            json.dumps({"proteins": {"key": {"path": msa_path.name}}}),
+            json.dumps(
+                {
+                    "version": 2,
+                    "proteins": {
+                        "key": {
+                            "path": msa_path.name,
+                            "settings_sha256": "settings-key",
+                        }
+                    },
+                }
+            ),
             encoding="utf-8",
         )
         for position in (1, 2):
@@ -215,7 +257,11 @@ class TestCommandBuilders:
             row_dir.mkdir(parents=True)
             (row_dir / "screen_system.yaml").write_text(
                 yaml.safe_dump(
-                    {"sequences": [{"protein": {"sequence": "AAAA", "msa": str(msa_path)}}]}
+                    {
+                        "sequences": [
+                            {"protein": {"sequence": "AAAA", "msa": str(msa_path)}}
+                        ]
+                    }
                 ),
                 encoding="utf-8",
             )
@@ -263,10 +309,13 @@ def test_assert_chain_ids_checks_normalized_order(temp_dir):
 def test_assert_constraints_preserved_compares_top_level_data(temp_dir):
     source = temp_dir / "source.yaml"
     prepared = temp_dir / "prepared.yaml"
-    constraint = {"pocket": {"binder": "L", "contacts": [["A", 2]], "max_distance": 6.0}}
+    constraint = {
+        "pocket": {"binder": "L", "contacts": [["A", 2]], "max_distance": 6.0}
+    }
     source.write_text(yaml.safe_dump({"constraints": [constraint]}), encoding="utf-8")
     prepared.write_text(
-        yaml.safe_dump({"constraints": [constraint], "prepared": True}), encoding="utf-8"
+        yaml.safe_dump({"constraints": [constraint], "prepared": True}),
+        encoding="utf-8",
     )
 
     assert shared.assert_constraints_preserved(source, prepared) == [constraint]
@@ -381,18 +430,30 @@ class TestFixtureMaterialization:
         assert inputs.system_screen_path.exists()
         assert inputs.options_path.exists()
         assert inputs.ligand_csv_path.exists()
+        assert inputs.protein_training_data_path.exists()
+        assert inputs.ligand_training_data_path.exists()
         assert inputs.nucleic_acid_system_path.exists()
         assert set(inputs.constrained_system_paths) == {
-            "boltz1", "boltz2", "boltz-community", "openfold3"
+            "boltz1",
+            "boltz2",
+            "boltz-community",
+            "openfold3",
         }
         assert all(path.exists() for path in inputs.constrained_system_paths.values())
-        nucleic = yaml.safe_load(inputs.nucleic_acid_system_path.read_text(encoding="utf-8"))
+        nucleic = yaml.safe_load(
+            inputs.nucleic_acid_system_path.read_text(encoding="utf-8")
+        )
         assert [next(iter(entry)) for entry in nucleic["sequences"]] == [
-            "protein", "dna", "rna", "ligand"
+            "protein",
+            "dna",
+            "rna",
+            "ligand",
         ]
         assert "diffusion_samples: 1" in inputs.options_path.read_text(encoding="utf-8")
 
-    def test_materialize_acceptance_inputs_supports_openfold3_options_fixture(self, temp_dir):
+    def test_materialize_acceptance_inputs_supports_openfold3_options_fixture(
+        self, temp_dir
+    ):
         inputs = shared.materialize_acceptance_inputs(
             temp_dir / "fixtures-openfold3",
             options_resource=shared.options_resource_for_backend("openfold3"),
@@ -403,7 +464,9 @@ class TestFixtureMaterialization:
         assert "cache_path: ./cache/.openfold3" in text
         assert "--use-msa-server=False" in text
 
-    def test_rewrite_openfold3_options_cache_path_keeps_fixture_truthful(self, temp_dir):
+    def test_rewrite_openfold3_options_cache_path_keeps_fixture_truthful(
+        self, temp_dir
+    ):
         inputs = shared.materialize_acceptance_inputs(
             temp_dir / "fixtures-openfold3",
             options_resource=shared.options_resource_for_backend("openfold3"),
@@ -415,7 +478,9 @@ class TestFixtureMaterialization:
         text = inputs.options_path.read_text(encoding="utf-8")
         assert f"cache_path: {selected_cache}" in text
         assert "--use-msa-server=False" in text
-        assert OpenFold3Runner().load_options(inputs.options_path).cache_path == str(selected_cache)
+        assert OpenFold3Runner().load_options(inputs.options_path).cache_path == str(
+            selected_cache
+        )
 
     def test_reset_work_dir_recreates_clean_directory(self, temp_dir):
         work_dir = temp_dir / "workspace"
@@ -437,7 +502,9 @@ class TestFixtureMaterialization:
             stdout = "ok"
             stderr = ""
 
-        def fake_run(command, cwd=None, env=None, capture_output=None, text=None, check=None):
+        def fake_run(
+            command, cwd=None, env=None, capture_output=None, text=None, check=None
+        ):
             captured["command"] = command
             captured["cwd"] = cwd
             captured["env"] = env
@@ -462,7 +529,9 @@ class TestCsvAssertions:
         )
 
         shared.assert_csv_has_columns(csv_path, ["name", "pIC50"])
-        shared.assert_csv_columns_have_values(csv_path, ["affinity_pred_value", "pIC50"])
+        shared.assert_csv_columns_have_values(
+            csv_path, ["affinity_pred_value", "pIC50"]
+        )
 
     def test_assert_csv_columns_all_empty(self, temp_dir):
         csv_path = temp_dir / "empty.csv"

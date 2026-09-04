@@ -275,6 +275,9 @@ def _(
         options_path=fixtures.options_path,
         variable_csv=fixtures.ligand_csv_path,
         scoring_functions=scoring,
+        protein_training_data_path=fixtures.protein_training_data_path,
+        ligand_training_data_path=fixtures.ligand_training_data_path,
+        pocket_coverage_reference="F1",
     )
     screen_command.append("--cluster_ifps")
     screen_output = stream_cli_in_notebook(screen_command, workspace)

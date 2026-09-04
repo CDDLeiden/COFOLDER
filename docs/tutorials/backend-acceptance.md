@@ -185,11 +185,13 @@ For `openfold3`, the positive path is:
 - `boltz1`: `validate` and `screen` should warn that affinity scoring groups are unsupported while leaving downstream affinity-related columns present-but-empty; `oracle` should use `confidence_score` as the supported positive-path metric.
 - `openfold3`: `validate`, `screen`, and `oracle` should produce populated confidence outputs, including OpenFold3-native confidence fields. This lane does not request affinity groups, and it must not imply that structural-confidence outputs are affinity proxies.
 
-The Boltz2 screen cell additionally requests SASA and distance IFPs, enables IFP
-clustering, checks the manuscript-facing confidence/affinity/SASA/IFP columns, and
-requires `ifp_cluster_summary.csv`. It also verifies that exactly one fixed-protein
-MSA generation attempt populated the shared manifest and that every ligand row YAML
-uses that same staged artifact.
+The Boltz2 screen cell additionally requests SASA and distance IFPs, evaluates a
+custom pocket reference, enables non-destructive filtering and IFP clustering, and
+runs bias diagnostics against packaged acceptance references. It checks populated
+manuscript-facing confidence, affinity, SASA, IFP, protein/ligand proximity, pocket
+coverage, and filter columns and requires `ifp_cluster_summary.csv`. It also verifies
+that exactly one fixed-protein MSA generation attempt populated the shared manifest
+and that every ligand row YAML uses that same staged artifact.
 
 Keep scientific wording disciplined when reviewing these outputs:
 
@@ -198,6 +200,8 @@ Keep scientific wording disciplined when reviewing these outputs:
 
 ## Optional Bias Setup
 
-Bias-related setup is intentionally outside the first-pass backend acceptance lane.
+Bias-related setup is outside the first-pass lanes except for Boltz2, whose Screen
+acceptance cell uses small packaged protein and ligand references to verify populated
+proximity outputs.
 
 If you need `--assess_bias`, install `mmseqs2` in the same environment and follow the bias setup documented in [Installation](../getting-started/installation.md). Keep that work separate from the base backend acceptance pass unless the change under review specifically affects bias behavior.
