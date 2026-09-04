@@ -25,6 +25,7 @@ from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import get_runner
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import read, write
+from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
 from cofolder.recipes.validate import Validate
 
 logger = logging.getLogger(__name__)
@@ -685,91 +686,11 @@ class Screen:
     def _collect_score_columns(self, run_dir: Path) -> dict[str, Any]:
         """Collect computed scores from per-row validate outputs."""
         out: dict[str, Any] = {}
-        system_csv = run_dir / "results" / "system_metrics.csv"
-        chain_csv = run_dir / "results" / "chain_metrics.csv"
-
-        if system_csv.exists():
-            try:
-                sdf = pd.read_csv(system_csv)
-                if not sdf.empty:
-                    row = self._select_metrics_row(sdf)
-                    for col, value in row.items():
-                        if col in {
-                            "idx",
-                            "cif_file",
-                            "model_name",
-                            "repeat",
-                            "diffusion_sample",
-                        }:
-                            continue
-                        out[f"system__{col}"] = value
-            except Exception as exc:
-                self.logger.warning(
-                    "Failed reading system metrics from %s: %s", system_csv, exc
-                )
-
-        if chain_csv.exists():
-            try:
-                cdf = pd.read_csv(chain_csv)
-                if not cdf.empty and {"CHAIN_ID", "ENTITY_TYPE"}.issubset(cdf.columns):
-                    cdf = self._select_chain_metrics_rows(cdf)
-                    conf_chain_ids = {
-                        str(int(row["conf_chain_id"])): str(row["CHAIN_ID"])
-                        for _, row in cdf.iterrows()
-                        if pd.notna(row.get("conf_chain_id"))
-                        and str(row.get("CHAIN_ID", "")).strip()
-                    }
-                    observed_protein_ids = [
-                        str(row["CHAIN_ID"])
-                        for _, row in cdf.iterrows()
-                        if str(row.get("ENTITY_TYPE", "")).strip() == "protein"
-                        and str(row.get("CHAIN_ID", "")).strip()
-                    ]
-                    for _, crow in cdf.iterrows():
-                        chain_id = str(crow.get("CHAIN_ID", "")).strip() or "NA"
-                        entity_type = (
-                            str(crow.get("ENTITY_TYPE", "")).strip() or "unknown"
-                        )
-                        prefix = f"{entity_type}_{chain_id}"
-                        for col, value in crow.items():
-                            if col in {
-                                "idx",
-                                "conf_chain_id",
-                                "CHAIN_ID",
-                                "ENTITY_TYPE",
-                                "ligand_molecule_id",
-                                "cif_file",
-                                "model_name",
-                                "repeat",
-                                "diffusion_sample",
-                            }:
-                                continue
-                            out[f"{prefix}__{col}"] = value
-                            pair_match = re.fullmatch(
-                                r"pair_chains_iptm_(\d+)", str(col)
-                            )
-                            if pair_match and pair_match.group(1) in conf_chain_ids:
-                                semantic_col = f"pair_chains_iptm_{conf_chain_ids[pair_match.group(1)]}"
-                                out[f"{prefix}__{semantic_col}"] = value
-                        expected_metrics = (
-                            PROTEIN_SCREEN_METRICS
-                            if entity_type == "protein"
-                            else LIGAND_SCREEN_METRICS
-                            if entity_type == "ligand"
-                            else ()
-                        )
-                        for column in expected_metrics:
-                            out.setdefault(f"{prefix}__{column}", None)
-                        if entity_type == "ligand":
-                            for protein_id in observed_protein_ids:
-                                out.setdefault(
-                                    f"{prefix}__pair_chains_iptm_{protein_id}",
-                                    None,
-                                )
-            except Exception as exc:
-                self.logger.warning(
-                    "Failed reading chain metrics from %s: %s", chain_csv, exc
-                )
+        try:
+            system_df, chain_df = read_metric_frames(run_dir)
+            out.update(primary_metric_values(system_df, chain_df))
+        except Exception as exc:
+            self.logger.warning("Failed reading metrics from %s: %s", run_dir, exc)
 
         self._ensure_screen_metric_schema(out)
         return out
