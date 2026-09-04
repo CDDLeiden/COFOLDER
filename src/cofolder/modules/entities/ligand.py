@@ -508,7 +508,7 @@ def csv_to_sdf(
     )
 
 # Adapted from jacktday/boltztools (MIT License).
-# See THIRD_PARTY_LICENSES.md for attribution and full license text.
+# See THIRD_PARTY_SOFTWARE.md for attribution and full license text.
 def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] = os.path.expanduser("~/.boltz")):
     """Convert an RDKit molecule to Boltz CCD format and cache it.
 
