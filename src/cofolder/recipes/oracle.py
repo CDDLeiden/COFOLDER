@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-import json
+import hashlib
 import logging
 import math
 import operator
@@ -12,9 +12,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar
+from uuid import uuid4
 
 import pandas as pd
 
+from cofolder.modules.contracts import (
+    PUBLIC_SCHEMA_VERSION,
+    EvidenceRegime,
+    EvidenceSource,
+    FailureStage,
+    MetricRecord,
+    OutputIdentity,
+    PublicManifest,
+    PublicOutputBundle,
+    RecordKind,
+    RecordStatus,
+    SuccessRecord,
+    WorkflowExecutionError,
+    WorkflowKind,
+    failure_from_exception,
+    get_metric_definition,
+    make_envelope,
+    write_public_bundle,
+)
 from cofolder.modules.input import system
 from cofolder.modules.utils import read, write
 from cofolder.recipes._metrics import (
@@ -141,6 +161,7 @@ class Oracle:
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
         self.runner = str(runner)
+        self.run_id = str(uuid4())
         self.input_smiles = input_smiles.strip() if input_smiles else None
         self.input_mol_file = Path(input_mol_file) if input_mol_file else None
         self.output_metric = str(output_metric).strip() if output_metric else None
@@ -314,7 +335,9 @@ class Oracle:
             reproduction_metric = (
                 "ligand_rmsd"
                 if metric == "ligand_rmsd_ref"
-                else "protein_rmsd" if metric == "protein_rmsd_ref" else "sucos"
+                else "protein_rmsd"
+                if metric == "protein_rmsd_ref"
+                else "sucos"
             )
             reproduction = self.validate_kwargs.get("reproduction_metrics")
             if reproduction is not None and reproduction_metric not in reproduction:
@@ -329,6 +352,42 @@ class Oracle:
             )
 
     def run(self) -> float:
+        try:
+            return self._run_impl()
+        except Exception as exc:
+            raw_candidate = self.input_smiles or (
+                str(self.input_mol_file)
+                if self.input_mol_file is not None
+                else "unresolved"
+            )
+            identity = self._public_identity(raw_candidate)
+            source_exc = exc.__cause__ or exc
+            stage = (
+                exc.failures[0].stage
+                if isinstance(exc, WorkflowExecutionError) and exc.failures
+                else FailureStage.ANALYTICS
+            )
+            failure = failure_from_exception(
+                source_exc,
+                identity=identity,
+                stage=stage,
+                error_code="oracle_score_failed",
+            )
+            bundle = PublicOutputBundle(
+                manifest=PublicManifest(
+                    schema_version=PUBLIC_SCHEMA_VERSION,
+                    identity=identity,
+                    status="failed",
+                ),
+                records=(failure,),
+            )
+            output_dir = self.wrk_dir / "results"
+            write_public_bundle(bundle, output_dir)
+            raise WorkflowExecutionError(
+                str(exc), failures=(failure,), output_dir=output_dir
+            ) from exc
+
+    def _run_impl(self) -> float:
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         run_dir = self.wrk_dir / "oracle_run"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -362,26 +421,112 @@ class Oracle:
                 self._aggregate_all_metrics(raw_metrics)
             ),
         )
-        base_value, component_values, score_mode = self._calculate_base_score(
+        base_value, _component_values, _score_mode = self._calculate_base_score(
             context, raw_metrics
         )
-        final_value, gate_values, failed_gates, action = self._apply_gates(
+        final_value, _gate_values, _failed_gates, action = self._apply_gates(
             base_value, raw_metrics
         )
-        result = {
-            "output_metric": self.output_metric,
-            "aggregate": self.aggregate,
-            "value": final_value,
-            "score_mode": score_mode,
-            "base_value": base_value,
-            "component_values": json.dumps(component_values, sort_keys=True),
-            "gate_pass": not failed_gates,
-            "gate_values": json.dumps(gate_values, sort_keys=True),
-            "failed_gates": json.dumps(failed_gates),
-            "gate_action": action,
-        }
-        pd.DataFrame([result]).to_csv(self.wrk_dir / "oracle_result.csv", index=False)
+        identity = self._public_identity(smiles)
+        records = [
+            SuccessRecord(
+                envelope=make_envelope(RecordKind.SUCCESS, identity, "success"),
+            ),
+            self._oracle_metric_record(identity, "oracle_raw_score", base_value),
+            self._oracle_metric_record(identity, "oracle_score", final_value),
+        ]
+        if action != "none":
+            records.append(
+                self._oracle_metric_record(
+                    identity, "oracle_gate_adjusted_score", final_value
+                )
+            )
+        write_public_bundle(
+            PublicOutputBundle(
+                manifest=PublicManifest(
+                    schema_version=PUBLIC_SCHEMA_VERSION,
+                    identity=identity,
+                    status="success",
+                    evidence=tuple(self._public_evidence()),
+                    requested_metrics=tuple(
+                        sorted(
+                            {
+                                *self.score_components,
+                                *(gate.metric for gate in self.score_gates),
+                                *([self.output_metric] if self.output_metric else []),
+                            }
+                        )
+                    ),
+                ),
+                records=tuple(records),
+            ),
+            self.wrk_dir / "results",
+        )
         return final_value
+
+    def _public_identity(self, candidate: str) -> OutputIdentity:
+        normalized = self._normalize_candidate(candidate)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return OutputIdentity(
+            workflow=WorkflowKind.ORACLE,
+            run_id=self.run_id,
+            system_id=self.system_path.stem,
+            compound_id=f"sha256:{digest}",
+            runner_id=self.runner,
+        )
+
+    @staticmethod
+    def _normalize_candidate(candidate: str) -> str:
+        value = str(candidate).strip()
+        try:
+            from rdkit import Chem
+
+            molecule = Chem.MolFromSmiles(value)
+            if molecule is not None:
+                return str(Chem.MolToSmiles(molecule, canonical=True))
+        except (ImportError, RuntimeError, ValueError):
+            return value
+        return value
+
+    def _public_evidence(self) -> list[EvidenceSource]:
+        evidence: list[EvidenceSource] = []
+        reference_path = self.validate_kwargs.get("reference_path")
+        if reference_path:
+            path = Path(reference_path)
+            evidence.append(
+                EvidenceSource(
+                    kind="reference_structure",
+                    identifier=path.name,
+                    path=str(path),
+                )
+            )
+        if self.validate_kwargs.get("pocket_coverage_reference"):
+            evidence.append(
+                EvidenceSource(
+                    kind="custom_pocket",
+                    identifier="configured_custom_pocket",
+                )
+            )
+        return evidence
+
+    @staticmethod
+    def _oracle_metric_record(
+        identity: OutputIdentity,
+        metric_name: str,
+        value: float,
+    ) -> MetricRecord:
+        definition = get_metric_definition(metric_name)
+        return MetricRecord(
+            envelope=make_envelope(RecordKind.METRIC, identity, metric_name, "value"),
+            metric_name=metric_name,
+            metric_group=definition.group,
+            metric_class=definition.metric_class,
+            status=RecordStatus.COMPUTED,
+            value=float(value),
+            unit=definition.unit,
+            direction=definition.direction,
+            evidence_regime=EvidenceRegime.REFERENCE_FREE,
+        )
 
     def _calculate_base_score(self, context, raw_metrics):
         if self.output_metric:

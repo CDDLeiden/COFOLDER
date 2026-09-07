@@ -231,8 +231,8 @@ def _(
         scoring_functions=scoring,
     )
     validate_output = stream_cli_in_notebook(validate_command, workspace)
-    chain_metrics = validate_dir / "results" / "chain_metrics.csv"
-    system_metrics = validate_dir / "results" / "system_metrics.csv"
+    chain_metrics = validate_dir / "results" / "metrics.csv"
+    system_metrics = chain_metrics
     assert_file_exists(chain_metrics)
     assert_file_exists(system_metrics)
     assert_csv_columns_have_values(chain_metrics, AFFINITY_COLUMNS)
@@ -281,9 +281,9 @@ def _(
     )
     screen_command.append("--cluster_ifps")
     screen_output = stream_cli_in_notebook(screen_command, workspace)
-    summary_csv = screen_dir / "screen_results.csv"
-    merged_csv = screen_dir / "screen_results_with_scores.csv"
-    cluster_summary_csv = screen_dir / "ifp_cluster_summary.csv"
+    summary_csv = screen_dir / "results" / "metrics.csv"
+    merged_csv = summary_csv
+    cluster_summary_csv = screen_dir / "results" / "ifp_cluster_summary.csv"
     assert_file_exists(summary_csv)
     assert_file_exists(merged_csv)
     assert_file_exists(cluster_summary_csv)
@@ -337,9 +337,9 @@ def _(
         scoring_functions=oracle_scoring_functions_for_runner(runner),
     )
     oracle_output = stream_cli_in_notebook(oracle_command, workspace)
-    oracle_csv = oracle_dir / "oracle_result.csv"
+    oracle_csv = oracle_dir / "results" / "metrics.csv"
     assert_file_exists(oracle_csv)
-    assert_csv_columns_have_values(oracle_csv, ("value",))
+    assert_csv_columns_have_values(oracle_csv, ("oracle_score",))
     return (oracle_output,)
 
 

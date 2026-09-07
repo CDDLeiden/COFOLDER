@@ -112,7 +112,7 @@ def _(
         workspace,
         env=env,
     )
-    assert_chain_ids(output / "results" / "chain_metrics.csv", ["A", "D", "R", "L"])
+    assert_chain_ids(output / "results" / "metrics.csv", ["A", "D", "R", "L"])
     return
 
 
@@ -143,7 +143,7 @@ def _(
         workspace,
         env=env,
     )
-    assert_chain_ids(output / "results" / "chain_metrics.csv", ["A", "D", "R", "L"])
+    assert_chain_ids(output / "results" / "metrics.csv", ["A", "D", "R", "L"])
     return
 
 

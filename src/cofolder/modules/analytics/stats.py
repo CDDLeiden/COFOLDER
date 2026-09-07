@@ -1,20 +1,20 @@
-import pandas as pd
-from typing import Optional
+import logging
 
-from scipy.stats import pearsonr, spearmanr, kendalltau
-from sklearn.metrics import r2_score, mean_absolute_error, root_mean_squared_error
+import pandas as pd
+from scipy.stats import kendalltau, pearsonr, spearmanr
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 
 from cofolder.modules.analytics import dataset
-from cofolder.modules.utils import write, helpers
-
-import logging
+from cofolder.modules.contracts import convert_metric_value
+from cofolder.modules.utils import helpers, write
 
 logger = logging.getLogger(__name__)
 
+
 def convert_boltz_affinity_to_ic50(
     df: pd.DataFrame,
-    affinity_col: str = 'affinity_pred_value',
-    output_path: Optional[str] = None
+    affinity_col: str = "affinity_pred_value",
+    output_path: str | None = None,
 ) -> pd.DataFrame:
     """Convert Boltz affinity predictions to IC50 and pIC50 values.
 
@@ -55,12 +55,19 @@ def convert_boltz_affinity_to_ic50(
     The conversion formula for pIC50 is: (6 - affinity_value) * 1.364
     """
     df = df.copy()
-    df['affinity_value'] = df[affinity_col].astype(float)
-    df['IC50_uM'] = 10 ** df['affinity_value']
-    df['pIC50_kcal_per_mol'] = (6 - df['affinity_value']) * 1.364
+    df["affinity_value"] = df[affinity_col].astype(float)
+    df["IC50_uM"] = df["affinity_value"].map(
+        lambda value: convert_metric_value("affinity_pred_value", "IC50_uM", value)
+    )
+    df["pIC50_kcal_per_mol"] = df["affinity_value"].map(
+        lambda value: convert_metric_value(
+            "affinity_pred_value", "pIC50_kcal_per_mol", value
+        )
+    )
     if output_path is not None:
         write.write_csv(df, output_path, index=False)
     return df
+
 
 def affinity_to_pic50_and_ic50(affinity_pred_value: float) -> tuple[float, float]:
     """
@@ -80,9 +87,10 @@ def affinity_to_pic50_and_ic50(affinity_pred_value: float) -> tuple[float, float
     tuple[float, float]
         (pIC50, IC50_M)
     """
-    pIC50 = 6.0 - affinity_pred_value
-    IC50_M = 10.0 ** (-pIC50)
+    pIC50 = convert_metric_value("affinity_pred_value", "pIC50", affinity_pred_value)
+    IC50_M = convert_metric_value("affinity_pred_value", "IC50_M", affinity_pred_value)
     return pIC50, IC50_M
+
 
 def affinity_to_pic50_kcal_per_mol(affinity_pred_value: float) -> float:
     """
@@ -101,14 +109,17 @@ def affinity_to_pic50_kcal_per_mol(affinity_pred_value: float) -> float:
     float
         pIC50-scaled kcal/mol value.
     """
-    return (6.0 - affinity_pred_value) * 1.364
+    return convert_metric_value(
+        "affinity_pred_value", "pIC50_kcal_per_mol", affinity_pred_value
+    )
+
 
 def calculate_affinity_correlations(
     df: pd.DataFrame,
     pred_col: str,
     exp_col: str,
-    sample_size: Optional[int] = None,
-    censoring: str = 'strip'
+    sample_size: int | None = None,
+    censoring: str = "strip",
 ) -> dict:
     """Calculate correlation metrics between predicted and experimental affinities.
 
@@ -154,18 +165,22 @@ def calculate_affinity_correlations(
     >>> print(f"R² = {metrics['r2']:.3f}")
     R² = 0.982
     """
-    df = dataset.prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
-    df = helpers.drop_and_log_nans(df, [pred_col, exp_col], context="correlation calculation")
+    df = dataset.prepare_affinity_dataframe(
+        df, [pred_col, exp_col], censoring=censoring
+    )
+    df = helpers.drop_and_log_nans(
+        df, [pred_col, exp_col], context="correlation calculation"
+    )
     if sample_size is not None and sample_size < len(df):
         df = df.sample(n=sample_size, random_state=42)
     x = df[pred_col]
     y = df[exp_col]
     metrics = {
-        'r2': float(r2_score(y, x)),
-        'pearson': float(pearsonr(x, y)[0]),
-        'spearman': float(spearmanr(x, y)[0]),
-        'kendall': float(kendalltau(x, y)[0]),
-        'rmse': float(root_mean_squared_error(y, x)),
-        'mae': float(mean_absolute_error(y, x))
+        "r2": float(r2_score(y, x)),
+        "pearson": float(pearsonr(x, y)[0]),
+        "spearman": float(spearmanr(x, y)[0]),
+        "kendall": float(kendalltau(x, y)[0]),
+        "rmse": float(root_mean_squared_error(y, x)),
+        "mae": float(mean_absolute_error(y, x)),
     }
-    return metrics    
+    return metrics

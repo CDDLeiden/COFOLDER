@@ -121,6 +121,8 @@ class RunnerExecutionRequest:
     timings: Any | None = None
     label_prefix: str | None = None
     runtime: RunnerRuntime = field(default_factory=RunnerRuntime)
+    identity: OutputIdentity | None = None
+    chain_identities: tuple[RunnerChainIdentity, ...] = ()
 ```
 
 Important fields:
@@ -130,10 +132,15 @@ Important fields:
 - `seed`: per-repeat seed resolved by COFOLDER
 - `timings`: optional timing collector used by the shared debug summary
 - `label_prefix`: per-repeat label for timing metrics
+- `identity`: the public invocation/repeat identity supplied by the recipe
+- `chain_identities`: the validated runner-index-to-system-entity mapping; do not
+  reconstruct chain identity from DataFrame row position
 
-## Output Required By COFOLDER
+## Private normalized runner boundary
 
-The runner must normalize backend output into the canonical structure below inside `request.repeat_dir / "normalized"`.
+The runner must normalize backend output into the private boundary structure below
+inside `request.repeat_dir / "normalized"`. These files support validation and
+debugging; they are not the versioned public workflow output.
 
 Required files:
 
@@ -159,18 +166,23 @@ class RunnerExecutionResult:
     warnings: list[str] = field(default_factory=list)
     runtime: RunnerRuntime = field(default_factory=RunnerRuntime)
     sample_records: list[dict[str, Any]] = field(default_factory=list)
+    chain_identities: tuple[RunnerChainIdentity, ...] = ()
+    records: list[PublicRecord] = field(default_factory=list)
 ```
 
 ## Metric Outcome States
 
-The canonical normalized bundle now distinguishes runner metric-group outcomes with four exact states:
+The normalized bundle distinguishes runner metric-group outcomes with five exact states:
 
 - `computed`: the required normalized payload is present and schema-valid
 - `unsupported`: the selected runner does not support the requested metric group
 - `missing`: the runner declares support, but the required normalized payload is absent
 - `failed`: the runner attempted production, but the metric group did not complete successfully
+- `not_requested`: the group belongs to the runner profile but was not requested
 
-Unsupported requested groups are the only runner-boundary case that should warn and continue. `missing`, `failed`, malformed bundles, and contradictory states stop the workflow after runner execution and before shared gather or analytics proceed.
+Unsupported requested groups warn and continue. A malformed, missing, or failed
+repeat becomes an `output_validation` failure record; other valid repeats continue.
+The workflow raises only when no repeat remains usable.
 
 Shared validation no longer derives requested metric-group outcomes from CSV shape or runner capabilities. If a requested runner metric group matters to workflow behavior, the runner must emit an explicit `metric_outcomes` entry for it.
 
@@ -185,6 +197,7 @@ That validation checks:
 - required bundle files and directories exist under `normalized/`
 - canonical CSV columns are present
 - structure files and `sample_records` agree
+- typed records and explicit chain identities satisfy the public identity contract
 - explicit metric outcomes, if supplied, are consistent with runner capabilities and payload shape
 
 If validation fails, the workflow stops after the attempted runner execution, and partial artifacts remain in `raw/repeat_<n>/` for debugging.
@@ -192,7 +205,7 @@ If validation fails, the workflow stops after the attempted runner execution, an
 After that, COFOLDER takes over again:
 
 - normalized structures are gathered into `results/structures/`
-- per-repeat CSVs are merged into `results/system_metrics.csv` and `results/chain_metrics.csv`
+- per-repeat private CSVs are converted into the versioned public record bundle under `results/`
 - shared analytics such as structure metrics, reproduction metrics, bias, and robustness run on the normalized bundle
 
 The merge step is implemented in `src/cofolder/modules/utils/gather.py`.
@@ -316,7 +329,9 @@ Current shared runner metric groups are:
 - `affinity_metrics`
 - `affinity_metrics_ext`
 
-If a user requests a metric group the selected runner does not support, COFOLDER warns and continues. The corresponding output columns are added as empty values so downstream schemas remain stable.
+If a user requests a metric group the selected runner does not support, COFOLDER
+warns and continues. The corresponding public metric records use
+`status="unsupported"` and `value=null`.
 
 This means you should declare only the metrics your backend can truly normalize.
 
@@ -338,6 +353,7 @@ from cofolder.modules.runners import (
     RunnerExecutionResult,
     RunnerMetricOutcome,
     RunnerRuntime,
+    build_runner_public_records,
 )
 
 
@@ -435,6 +451,8 @@ class MyRunner(BaseRunner):
             capabilities=set(self.capabilities),
             runtime=RunnerRuntime(diffusion_samples=1),
             sample_records=sample_records,
+            chain_identities=request.chain_identities,
+            records=build_runner_public_records(system_df, chain_df, request),
             metric_outcomes={
                 "confidence_metrics": RunnerMetricOutcome(
                     state="computed",

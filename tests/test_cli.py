@@ -1,12 +1,11 @@
 """Tests for cofolder.cli module."""
 import logging
-from unittest.mock import MagicMock
-from unittest.mock import Mock
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from cofolder import cli
+from cofolder.modules.contracts import WorkflowExecutionError
 
 
 class TestCLIMain:
@@ -396,7 +395,7 @@ class TestBiasRecipe:
         with pytest.raises(ValueError, match="at least one public or custom reference input"):
             cli.main(["bias", "-s", str(system_path), "-w", str(temp_dir)])
 
-        with pytest.raises(ValueError, match="missing required reference sources"):
+        with pytest.raises(WorkflowExecutionError, match="missing required reference sources"):
             cli.main(args)
 
     def test_main_accepts_build_mode_with_fresh_output_paths(

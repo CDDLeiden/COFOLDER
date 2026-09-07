@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.recipes.oracle import (
     Oracle,
     OracleGate,
@@ -244,11 +245,12 @@ class TestOracleRun:
 
         assert mock_validate_run.call_count == 1
         assert value == pytest.approx(6.4)
-        result_csv = temp_dir / "oracle_result.csv"
+        result_csv = temp_dir / "results" / "metrics.csv"
         assert result_csv.exists()
         out = pd.read_csv(result_csv)
-        assert out.iloc[0]["output_metric"] == "affinity_pred_value"
-        assert float(out.iloc[0]["value"]) == pytest.approx(6.4)
+        score = out[out["metric_name"] == "oracle_score"].iloc[0]
+        assert float(score["value"]) == pytest.approx(6.4)
+        assert not (temp_dir / "oracle_result.csv").exists()
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_run_aggregate_mean(
@@ -373,7 +375,7 @@ class TestOracleScoring:
             output_metric="confidence_score",
             scoring_functions=["confidence_metrics"],
         )
-        with pytest.raises(ValueError, match="finite numeric values"):
+        with pytest.raises(WorkflowExecutionError, match="finite numeric values"):
             oracle.run()
 
     @patch("cofolder.recipes.oracle.Validate.run")
@@ -397,15 +399,15 @@ class TestOracleScoring:
             scoring_functions=["affinity_metrics", "confidence_metrics"],
         )
         assert oracle.run() == pytest.approx(-4.4)
-        audit = pd.read_csv(temp_dir / "oracle_result.csv").iloc[0]
-        assert audit["score_mode"] == "composite"
-        assert audit["base_value"] == pytest.approx(-4.4)
-        assert json.loads(audit["component_values"]) == {
-            "ligand_B__affinity_pred_value": 6.0,
-            "system__confidence_score": 0.8,
+        metrics = pd.read_csv(temp_dir / "results" / "metrics.csv")
+        values = dict(zip(metrics["metric_name"], metrics["value"]))
+        assert values["oracle_raw_score"] == pytest.approx(-4.4)
+        assert values["oracle_score"] == pytest.approx(-4.4)
+        manifest = json.loads((temp_dir / "results" / "manifest.json").read_text())
+        assert set(manifest["requested_metrics"]) == {
+            "ligand_B__affinity_pred_value",
+            "system__confidence_score",
         }
-        assert bool(audit["gate_pass"])
-        assert audit["gate_action"] == "none"
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_custom_function_receives_structured_context_once(
@@ -417,10 +419,9 @@ class TestOracleScoring:
             system=[{"confidence_score": 0.75}],
         )
         scoring_function = MagicMock(
-            side_effect=lambda context: context.aggregated_metrics[
-                "system__confidence_score"
-            ]
-            * 10
+            side_effect=lambda context: (
+                context.aggregated_metrics["system__confidence_score"] * 10
+            )
         )
         oracle = Oracle(
             str(temp_dir),
@@ -454,7 +455,7 @@ class TestOracleScoring:
             input_smiles="CCO",
             scoring_function=lambda context: invalid,
         )
-        with pytest.raises((TypeError, ValueError), match="finite numeric scalar"):
+        with pytest.raises(WorkflowExecutionError, match="finite numeric scalar"):
             oracle.run()
 
     @pytest.mark.parametrize(
@@ -516,13 +517,10 @@ class TestOracleScoring:
             scoring_functions=["affinity_metrics"],
         )
         assert oracle.run() == pytest.approx(expected)
-        audit = pd.read_csv(temp_dir / "oracle_result.csv").iloc[0]
-        assert not bool(audit["gate_pass"])
-        assert json.loads(audit["failed_gates"]) == [
-            "missing_structural_metric",
-            "another_missing_metric",
-        ]
-        assert audit["gate_action"] == mode
+        metrics = pd.read_csv(temp_dir / "results" / "metrics.csv")
+        values = dict(zip(metrics["metric_name"], metrics["value"]))
+        assert values["oracle_raw_score"] == pytest.approx(6.0)
+        assert values["oracle_gate_adjusted_score"] == pytest.approx(expected)
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_bias_similarity_scalar_regression(

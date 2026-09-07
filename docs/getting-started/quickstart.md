@@ -44,8 +44,10 @@ cofolder validate -s system.yaml -o options.yaml -w ./output
 After successful execution, you'll find:
 
 - `raw/` - runner-owned raw execution artifacts
-- `results/system_metrics.csv` - merged system-level metrics
-- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/records.jsonl` - authoritative versioned records
+- `results/metrics.csv` - long-form metric view
+- `results/successes.csv` and `results/failures.csv` - outcome views
+- `results/manifest.json` - invocation manifest
 - `results/structures/` - gathered output structures
 - logs and additional metadata in the working directory
 

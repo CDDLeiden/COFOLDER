@@ -28,6 +28,7 @@ from cofolder.modules.runners.contracts import (
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
+    build_runner_public_records,
 )
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
@@ -66,7 +67,9 @@ def resolve_openfold3_cache_root(env: Mapping[str, str] | None = None) -> Path:
     return _OPENFOLD3_DEFAULT_CACHE
 
 
-def check_openfold3_setup_ready(env: Mapping[str, str] | None = None) -> tuple[bool, str | None]:
+def check_openfold3_setup_ready(
+    env: Mapping[str, str] | None = None,
+) -> tuple[bool, str | None]:
     cache_root = resolve_openfold3_cache_root(env)
     ckpt_root_path = cache_root / "ckpt_root"
     if not ckpt_root_path.exists():
@@ -107,7 +110,9 @@ def check_openfold3_setup_ready(env: Mapping[str, str] | None = None) -> tuple[b
 class OpenFold3Options:
     settings: dict[str, Any]
 
-    def find_value(self, key: str | None = None, path: Sequence[str | int] | None = None) -> Any:
+    def find_value(
+        self, key: str | None = None, path: Sequence[str | int] | None = None
+    ) -> Any:
         if path:
             current: Any = self.settings
             for token in path:
@@ -116,7 +121,9 @@ class OpenFold3Options:
                 elif isinstance(current, list):
                     current = current[int(token)]
                 else:
-                    raise ValueError(f"Path {list(path)!r} is invalid for OpenFold3 options.")
+                    raise ValueError(
+                        f"Path {list(path)!r} is invalid for OpenFold3 options."
+                    )
             return current
 
         if key is None:
@@ -138,7 +145,9 @@ class OpenFold3Options:
         if not matches:
             return None
         if len(matches) > 1:
-            raise ValueError(f"Key {key!r} appears multiple times in OpenFold3 options.")
+            raise ValueError(
+                f"Key {key!r} appears multiple times in OpenFold3 options."
+            )
         return matches[0]
 
     @property
@@ -170,7 +179,9 @@ class OpenFold3Options:
         if value is None:
             return []
         if not isinstance(value, list):
-            raise ValueError("OpenFold3 option 'extra_args' must be a list when provided.")
+            raise ValueError(
+                "OpenFold3 option 'extra_args' must be a list when provided."
+            )
         return [str(item) for item in value]
 
     def to_config_payload(self) -> dict[str, Any]:
@@ -253,14 +264,16 @@ class OpenFold3Runner(BaseRunner):
             distribution_name="openfold3",
             missing_message=(
                 "The selected 'openfold3' runner is not installed. Install it with "
-                "`python -m pip install -e \".[openfold3]\"` from a COFOLDER checkout."
+                '`python -m pip install -e ".[openfold3]"` from a COFOLDER checkout.'
             ),
         )
 
     def load_options(self, options_path: Path) -> OpenFold3Options:
         settings = read.read_yaml(path=options_path)
         if not isinstance(settings, dict):
-            raise ValueError("OpenFold3 options YAML must contain a mapping at the document root.")
+            raise ValueError(
+                "OpenFold3 options YAML must contain a mapping at the document root."
+            )
         return OpenFold3Options(settings=settings)
 
     def prepare_system(
@@ -294,7 +307,10 @@ class OpenFold3Runner(BaseRunner):
         query_json_path = raw_output_dir / "inference_query_set.json"
         runner_yaml_path = raw_output_dir / "runner.yaml"
         query_json_path.write_text(
-            json.dumps(self._build_query_payload(request.system_name, request.system_obj), indent=2),
+            json.dumps(
+                self._build_query_payload(request.system_name, request.system_obj),
+                indent=2,
+            ),
             encoding="utf-8",
         )
         runner_yaml_path.write_text(
@@ -328,10 +344,12 @@ class OpenFold3Runner(BaseRunner):
             system_name=request.system_name,
             sample_numbers=sample_numbers,
         )
-        system_df, chain_df, confidence_payloads, confidence_issues = self._normalize_metrics(
-            seed_dir=seed_dir,
-            request=request,
-            sample_numbers=sample_numbers,
+        system_df, chain_df, confidence_payloads, confidence_issues = (
+            self._normalize_metrics(
+                seed_dir=seed_dir,
+                request=request,
+                sample_numbers=sample_numbers,
+            )
         )
         companion_artifacts = self._copy_confidence_artifacts(
             normalized_dir=normalized_dir,
@@ -406,6 +424,8 @@ class OpenFold3Runner(BaseRunner):
             sample_records=sample_records,
             metric_outcomes=metric_outcomes,
             companion_artifacts=companion_artifacts,
+            chain_identities=request.chain_identities,
+            records=build_runner_public_records(system_df, chain_df, request),
         )
 
     def _build_query_payload(self, system_name: str, system_obj: Any) -> dict[str, Any]:
@@ -413,15 +433,23 @@ class OpenFold3Runner(BaseRunner):
         chains: list[dict[str, Any]] = []
         for index, entry in enumerate(sequences):
             if not isinstance(entry, dict):
-                raise ValueError(f"Sequence entry {index} must be a mapping, got {type(entry)!r}.")
+                raise ValueError(
+                    f"Sequence entry {index} must be a mapping, got {type(entry)!r}."
+                )
             if "protein" in entry:
-                chains.append(self._build_polymer_chain("protein", entry["protein"], index=index))
+                chains.append(
+                    self._build_polymer_chain("protein", entry["protein"], index=index)
+                )
                 continue
             if "dna" in entry:
-                chains.append(self._build_polymer_chain("dna", entry["dna"], index=index))
+                chains.append(
+                    self._build_polymer_chain("dna", entry["dna"], index=index)
+                )
                 continue
             if "rna" in entry:
-                chains.append(self._build_polymer_chain("rna", entry["rna"], index=index))
+                chains.append(
+                    self._build_polymer_chain("rna", entry["rna"], index=index)
+                )
                 continue
             if "ligand" in entry:
                 chains.append(self._build_ligand_chain(entry["ligand"], index=index))
@@ -457,7 +485,9 @@ class OpenFold3Runner(BaseRunner):
         return {"queries": {system_name: query}}
 
     @staticmethod
-    def _build_polymer_chain(entity_type: str, payload: Any, *, index: int) -> dict[str, Any]:
+    def _build_polymer_chain(
+        entity_type: str, payload: Any, *, index: int
+    ) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError(f"{entity_type.title()} entry {index} must be a mapping.")
         chain_ids = OpenFold3Runner._normalize_chain_ids(
@@ -484,7 +514,9 @@ class OpenFold3Runner(BaseRunner):
     def _build_ligand_chain(ligand: Any, *, index: int) -> dict[str, Any]:
         if not isinstance(ligand, dict):
             raise ValueError(f"Ligand entry {index} must be a mapping.")
-        chain_ids = OpenFold3Runner._normalize_chain_ids(ligand.get("id"), entry_label=f"ligand[{index}]")
+        chain_ids = OpenFold3Runner._normalize_chain_ids(
+            ligand.get("id"), entry_label=f"ligand[{index}]"
+        )
         smiles = ligand.get("smiles")
         ccd_codes = ligand.get("ccd_codes")
         if ccd_codes is None and ligand.get("ccd") is not None:
@@ -517,7 +549,9 @@ class OpenFold3Runner(BaseRunner):
         else:
             chain_ids = [str(value)]
         if not chain_ids:
-            raise ValueError(f"{entry_label} must contain at least one non-empty chain id.")
+            raise ValueError(
+                f"{entry_label} must contain at least one non-empty chain id."
+            )
         return chain_ids
 
     @staticmethod
@@ -529,7 +563,9 @@ class OpenFold3Runner(BaseRunner):
                 continue
             sample_numbers.add(int(match.group("sample")))
         if not sample_numbers:
-            raise ValueError(f"OpenFold3 produced no sample structures under {seed_dir!s}.")
+            raise ValueError(
+                f"OpenFold3 produced no sample structures under {seed_dir!s}."
+            )
         return sorted(sample_numbers)
 
     @staticmethod
@@ -553,7 +589,9 @@ class OpenFold3Runner(BaseRunner):
                 raise ValueError(
                     f"OpenFold3 sample {sample_number} is missing a structure file under {seed_dir!s}."
                 )
-            target_name = f"{repeat}_{system_name}_model_{sample_number - 1}{source.suffix}"
+            target_name = (
+                f"{repeat}_{system_name}_model_{sample_number - 1}{source.suffix}"
+            )
             shutil.copy2(source, target_dir / target_name)
             records.append(
                 {
@@ -597,7 +635,9 @@ class OpenFold3Runner(BaseRunner):
             aggregated_path = seed_dir / (
                 f"{request.system_name}_seed_{request.seed}_sample_{sample_number}_confidences_aggregated.json"
             )
-            aggregated = read.read_json(aggregated_path) if aggregated_path.exists() else {}
+            aggregated = (
+                read.read_json(aggregated_path) if aggregated_path.exists() else {}
+            )
             if not aggregated_path.exists():
                 confidence_issues.append(
                     f"sample {sample_number} is missing confidences_aggregated.json"
@@ -645,7 +685,9 @@ class OpenFold3Runner(BaseRunner):
                 confidence_issues.append(
                     f"sample {sample_number} is missing chain_ptm values"
                 )
-            if not any((chain_pair_iptm.get(chain_id) or {}) for chain_id in chain_order):
+            if not any(
+                (chain_pair_iptm.get(chain_id) or {}) for chain_id in chain_order
+            ):
                 confidence_issues.append(
                     f"sample {sample_number} is missing chain_pair_iptm values"
                 )
@@ -663,7 +705,9 @@ class OpenFold3Runner(BaseRunner):
                 }
                 if chain_id in chain_ptm:
                     row["chain_ptm"] = chain_ptm[chain_id]
-                for other_chain_id, value in (chain_pair_iptm.get(chain_id) or {}).items():
+                for other_chain_id, value in (
+                    chain_pair_iptm.get(chain_id) or {}
+                ).items():
                     row[f"chain_pair_iptm_{chain_id}_{other_chain_id}"] = value
                 for other_chain_id, value in (bespoke_iptm.get(chain_id) or {}).items():
                     row[f"bespoke_iptm_{chain_id}_{other_chain_id}"] = value
@@ -688,7 +732,9 @@ class OpenFold3Runner(BaseRunner):
                         f"sample {sample_number} is missing full-confidence field {label!r}"
                     )
                     continue
-                confidence_payloads[label].append((artifact_base_name, full_confidence[label]))
+                confidence_payloads[label].append(
+                    (artifact_base_name, full_confidence[label])
+                )
 
         return (
             pd.DataFrame(system_rows),
@@ -740,7 +786,9 @@ class OpenFold3Runner(BaseRunner):
                 state="failed",
                 message=(
                     "OpenFold3 confidence outputs were incomplete: "
-                    + "; ".join(dict.fromkeys(str(issue) for issue in confidence_issues))
+                    + "; ".join(
+                        dict.fromkeys(str(issue) for issue in confidence_issues)
+                    )
                     + "."
                 ),
             )
@@ -773,7 +821,9 @@ class OpenFold3Runner(BaseRunner):
         allowed_suffixes: Sequence[str],
     ) -> Path | None:
         for extension in allowed_suffixes:
-            matches = sorted(seed_dir.glob(f"*_sample_{sample_number}{suffix}{extension}"))
+            matches = sorted(
+                seed_dir.glob(f"*_sample_{sample_number}{suffix}{extension}")
+            )
             if matches:
                 return matches[0]
         return None

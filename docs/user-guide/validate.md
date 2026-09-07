@@ -94,8 +94,9 @@ sequences:
 The command creates:
 
 - `raw/` - runner-owned raw execution artifacts
-- `results/system_metrics.csv` - merged system-level metrics
-- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/records.jsonl` - authoritative success, metric, and failure records
+- `results/successes.csv`, `results/metrics.csv`, and `results/failures.csv` - tabular views
+- `results/manifest.json` - schema, invocation, evidence, and artifact metadata
 - `results/structures/` - gathered output structures
 - `results/bias_train/` - optional shared bias diagnostics when `--assess_bias` is enabled
 - log files in the working directory

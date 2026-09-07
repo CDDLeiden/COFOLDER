@@ -153,8 +153,9 @@ or settings-incompatible cached artifact is not silently injected.
 `screen` writes:
 
 - Per-row validate outputs under `<wrk_dir>/<index>_<id>/...`
-- Summary CSV: `<wrk_dir>/screen_results.csv`
-- Merged input+scores CSV: `<wrk_dir>/screen_results_with_scores.csv`
+- Canonical records: `<wrk_dir>/results/records.jsonl`
+- Long-form views: `<wrk_dir>/results/{successes,metrics,failures}.csv`
+- Manifest: `<wrk_dir>/results/manifest.json`
 - Cluster summary (when enabled): `<wrk_dir>/ifp_cluster_summary.csv`
 
 Summary columns include:
@@ -171,7 +172,7 @@ Summary columns include:
   `ifp_filter_reference`
 - clustering columns: `ifp_cluster_id` and `ifp_cluster_status`
 
-`screen_results_with_scores.csv` includes:
+Metric records include:
 
 - all original input CSV columns
 - run metadata (`index`, `status`, `error_message`, `run_dir`)
@@ -218,7 +219,7 @@ When used from Python, `Screen.run()` returns the same merged results as a
 ## Failure Behavior
 
 If one row fails, screening continues for remaining rows.
-Failures are recorded in `screen_results.csv`.
+Failures are recorded in `results/records.jsonl` and `results/failures.csv`.
 
 ## Related
 

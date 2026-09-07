@@ -135,11 +135,9 @@ Exactly one base-score source is allowed: `output_metric`, `score_components`, o
 
 ## Output and audit trail
 
-`Oracle.run()` returns the final `float` and writes `<wrk_dir>/oracle_result.csv`.
-The existing `output_metric`, `aggregate`, and `value` fields are retained. Additional
-fields record the score mode, base value, component and gate values, pass/fail state,
-failed gates, and applied gate action. Raw Validate outputs remain under
-`<wrk_dir>/oracle_run/results/`.
+`Oracle.run()` returns the final `float` and writes the versioned public contract
+under `<wrk_dir>/results/`. The base, final, and gate-adjusted values are long-form
+Oracle metric records. Raw Validate outputs remain under `<wrk_dir>/oracle_run/results/`.
 
 ## Metric prerequisites
 

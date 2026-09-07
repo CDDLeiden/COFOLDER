@@ -103,8 +103,8 @@ Notes:
 The packaged acceptance inputs also include `system_nucleic_acid.yaml` plus
 runner-specific constrained systems. In each clean backend environment, run
 `validate` against the nucleic-acid fixture and the matching constrained fixture
-from `src/cofolder/acceptance/data/`. Confirm that `chain_metrics.csv` contains
-chains `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
+from `src/cofolder/acceptance/data/`. Confirm that the long-form `metrics.csv`
+contains `chain_id` values `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
 6 Å pocket form, Boltz-2/community exercise pocket and contact inputs, and the
 OpenFold3 fixture exercises pocket translation. These runs are opt-in because
 they execute the real prediction backends.

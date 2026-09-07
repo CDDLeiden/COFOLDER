@@ -9,6 +9,7 @@ import math
 import re
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
@@ -19,6 +20,24 @@ from cofolder.modules.analytics.ifp_clustering import cluster_binary_ifps
 from cofolder.modules.analytics.reproduction import (
     _build_reference_ifp_from_custom,
     _parse_custom_pocket_reference,
+)
+from cofolder.modules.contracts import (
+    METRIC_CATALOG,
+    PUBLIC_SCHEMA_VERSION,
+    SCREEN_METRIC_PROFILES,
+    ArtifactReference,
+    EvidenceSource,
+    FailureStage,
+    OutputIdentity,
+    PublicManifest,
+    PublicOutputBundle,
+    PublicSerializationError,
+    SuccessRecord,
+    WorkflowExecutionError,
+    WorkflowKind,
+    failure_from_exception,
+    metric_records_from_frames,
+    write_public_bundle,
 )
 from cofolder.modules.input import system
 from cofolder.modules.input.system import iter_system_chains
@@ -31,39 +50,9 @@ from cofolder.recipes.validate import Validate
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_SCREEN_METRICS = (
-    "confidence_score",
-    "ptm",
-    "iptm",
-    "bias_prot_sim_train_max",
-    "bias_prot_sim_train_pairwise_max",
-    "bias_lig_sim_train_max",
-    "pocket_coverage_ref",
-    "pocket_coverage_ref_mean",
-    "pocket_coverage_custom",
-    "pocket_coverage_custom_mean",
-)
-PROTEIN_SCREEN_METRICS = (
-    "chains_ptm",
-    "bias_prot_sim_train",
-    "bias_prot_sim_train_pairwise",
-)
-LIGAND_SCREEN_METRICS = (
-    "chains_ptm",
-    "affinity_pred_value",
-    "affinity_probability_binary",
-    "pIC50",
-    "IC50_M",
-    "pIC50_kcal_per_mol",
-    "sasa",
-    "sasa_norm_heavy",
-    "ifp_distance",
-    "ifp_prolif",
-    "bias_lig_sim_train",
-    "pocket_coverage_ref",
-    "pocket_coverage_custom",
-    "ligand_pose_overlap_ref",
-)
+SYSTEM_SCREEN_METRICS = SCREEN_METRIC_PROFILES["system"]
+PROTEIN_SCREEN_METRICS = SCREEN_METRIC_PROFILES["protein"]
+LIGAND_SCREEN_METRICS = SCREEN_METRIC_PROFILES["ligand"]
 
 
 class Screen:
@@ -72,8 +61,8 @@ class Screen:
     ``cluster_ifps`` applies deterministic average-linkage clustering to compatible
     binary distance IFPs after prediction. ``ifp_cluster_similarity_threshold`` is
     the inclusive Jaccard-similarity cut and defaults to ``0.5``. Both consolidated
-    CSVs always contain cluster ID/status columns; an enabled run additionally writes
-    ``ifp_cluster_summary.csv``.
+    Returned rows always contain cluster ID/status columns; an enabled run additionally
+    publishes ``results/ifp_cluster_summary.csv``.
     """
 
     def __init__(
@@ -113,6 +102,7 @@ class Screen:
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
         self.runner = str(runner)
+        self.run_id = str(uuid4())
 
         self.variable_raw = variable or []
         self.col_variable = col_variable or []
@@ -294,18 +284,62 @@ class Screen:
         return count
 
     def run(self) -> pd.DataFrame:
-        """Run the screen, write both CSV summaries, and return the merged results."""
+        try:
+            return self._run_impl()
+        except (WorkflowExecutionError, PublicSerializationError):
+            raise
+        except Exception as exc:
+            identity = OutputIdentity(
+                workflow=WorkflowKind.SCREEN,
+                run_id=self.run_id,
+                system_id=self.system_path.stem,
+                runner_id=self.runner,
+            )
+            failure = failure_from_exception(
+                exc,
+                identity=identity,
+                stage=FailureStage.INPUT_VALIDATION,
+                error_code="screen_input_validation_failed",
+            )
+            output_dir = self.wrk_dir / "results"
+            write_public_bundle(
+                PublicOutputBundle(
+                    manifest=PublicManifest(
+                        schema_version=PUBLIC_SCHEMA_VERSION,
+                        identity=identity,
+                        status="failed",
+                    ),
+                    records=(failure,),
+                ),
+                output_dir,
+            )
+            raise WorkflowExecutionError(
+                str(exc), failures=(failure,), output_dir=output_dir
+            ) from exc
+
+    def _run_impl(self) -> pd.DataFrame:
+        """Run the screen, publish contract records, and return the merged results."""
 
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         df = pd.read_csv(self.variable_csv)
+        if df.empty:
+            raise ValueError("Screen input CSV must contain at least one compound row.")
 
         required_cols = [self.col_id, *self.col_variable, *self.merge_data]
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
             raise ValueError(f"CSV missing required columns: {', '.join(missing)}")
+        compound_ids = df[self.col_id].astype(str)
+        duplicates = sorted(compound_ids[compound_ids.duplicated()].unique())
+        if duplicates:
+            raise ValueError(
+                f"CSV column '{self.col_id}' contains duplicate compound IDs: "
+                f"{', '.join(duplicates)}"
+            )
 
         records: list[dict[str, Any]] = []
         records_with_scores: list[dict[str, Any]] = []
+        public_failures = []
         total = len(df)
         for i, (_, row) in enumerate(df.iterrows(), 1):
             compound_id = str(row[self.col_id])
@@ -336,6 +370,7 @@ class Screen:
             self.logger.info("(%d/%d) screening %s", i, total, compound_id)
 
             sys_obj: system.System | None = None
+            row_stage = FailureStage.INPUT_VALIDATION
             try:
                 sys_obj = system.System(system=copy.deepcopy(self.base_system))
                 for path, col in zip(self.variable_paths, self.col_variable):
@@ -380,6 +415,7 @@ class Screen:
                         bias_train_dir / "ligand_training_data.csv"
                     )
 
+                row_stage = FailureStage.PREPARATION
                 validator = Validate(
                     wrk_dir=str(run_dir),
                     system_path=str(row_system_path),
@@ -392,6 +428,7 @@ class Screen:
                     ),
                     **row_validate_kwargs,
                 )
+                row_stage = FailureStage.BACKEND_EXECUTION
                 validator.run()
                 if self.reusable_msa_dir is not None:
                     self.runner_impl.inject_reusable_msas(
@@ -400,6 +437,7 @@ class Screen:
                         settings=self.msa_reuse_settings,
                     )
                     write.write_yaml(sys_obj, path=row_system_path)
+                row_stage = FailureStage.ANALYTICS
                 detailed.update(self._collect_score_columns(run_dir=run_dir))
                 filter_result = self._evaluate_ifp_filter(run_dir=run_dir)
                 summary.update(filter_result)
@@ -428,6 +466,24 @@ class Screen:
                     summary.update(filter_result)
                     detailed.update(filter_result)
                 self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
+                source_exc = exc.__cause__ or exc
+                if isinstance(exc, WorkflowExecutionError) and exc.failures:
+                    row_stage = exc.failures[0].stage
+                public_failures.append(
+                    failure_from_exception(
+                        source_exc,
+                        identity=OutputIdentity(
+                            workflow=WorkflowKind.SCREEN,
+                            run_id=self.run_id,
+                            system_id=self.system_path.stem,
+                            compound_id=compound_id,
+                            runner_id=self.runner,
+                        ),
+                        stage=row_stage,
+                        error_code="screen_compound_failed",
+                        details={"row_index": i},
+                    )
+                )
 
             records.append(summary)
             records_with_scores.append(detailed)
@@ -436,24 +492,146 @@ class Screen:
         results_df = pd.DataFrame(records_with_scores)
         self._apply_ifp_clustering(summary_df, results_df)
 
-        out_csv = self.wrk_dir / "screen_results.csv"
         self._set_filter_dtypes(summary_df)
-        summary_df.to_csv(out_csv, index=False)
-        out_scores_csv = self.wrk_dir / "screen_results_with_scores.csv"
         self._set_filter_dtypes(results_df)
-        results_df.to_csv(out_scores_csv, index=False)
+        has_success = self._write_public_results(results_df, public_failures)
 
         failures = sum(1 for r in records if r["status"] == "failed")
         successes = len(records) - failures
         self.logger.info(
-            "Screen complete: total=%d success=%d failed=%d summary=%s merged=%s",
+            "Screen complete: total=%d success=%d failed=%d public_results=%s",
             len(records),
             successes,
             failures,
-            out_csv,
-            out_scores_csv,
+            self.wrk_dir / "results",
         )
+        if not has_success:
+            raise WorkflowExecutionError(
+                "No screened compound produced a usable result.",
+                failures=tuple(public_failures),
+                output_dir=self.wrk_dir / "results",
+            )
         return results_df
+
+    def _write_public_results(self, results_df: pd.DataFrame, failures) -> bool:
+        public_records = []
+        evidence = []
+        reference_path = self.validate_kwargs.get("reference_path")
+        if reference_path:
+            reference = Path(reference_path)
+            evidence.append(
+                EvidenceSource(
+                    kind="reference_structure",
+                    identifier=reference.name,
+                    path=str(reference),
+                )
+            )
+        if self.pocket_coverage_reference:
+            evidence.append(
+                EvidenceSource(
+                    kind="custom_pocket",
+                    identifier="configured_custom_pocket",
+                )
+            )
+        requested = set(self.validate_kwargs.get("scoring_functions") or ())
+        if self.validate_kwargs.get("reproduction_metrics") is not None:
+            requested.add("reproduction_metrics")
+        if self.validate_kwargs.get("assess_bias"):
+            requested.add("bias_metrics")
+        if self.ifp_filter_threshold is not None:
+            requested.add("screen_metrics")
+        if self.cluster_ifps:
+            requested.add("screen_metrics")
+        chain_specs = [
+            (chain.entity_type, chain.chain_id, chain.sequence_index)
+            for chain in iter_system_chains(self.base_system_obj)
+        ]
+        for _, row in results_df.iterrows():
+            compound_id = str(row[self.col_id])
+            identity = OutputIdentity(
+                workflow=WorkflowKind.SCREEN,
+                run_id=self.run_id,
+                system_id=self.system_path.stem,
+                compound_id=compound_id,
+                runner_id=self.runner,
+            )
+            if str(row.get("status")) == "failed":
+                continue
+            system_values = {
+                "model_name": None,
+                "repeat": None,
+                "diffusion_sample": None,
+            }
+            chain_values: list[dict[str, Any]] = []
+            for entity_type, chain_id, entity_position in chain_specs:
+                prefix = f"{entity_type}_{chain_id}__"
+                values = {
+                    "CHAIN_ID": chain_id,
+                    "ENTITY_ID": f"entity:{entity_position}",
+                    "ENTITY_TYPE": entity_type,
+                    "model_name": None,
+                    "repeat": None,
+                    "diffusion_sample": None,
+                }
+                for key, value in row.items():
+                    if str(key).startswith(prefix):
+                        values[str(key).removeprefix(prefix)] = value
+                chain_values.append(values)
+            for key, value in row.items():
+                name = str(key).removeprefix("system__")
+                if str(key).startswith("system__") and name in METRIC_CATALOG:
+                    system_values[name] = value
+                elif str(key) in METRIC_CATALOG:
+                    system_values[str(key)] = value
+            public_records.extend(
+                metric_records_from_frames(
+                    pd.DataFrame([system_values]),
+                    pd.DataFrame(chain_values),
+                    base_identity=identity,
+                    evidence=evidence,
+                    requested_metrics=requested or None,
+                )
+            )
+        public_records.extend(failures)
+        has_success = any(
+            isinstance(record, SuccessRecord) for record in public_records
+        )
+        status = (
+            "partial"
+            if failures and has_success
+            else "success"
+            if has_success
+            else "failed"
+        )
+        manifest_identity = OutputIdentity(
+            workflow=WorkflowKind.SCREEN,
+            run_id=self.run_id,
+            system_id=self.system_path.stem,
+            runner_id=self.runner,
+        )
+        bundle = PublicOutputBundle(
+            manifest=PublicManifest(
+                schema_version=PUBLIC_SCHEMA_VERSION,
+                identity=manifest_identity,
+                status=status,
+                evidence=tuple(evidence),
+                requested_metrics=tuple(sorted(requested)),
+                artifacts=(
+                    ArtifactReference(
+                        "ifp_cluster_summary",
+                        "ifp_cluster_summary.csv",
+                        "table",
+                    ),
+                )
+                if self.cluster_ifps
+                else (),
+            ),
+            records=tuple(public_records),
+        )
+        write_public_bundle(bundle, self.wrk_dir / "results")
+        for legacy_name in ("screen_results.csv", "screen_results_with_scores.csv"):
+            (self.wrk_dir / legacy_name).unlink(missing_ok=True)
+        return has_success
 
     def _default_cluster_result(self) -> dict[str, Any]:
         return {
@@ -471,6 +649,9 @@ class Screen:
         """Annotate both outputs and write a deterministic cluster summary."""
 
         if not self.cluster_ifps:
+            (self.wrk_dir / "results" / "ifp_cluster_summary.csv").unlink(
+                missing_ok=True
+            )
             return
 
         parsed_rows: list[tuple[int, list[int], str]] = []
@@ -501,16 +682,16 @@ class Screen:
         else:
             cluster_summary = pd.DataFrame(columns=IFP_CLUSTER_SUMMARY_COLUMNS)
 
-        cluster_summary.to_csv(self.wrk_dir / "ifp_cluster_summary.csv", index=False)
+        public_results_dir = self.wrk_dir / "results"
+        public_results_dir.mkdir(parents=True, exist_ok=True)
+        cluster_summary.to_csv(
+            public_results_dir / "ifp_cluster_summary.csv", index=False
+        )
 
     def _load_selected_ligand_ifp(self, run_dir: Path) -> tuple[list[int] | None, str]:
-        chain_csv = run_dir / "results" / "chain_metrics.csv"
-        if not chain_csv.exists():
+        _, chain_df = read_metric_frames(run_dir)
+        if chain_df.empty:
             return None, "missing_chain_metrics"
-        try:
-            chain_df = pd.read_csv(chain_csv)
-        except Exception:
-            return None, "malformed_chain_metrics"
         required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
         if chain_df.empty or not required.issubset(chain_df.columns):
             return None, "missing_ifp"
@@ -555,13 +736,9 @@ class Screen:
         if self.ifp_filter_threshold is None:
             return self._default_filter_result()
 
-        chain_csv = run_dir / "results" / "chain_metrics.csv"
-        if not chain_csv.exists():
+        _, chain_df = read_metric_frames(run_dir)
+        if chain_df.empty:
             return self._not_evaluable_filter_result("missing_chain_metrics")
-        try:
-            chain_df = pd.read_csv(chain_csv)
-        except Exception:
-            return self._not_evaluable_filter_result("malformed_chain_metrics")
         required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
         if chain_df.empty or not required.issubset(chain_df.columns):
             return self._not_evaluable_filter_result("missing_ifp")

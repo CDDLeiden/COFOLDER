@@ -91,10 +91,10 @@ def test_filter_accepts_rejects_returns_and_preserves_all_rows(
         "ifp_filter_threshold",
         "ifp_filter_reference",
     }
-    for filename in ["screen_results.csv", "screen_results_with_scores.csv"]:
-        output = pd.read_csv(temp_dir / filename)
-        assert expected_columns.issubset(output.columns)
-        assert output["ifp_filter_status"].tolist() == ["accepted", "rejected"]
+    assert expected_columns.issubset(results.columns)
+    assert (temp_dir / "results" / "records.jsonl").is_file()
+    assert not (temp_dir / "screen_results.csv").exists()
+    assert not (temp_dir / "screen_results_with_scores.csv").exists()
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
@@ -191,7 +191,9 @@ def test_filter_not_evaluable_states(
     sample_csv_file,
     temp_dir,
 ):
-    mock_validate_run.side_effect = lambda validator: _write_chain_metrics(validator, ifp)
+    mock_validate_run.side_effect = lambda validator: _write_chain_metrics(
+        validator, ifp
+    )
     results = _screen(
         sample_system_yaml,
         sample_options_yaml,

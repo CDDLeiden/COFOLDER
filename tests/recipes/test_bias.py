@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.modules.input.system import System
 from cofolder.recipes.bias import Bias, build_bias_dataframes
 
@@ -29,8 +30,13 @@ class TestBuildBiasDataframes:
         assert list(system_df.columns) == ["model_name", "repeat", "diffusion_sample"]
         assert system_df.iloc[0]["model_name"] == "standalone_bias"
         assert chain_df["CHAIN_ID"].tolist() == ["A", "C", "B"]
+        assert chain_df["ENTITY_ID"].tolist() == ["entity:0", "entity:0", "entity:1"]
         assert chain_df["ENTITY_TYPE"].tolist() == ["protein", "protein", "ligand"]
-        assert chain_df["ligand_molecule_id"].tolist() == ["protein_A", "protein_C", "EDO"]
+        assert chain_df["ligand_molecule_id"].tolist() == [
+            "protein_A",
+            "protein_C",
+            "EDO",
+        ]
 
 
 class TestBiasRun:
@@ -84,7 +90,9 @@ class TestBiasRun:
         assert protein_view["dataset_name"].tolist() == ["private_proteins"]
         assert protein_view["sequence_similarity"].isna().all()
         assert protein_view["sequence_similarity_pairwise"].tolist() == [100.0]
-        assert protein_view["sequence_similarity_method"].tolist() == ["pairwise_aligner"]
+        assert protein_view["sequence_similarity_method"].tolist() == [
+            "pairwise_aligner"
+        ]
         assert ligand_view["source"].tolist() == ["custom"]
         assert ligand_view["dataset_name"].tolist() == ["private_ligands"]
         assert bias_training["source"].tolist() == ["custom"]
@@ -151,8 +159,9 @@ class TestBiasRun:
         system_df, chain_df = bias.run()
 
         output_dir = temp_dir / "results" / "bias_train"
-        assert (output_dir / "system_metrics.csv").exists()
-        assert (output_dir / "chain_metrics.csv").exists()
+        assert (temp_dir / "results" / "records.jsonl").exists()
+        assert not (output_dir / "system_metrics.csv").exists()
+        assert not (output_dir / "chain_metrics.csv").exists()
         assert (output_dir / "protein_training_data.csv").exists()
         assert (output_dir / "ligand_training_data_B.csv").exists()
         assert (output_dir / "bias_training_data.csv").exists()
@@ -166,7 +175,9 @@ class TestBiasRun:
         assert ligand_rows["CHAIN_ID"].tolist() == ["B", "C"]
         assert ligand_rows["bias_lig_sim_train"].astype(float).tolist() == [1.0, 1.0]
 
-    def test_run_writes_pair_specific_outputs_for_unique_query_combinations(self, temp_dir):
+    def test_run_writes_pair_specific_outputs_for_unique_query_combinations(
+        self, temp_dir
+    ):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
             yaml.safe_dump(
@@ -202,7 +213,7 @@ class TestBiasRun:
             ligand_training_data_path=str(ligand_ref),
         )
 
-        bias.run()
+        system_out, chain_out = bias.run()
 
         output_dir = temp_dir / "results" / "bias_train"
         assert (output_dir / "bias_training_data_A__B.csv").exists()
@@ -216,7 +227,9 @@ class TestBiasRun:
         assert mg_pair["query_pair_id"].tolist() == ["A__MG"]
         assert mg_pair["query_ligand_chain_id"].tolist() == ["MG"]
 
-    def test_run_writes_same_type_pair_outputs_for_multi_component_system(self, temp_dir):
+    def test_run_writes_same_type_pair_outputs_for_multi_component_system(
+        self, temp_dir
+    ):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
             yaml.safe_dump(
@@ -254,7 +267,7 @@ class TestBiasRun:
             ligand_training_data_path=str(ligand_ref),
         )
 
-        bias.run()
+        system_out, chain_out = bias.run()
 
         output_dir = temp_dir / "results" / "bias_train"
         assert (output_dir / "bias_training_data_A__B.csv").exists()
@@ -342,7 +355,9 @@ class TestBiasRun:
         assert not (output_dir / "bias_ligand_pair_data_B__D.csv").exists()
         assert not (output_dir / "bias_ligand_pair_scatter_B__D.png").exists()
 
-    def test_run_build_mode_defaults_ligand_training_output(self, monkeypatch, temp_dir):
+    def test_run_build_mode_defaults_ligand_training_output(
+        self, monkeypatch, temp_dir
+    ):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
             yaml.safe_dump(
@@ -375,7 +390,9 @@ class TestBiasRun:
                 encoding="utf-8",
             )
 
-        monkeypatch.setattr("cofolder.recipes.bias.run_build_bias_training_data", _fake_build)
+        monkeypatch.setattr(
+            "cofolder.recipes.bias.run_build_bias_training_data", _fake_build
+        )
 
         bias = Bias(
             wrk_dir=str(temp_dir),
@@ -385,19 +402,21 @@ class TestBiasRun:
             bias_training_components_cif=str(components_cif),
         )
 
-        bias.run()
+        system_out, chain_out = bias.run()
 
         assert len(calls) == 1
         assert calls[0]["output_protein_csv"] == protein_ref
-        assert calls[0]["output_ligand_csv"] == temp_dir / "results" / "bias_train" / "ligand_training_data.csv"
+        assert (
+            calls[0]["output_ligand_csv"]
+            == temp_dir / "results" / "bias_train" / "ligand_training_data.csv"
+        )
 
         output_dir = temp_dir / "results" / "bias_train"
-        system_out = pd.read_csv(output_dir / "system_metrics.csv")
-        chain_out = pd.read_csv(output_dir / "chain_metrics.csv")
-
         assert float(system_out["bias_prot_sim_train_max"].iloc[0]) == 100.0
         assert float(system_out["bias_lig_sim_train_max"].iloc[0]) == 1.0
-        assert {"CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"}.issubset(chain_out.columns)
+        assert {"CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"}.issubset(
+            chain_out.columns
+        )
         assert (output_dir / "protein_training_data.csv").exists()
         assert (output_dir / "ligand_training_data_B.csv").exists()
         assert (output_dir / "bias_training_data.csv").exists()
@@ -447,10 +466,15 @@ class TestBiasRun:
             ligand_training_data_path=str(ligand_ref),
         )
 
-        with pytest.raises(ValueError, match="Could not resolve SMILES for CCD-backed ligand chain"):
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="Could not resolve SMILES for CCD-backed ligand chain",
+        ):
             bias.run()
 
-    def test_run_allows_ligand_only_bias_when_bias_chains_select_only_ligands(self, temp_dir):
+    def test_run_allows_ligand_only_bias_when_bias_chains_select_only_ligands(
+        self, temp_dir
+    ):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(
             yaml.safe_dump(
@@ -543,7 +567,9 @@ class TestBiasRun:
         assert (output_dir / "bias_reference_overlap_scatter.png").exists()
         assert (output_dir / "bias_reference_overlap_scatter.pdf").exists()
 
-    def test_run_sets_apo_ligand_similarity_to_zero_for_disjoint_public_references(self, temp_dir, monkeypatch):
+    def test_run_sets_apo_ligand_similarity_to_zero_for_disjoint_public_references(
+        self, temp_dir, monkeypatch
+    ):
         monkeypatch.setattr(
             "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
             lambda **kwargs: [],
@@ -598,8 +624,12 @@ class TestBiasRun:
         bias.run()
 
         bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
-        protein_only = bias_training[bias_training["pairing_status"] == "protein_only"].copy()
-        ligand_only = bias_training[bias_training["pairing_status"] == "ligand_only"].copy()
+        protein_only = bias_training[
+            bias_training["pairing_status"] == "protein_only"
+        ].copy()
+        ligand_only = bias_training[
+            bias_training["pairing_status"] == "ligand_only"
+        ].copy()
 
         assert len(protein_only) == 2
         assert len(ligand_only) == 2

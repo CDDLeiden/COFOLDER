@@ -55,8 +55,8 @@ ls -l tutorial_output/
 
 You should see:
 - `raw/` - runner-owned raw execution artifacts
-- `results/system_metrics.csv` - merged system-level metrics
-- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/records.jsonl` - authoritative versioned records
+- `results/metrics.csv` - long-form metric view
 - `results/structures/` - gathered output structures
 - log files in the working directory
 
@@ -75,7 +75,7 @@ Examine the confidence scores:
 ```python
 import pandas as pd
 
-system_df = pd.read_csv("tutorial_output/results/system_metrics.csv")
+metrics_df = pd.read_csv("tutorial_output/results/metrics.csv")
 
 print(system_df[["model_name", "confidence_score"]].head())
 ```

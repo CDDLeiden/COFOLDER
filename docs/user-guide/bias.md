@@ -56,12 +56,17 @@ before recipe execution. It does not look up a runner and does not require
 
 ## Output Layout
 
-Successful runs write under `<wrk_dir>/results/bias_train/`:
+Successful runs publish the public contract under `<wrk_dir>/results/` and supporting
+bias artifacts under `<wrk_dir>/results/bias_train/`:
 
 ```text
-results/bias_train/
-├── system_metrics.csv
-├── chain_metrics.csv
+results/
+├── records.jsonl
+├── successes.csv
+├── metrics.csv
+├── failures.csv
+├── manifest.json
+└── bias_train/
 ├── protein_training_data.csv
 ├── ligand_training_data_<CHAIN>.csv
 ├── bias_training_data.csv
@@ -94,7 +99,7 @@ Artifact notes:
 
 Bias outputs are reference-overlap diagnostics:
 
-- `system_metrics.csv` and `chain_metrics.csv` report bias-related overlap summaries
+- `metrics.csv` reports long-form bias-related overlap summaries
 - `protein_training_data.csv` and `ligand_training_data_<CHAIN>.csv` show the reference
   rows used for each query chain
 - `bias_training_data.csv` is the merged plotting dataset behind the bias scatter plot

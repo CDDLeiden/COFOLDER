@@ -1,16 +1,26 @@
-import shutil
-from pathlib import Path
 import logging
-import pandas as pd
-import numpy as np
+import shutil
+from collections.abc import Collection
+from pathlib import Path
 
-from cofolder.modules.utils import read, write
-from cofolder.modules.analytics import stats, structure, align
-from cofolder.modules.input.system import iter_system_chains
+import numpy as np
+import pandas as pd
+
+from cofolder.modules.analytics import align
+from cofolder.modules.contracts import AmbiguousIdentityError
+from cofolder.modules.runners.contracts import RunnerChainIdentity
+from cofolder.modules.utils import read
 
 logger = logging.getLogger(__name__)
 
-def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: logging.Logger = None):
+
+def gather_structures(
+    base_dir: Path,
+    system_name: str,
+    repeats: int,
+    logger: logging.Logger | None = None,
+    repeat_ids: list[int] | None = None,
+):
     """
     Gather all predicted structure files from repeats into a single folder.
 
@@ -37,7 +47,7 @@ def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: lo
     target_dir.mkdir(parents=True, exist_ok=True)
     logger.info("Gathering structures into: %s", target_dir)
 
-    for i in range(1, repeats + 1):
+    for i in repeat_ids or range(1, repeats + 1):
         repeat_dir = base_dir / "raw" / f"repeat_{i}" / "normalized" / "structures"
         if not repeat_dir.exists():
             logger.warning("Normalized structures directory not found: %s", repeat_dir)
@@ -55,13 +65,18 @@ def gather_structures(base_dir: Path, system_name: str, repeats: int, logger: lo
             except Exception as e:
                 logger.error("Failed to copy %s: %s", file_path, e)
 
-    logger.info("Structure gathering complete. Total files in %s: %d",
-                target_dir, len(list(target_dir.iterdir())))
+    logger.info(
+        "Structure gathering complete. Total files in %s: %d",
+        target_dir,
+        len(list(target_dir.iterdir())),
+    )
+
 
 def merge_runner_results(
     raw_dir: Path,
     repeats: int,
     logger: logging.Logger | None = None,
+    repeat_ids: list[int] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
     """Merge normalized per-repeat runner outputs into canonical DataFrames."""
     if logger is None:
@@ -71,7 +86,7 @@ def merge_runner_results(
     chain_frames: list[pd.DataFrame] = []
     manifests: list[dict] = []
 
-    for repeat in range(1, repeats + 1):
+    for repeat in repeat_ids or range(1, repeats + 1):
         normalized_dir = raw_dir / f"repeat_{repeat}" / "normalized"
         system_metrics_path = normalized_dir / "system_metrics.csv"
         chain_metrics_path = normalized_dir / "chain_metrics.csv"
@@ -92,8 +107,12 @@ def merge_runner_results(
         else:
             logger.warning("Missing normalized chain metrics: %s", chain_metrics_path)
 
-    system_df = pd.concat(system_frames, ignore_index=True) if system_frames else pd.DataFrame()
-    chain_df = pd.concat(chain_frames, ignore_index=True) if chain_frames else pd.DataFrame()
+    system_df = (
+        pd.concat(system_frames, ignore_index=True) if system_frames else pd.DataFrame()
+    )
+    chain_df = (
+        pd.concat(chain_frames, ignore_index=True) if chain_frames else pd.DataFrame()
+    )
 
     if not system_df.empty:
         system_df = system_df.reset_index(drop=True)
@@ -105,90 +124,75 @@ def merge_runner_results(
 
     return system_df, chain_df, manifests
 
-def add_chain_info(chain_df: pd.DataFrame, sys: "System") -> pd.DataFrame:
+
+def add_chain_info(
+    chain_df: pd.DataFrame,
+    chain_identities: Collection[RunnerChainIdentity],
+) -> pd.DataFrame:
     """
     Populate CHAIN_ID, ENTITY_TYPE, and ligand_molecule_id in chain_df
-    based on system sequences.
+    from an explicit mapping produced during system normalization.
 
-    Mapping is done by POSITION:
-    conf_chain_id (0,1,2,...) → ordered system chain IDs.
+    Mapping is done by normalized entity position: ``conf_chain_id`` maps to the
+    ordered system entity and yields both a chain-independent ``ENTITY_ID`` and the
+    declared ``CHAIN_ID``.
     """
 
-    sequences = sys.find_value(key="sequences") or []
-    if not sequences:
-        logger.warning("No sequences found in system to map chain information.")
-        return chain_df
-
-    # --------------------------------------------------
-    # Build ordered chain list and metadata from system
-    # --------------------------------------------------
-    ordered_chain_ids: list[str] = []
-    chain_to_entity: dict[str, str] = {}
-    chain_to_molecule_id: dict[str, str] = {}
-
-    for chain in iter_system_chains(sys):
-        entity_type = chain.entity_type
-        entity_data = chain.entity_data
-        # ----------------------------------------------
-        # Resolve molecule identifier
-        # ----------------------------------------------
-        if entity_type == "ligand":
-            molecule_id = (
-                entity_data.get("ccd")
-                or entity_data.get("smiles")
-                or "UNKNOWN_LIGAND"
-            )
-        else:
-            molecule_id = None  # handled per-chain below
-
-        cid = chain.chain_id
-        ordered_chain_ids.append(cid)
-        chain_to_entity[cid] = entity_type
-
-        if entity_type == "ligand":
-            chain_to_molecule_id[cid] = molecule_id
-        else:
-            chain_to_molecule_id[cid] = f"{entity_type}_{cid}"
+    identity_map = {item.conf_chain_id: item for item in chain_identities}
+    if len(identity_map) != len(chain_identities):
+        raise AmbiguousIdentityError(
+            "Runner chain identity mapping contains duplicate conf_chain_id values."
+        )
+    if not identity_map and not chain_df.empty:
+        raise AmbiguousIdentityError(
+            "Runner chain records cannot be enriched without a chain identity mapping."
+        )
 
     # --------------------------------------------------
     # Assign CHAIN_ID, ENTITY_TYPE, ligand_molecule_id
     # --------------------------------------------------
     chain_df["CHAIN_ID"] = None
+    chain_df["ENTITY_ID"] = None
     chain_df["ENTITY_TYPE"] = None
     chain_df["ligand_molecule_id"] = None
 
     for idx, row in chain_df.iterrows():
-        conf_id = int(row["conf_chain_id"])
+        try:
+            conf_id = int(row["conf_chain_id"])
+        except (TypeError, ValueError) as exc:
+            raise AmbiguousIdentityError(
+                f"Runner chain record at row {idx} has invalid conf_chain_id "
+                f"{row.get('conf_chain_id')!r}."
+            ) from exc
 
-        if conf_id >= len(ordered_chain_ids):
-            logger.warning(
-                "conf_chain_id %d exceeds system chain count (%d)",
-                conf_id,
-                len(ordered_chain_ids),
+        identity = identity_map.get(conf_id)
+        if identity is None:
+            raise AmbiguousIdentityError(
+                f"Runner conf_chain_id {conf_id} at row {idx} cannot be mapped to "
+                "a normalized system entity."
             )
-            continue
 
-        chain_id = ordered_chain_ids[conf_id]
-        entity_type = chain_to_entity[chain_id]
-
-        chain_df.at[idx, "CHAIN_ID"] = chain_id
-        chain_df.at[idx, "ENTITY_TYPE"] = entity_type
-        chain_df.at[idx, "ligand_molecule_id"] = chain_to_molecule_id[chain_id]
+        chain_df.at[idx, "CHAIN_ID"] = identity.chain_id
+        chain_df.at[idx, "ENTITY_ID"] = identity.entity_id
+        chain_df.at[idx, "ENTITY_TYPE"] = identity.entity_type
+        chain_df.at[idx, "ligand_molecule_id"] = identity.ligand_molecule_id
 
     # --------------------------------------------------
     # Reorder columns
     # --------------------------------------------------
     cols = chain_df.columns.tolist()
-    for col in ("CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"):
+    for col in ("CHAIN_ID", "ENTITY_ID", "ENTITY_TYPE", "ligand_molecule_id"):
         if col in cols:
             cols.remove(col)
 
     insert_at = cols.index("conf_chain_id")
     cols.insert(insert_at + 1, "CHAIN_ID")
-    cols.insert(insert_at + 2, "ENTITY_TYPE")
-    cols.insert(insert_at + 3, "ligand_molecule_id")
+    cols.insert(insert_at + 2, "ENTITY_ID")
+    cols.insert(insert_at + 3, "ENTITY_TYPE")
+    cols.insert(insert_at + 4, "ligand_molecule_id")
 
     return chain_df[cols]
+
 
 def assess_numeric_variance(
     values: list[float],
@@ -228,12 +232,12 @@ def assess_numeric_variance(
 
     mean = float(s.mean())
     std = float(s.std(ddof=1))
-    var = std ** 2
 
     return {
         f"{prefix}_mean": mean,
         f"{prefix}_std": std,
     }
+
 
 def assess_bitstring_similarity(
     bitstrings: list,
@@ -299,8 +303,11 @@ def assess_bitstring_similarity(
     # --- save full NxN similarity matrix ---
     matrices_dir = Path(wrk_dir) / "results" / "matrices"
     matrices_dir.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(mat, index=[f"run_{i}" for i in range(n)],
-                      columns=[f"run_{i}" for i in range(n)])
+    df = pd.DataFrame(
+        mat,
+        index=[f"run_{i}" for i in range(n)],
+        columns=[f"run_{i}" for i in range(n)],
+    )
     df.to_csv(matrices_dir / f"similarity_matrix_{prefix}_{id}.csv")
 
     # Flatten off-diagonal for summary statistics
@@ -310,6 +317,7 @@ def assess_bitstring_similarity(
         f"{prefix}_mean": float(off_diag.mean()),
         f"{prefix}_std": pairwise_std,
     }
+
 
 def gather_robustness_results(
     system_df: pd.DataFrame,
@@ -350,11 +358,12 @@ def gather_robustness_results(
         cif_paths = [Path(reference_path)] + cif_paths
 
     structures = align._load_structures(cif_paths)
-    aligned_structs, ref_struct, ref_name = align._align_structures_on_protein_ca(structures, save_dir=aligned_folder)
+    aligned_structs, ref_struct, ref_name = align._align_structures_on_protein_ca(
+        structures, save_dir=aligned_folder
+    )
 
     chain_rmsd_map = align._compute_chain_rmsd(chain_df, aligned_structs, wrk_dir)
     ligand_rmsd_map = align._compute_ligand_rmsd(chain_df, aligned_structs, wrk_dir)
-
 
     # ==============================================================
     # SYSTEM-LEVEL ROBUSTNESS
@@ -382,8 +391,9 @@ def gather_robustness_results(
 
     non_ligand_df = chain_df[chain_df["ENTITY_TYPE"] != "ligand"]
 
-    for (chain_id, entity_type), group in non_ligand_df.groupby(["CHAIN_ID", "ENTITY_TYPE"]):
-
+    for (chain_id, entity_type), group in non_ligand_df.groupby(
+        ["CHAIN_ID", "ENTITY_TYPE"]
+    ):
         chain_row = {
             "ENTITY_TYPE": entity_type,
             "ENTITY_ID": chain_id,
@@ -408,16 +418,15 @@ def gather_robustness_results(
         rows.append(chain_row)
 
     # --------------------------------------------------------------
-    # LIGANDS — AGGREGATE BY ligand_molecule_id
+    # LIGANDS — AGGREGATE BY CHAIN_ID TO PRESERVE PUBLIC IDENTITY
     # --------------------------------------------------------------
 
     ligand_df = chain_df[chain_df["ENTITY_TYPE"] == "ligand"]
 
-    for ligand_molecule_id, group in ligand_df.groupby("ligand_molecule_id"):
-
+    for chain_id, group in ligand_df.groupby("CHAIN_ID"):
         ligand_row = {
             "ENTITY_TYPE": "ligand",
-            "ENTITY_ID": ligand_molecule_id,
+            "ENTITY_ID": chain_id,
         }
 
         for col in group.columns:
@@ -431,11 +440,16 @@ def gather_robustness_results(
                 ligand_row.update(stats)
 
             elif is_ifp_metric(col, series=series):
-                stats = assess_bitstring_similarity(series.tolist(), prefix=col, id=ligand_molecule_id, wrk_dir=wrk_dir)
+                stats = assess_bitstring_similarity(
+                    series.tolist(), prefix=col, id=chain_id, wrk_dir=wrk_dir
+                )
                 ligand_row.update(stats)
 
         # --- structural RMSD metric ---
-        rmsd_vals = ligand_rmsd_map.get(ligand_molecule_id)
+        molecule_ids = group["ligand_molecule_id"].dropna().astype(str).unique()
+        rmsd_vals = (
+            ligand_rmsd_map.get(molecule_ids[0]) if len(molecule_ids) == 1 else None
+        )
         if rmsd_vals:
             stats = assess_numeric_variance(rmsd_vals, prefix="struct_rmsd")
             ligand_row.update(stats)
@@ -445,13 +459,13 @@ def gather_robustness_results(
     results_df = pd.DataFrame(rows)
 
     logger.debug(
-        "[ROBUSTNESS] Finished robustness aggregation "
-        "(rows=%d, columns=%d)",
+        "[ROBUSTNESS] Finished robustness aggregation (rows=%d, columns=%d)",
         results_df.shape[0],
         results_df.shape[1],
     )
 
     return results_df
+
 
 def is_metadata_column(column_name: str) -> bool:
     """
@@ -478,6 +492,7 @@ def is_metadata_column(column_name: str) -> bool:
 
     return result
 
+
 def is_numeric_metric(series: pd.Series) -> bool:
     """
     Determine whether a Series represents numeric values, even if stored as strings.
@@ -503,6 +518,7 @@ def is_numeric_metric(series: pd.Series) -> bool:
 
     # At least one real numeric value must exist
     return np.isfinite(converted).any()
+
 
 def is_ifp_metric(column_name: str, series: pd.Series | None = None) -> bool:
     """

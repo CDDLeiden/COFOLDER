@@ -11,9 +11,16 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
-from cofolder.modules.runners.base import BaseRunner, Runner, RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.base import (
+    BaseRunner,
+    Runner,
+    RunnerPreparation,
+    RunnerRequest,
+    RunnerResult,
+)
 from cofolder.modules.runners.contracts import (
     RunnerCompanionArtifact,
+    RunnerChainIdentity,
     RunnerExecutionRequest,
     RunnerExecutionResult,
     RunnerMetricOutcome,
@@ -21,9 +28,14 @@ from cofolder.modules.runners.contracts import (
     RunnerNormalizedBundle,
     RunnerPreparationResult,
     RunnerRuntime,
+    build_runner_chain_identities,
+    build_runner_public_records,
     merge_runner_runtime,
 )
-from cofolder.modules.runners.validators import RunnerBundleValidationError, validate_runner_bundle
+from cofolder.modules.runners.validators import (
+    RunnerBundleValidationError,
+    validate_runner_bundle,
+)
 
 
 def discover_runners() -> dict[str, Runner]:
@@ -50,13 +62,16 @@ def get_runner(name: str) -> Runner:
         return runners[name]
     except KeyError as exc:
         available = ", ".join(sorted(runners)) or "<none>"
-        raise ValueError(f"Unknown runner '{name}'. Available runners: {available}") from exc
+        raise ValueError(
+            f"Unknown runner '{name}'. Available runners: {available}"
+        ) from exc
 
 
 __all__ = [
     "Runner",
     "BaseRunner",
     "RunnerCompanionArtifact",
+    "RunnerChainIdentity",
     "RunnerExecutionRequest",
     "RunnerExecutionResult",
     "RunnerMetricOutcome",
@@ -68,6 +83,8 @@ __all__ = [
     "RunnerResult",
     "RunnerRuntime",
     "RunnerBundleValidationError",
+    "build_runner_chain_identities",
+    "build_runner_public_records",
     "discover_runners",
     "get_runner",
     "list_runner_names",

@@ -1,16 +1,31 @@
 from __future__ import annotations
 
+import logging
 from contextlib import nullcontext
 from datetime import date
-import logging
 from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 
 from cofolder.modules.analytics.bias import apply_bias_metrics
 from cofolder.modules.analytics.bias_training import run_build_bias_training_data
+from cofolder.modules.contracts import (
+    PUBLIC_SCHEMA_VERSION,
+    ArtifactReference,
+    EvidenceSource,
+    FailureStage,
+    OutputIdentity,
+    PublicManifest,
+    PublicOutputBundle,
+    WorkflowExecutionError,
+    WorkflowKind,
+    bundle_from_frames,
+    failure_from_exception,
+    write_public_bundle,
+)
 from cofolder.modules.input import system
-from cofolder.modules.utils import read, write
+from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 
 logger = logging.getLogger(__name__)
@@ -20,7 +35,7 @@ def normalize_bias_chains(
     bias_chains: set[str] | list[str] | tuple[str, ...] | None,
 ) -> set[str] | None:
     normalized: set[str] = set()
-    for value in (bias_chains or []):
+    for value in bias_chains or []:
         for token in str(value).split(","):
             token = token.strip()
             if token:
@@ -72,7 +87,7 @@ def build_bias_dataframes(
     sequences = sys_obj.find_value(key="sequences") or []
     conf_chain_id = 0
 
-    for seq_entry in sequences:
+    for entity_position, seq_entry in enumerate(sequences):
         if not isinstance(seq_entry, dict):
             continue
         if "protein" in seq_entry:
@@ -82,6 +97,7 @@ def build_bias_dataframes(
                     {
                         "conf_chain_id": conf_chain_id,
                         "CHAIN_ID": chain_id,
+                        "ENTITY_ID": f"entity:{entity_position}",
                         "ENTITY_TYPE": "protein",
                         "ligand_molecule_id": f"protein_{chain_id}",
                         "model_name": system_name,
@@ -99,6 +115,7 @@ def build_bias_dataframes(
                     {
                         "conf_chain_id": conf_chain_id,
                         "CHAIN_ID": chain_id,
+                        "ENTITY_ID": f"entity:{entity_position}",
                         "ENTITY_TYPE": "ligand",
                         "ligand_molecule_id": molecule_id,
                         "model_name": system_name,
@@ -113,6 +130,7 @@ def build_bias_dataframes(
         columns=[
             "conf_chain_id",
             "CHAIN_ID",
+            "ENTITY_ID",
             "ENTITY_TYPE",
             "ligand_molecule_id",
             "model_name",
@@ -140,7 +158,9 @@ def find_invalid_ligand_smiles_chain_ids(sys_obj: system.System) -> set[str]:
             continue
         if Chem.MolFromSmiles(smiles) is not None:
             continue
-        invalid.update(chain_id.upper() for chain_id in _iter_chain_ids(ligand_data.get("id")))
+        invalid.update(
+            chain_id.upper() for chain_id in _iter_chain_ids(ligand_data.get("id"))
+        )
     return invalid
 
 
@@ -166,6 +186,7 @@ class BiasAssessmentWorkflow:
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
+        self.run_id = str(uuid4())
         self.sys = sys_obj
         self.protein_training_data_path = protein_training_data_path
         self.ligand_training_data_path = ligand_training_data_path
@@ -228,14 +249,24 @@ class BiasAssessmentWorkflow:
         scoped_chain_df = chain_df
         if self.bias_chains:
             scoped_chain_df = chain_df[
-                chain_df["CHAIN_ID"].astype(str).str.strip().str.upper().isin(self.bias_chains)
+                chain_df["CHAIN_ID"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                .isin(self.bias_chains)
             ].copy()
 
         needs_protein = bool(
-            (scoped_chain_df.get("ENTITY_TYPE", pd.Series(dtype=object)).astype(str) == "protein").any()
+            (
+                scoped_chain_df.get("ENTITY_TYPE", pd.Series(dtype=object)).astype(str)
+                == "protein"
+            ).any()
         )
         needs_ligand = bool(
-            (scoped_chain_df.get("ENTITY_TYPE", pd.Series(dtype=object)).astype(str) == "ligand").any()
+            (
+                scoped_chain_df.get("ENTITY_TYPE", pd.Series(dtype=object)).astype(str)
+                == "ligand"
+            ).any()
         )
 
         has_protein_file = (
@@ -248,8 +279,12 @@ class BiasAssessmentWorkflow:
             and ligand_metrics_path.exists()
             and ligand_metrics_path.is_file()
         )
-        has_protein_source = has_protein_file or self.custom_protein_reference_path is not None
-        has_ligand_source = has_ligand_file or self.custom_ligand_reference_path is not None
+        has_protein_source = (
+            has_protein_file or self.custom_protein_reference_path is not None
+        )
+        has_ligand_source = (
+            has_ligand_file or self.custom_ligand_reference_path is not None
+        )
 
         missing_sources: list[str] = []
         if needs_protein and not has_protein_source:
@@ -306,7 +341,9 @@ class BiasAssessmentWorkflow:
 
         components_cif = self.bias_training_components_cif
         if components_cif is None:
-            components_cif = self.protein_training_data_path.parent / "ccd" / "components.cif"
+            components_cif = (
+                self.protein_training_data_path.parent / "ccd" / "components.cif"
+            )
         if not components_cif.exists():
             raise ValueError(
                 f"components.cif not found for bias-training build: {components_cif}. "
@@ -345,7 +382,9 @@ class BiasAssessmentWorkflow:
                 "Skipping ligand ECFP protocol for this bias-build run.",
                 sorted(invalid_selected_ligand_chains),
             )
-            selected_ligand_chains = selected_ligand_chains - invalid_selected_ligand_chains
+            selected_ligand_chains = (
+                selected_ligand_chains - invalid_selected_ligand_chains
+            )
 
         run_protein_protocol = bool(selected_protein_chains)
         run_ligand_protocol = bool(selected_ligand_chains)
@@ -384,7 +423,9 @@ class BiasAssessmentWorkflow:
             )
 
         protein_metrics_path = (
-            build_protein_training_path if run_protein_protocol else self.protein_training_data_path
+            build_protein_training_path
+            if run_protein_protocol
+            else self.protein_training_data_path
         )
         return protein_metrics_path, ligand_metrics_path
 
@@ -408,6 +449,7 @@ class Bias:
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
+        self.run_id = str(uuid4())
         self.protein_training_data_path = (
             Path(protein_training_data_path) if protein_training_data_path else None
         )
@@ -415,7 +457,9 @@ class Bias:
             Path(ligand_training_data_path) if ligand_training_data_path else None
         )
         self.custom_protein_reference_path = (
-            Path(custom_protein_reference_path) if custom_protein_reference_path else None
+            Path(custom_protein_reference_path)
+            if custom_protein_reference_path
+            else None
         )
         self.custom_ligand_reference_path = (
             Path(custom_ligand_reference_path) if custom_ligand_reference_path else None
@@ -440,10 +484,45 @@ class Bias:
         self.timings.log_summary(logger=self.logger)
 
     def run(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+        try:
+            return self._run_impl()
+        except WorkflowExecutionError:
+            raise
+        except Exception as exc:
+            identity = OutputIdentity(
+                workflow=WorkflowKind.BIAS,
+                run_id=self.run_id,
+                system_id=self.system_path.stem,
+            )
+            failure = failure_from_exception(
+                exc,
+                identity=identity,
+                stage=FailureStage.ANALYTICS,
+                error_code="bias_analytics_failed",
+            )
+            output_dir = self.wrk_dir / "results"
+            write_public_bundle(
+                PublicOutputBundle(
+                    manifest=PublicManifest(
+                        schema_version=PUBLIC_SCHEMA_VERSION,
+                        identity=identity,
+                        status="failed",
+                    ),
+                    records=(failure,),
+                ),
+                output_dir,
+            )
+            raise WorkflowExecutionError(
+                str(exc), failures=(failure,), output_dir=output_dir
+            ) from exc
+
+    def _run_impl(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         with self._debug_timer("bias.total"):
             self.wrk_dir.mkdir(parents=True, exist_ok=True)
             output_dir = self.wrk_dir / "results" / "bias_train"
             output_dir.mkdir(parents=True, exist_ok=True)
+            for legacy_name in ("system_metrics.csv", "chain_metrics.csv"):
+                (output_dir / legacy_name).unlink(missing_ok=True)
 
             system_df, chain_df = build_bias_dataframes(
                 self.sys,
@@ -478,9 +557,37 @@ class Bias:
                 boltz_cache_path="~/.boltz",
             )
 
-            write.write_csv(system_df, output_path=output_dir / "system_metrics.csv")
-            write.write_csv(chain_df, output_path=output_dir / "chain_metrics.csv")
-            self.logger.info("Standalone bias outputs written to %s", output_dir)
+            evidence = [
+                EvidenceSource(
+                    kind="training_dataset", identifier=path.name, path=str(path)
+                )
+                for path in (
+                    self.protein_training_data_path,
+                    self.ligand_training_data_path,
+                    self.custom_protein_reference_path,
+                    self.custom_ligand_reference_path,
+                )
+                if path is not None
+            ]
+            artifacts = (
+                ArtifactReference("bias_supporting_outputs", "bias_train", "directory"),
+            )
+            bundle = bundle_from_frames(
+                system_df,
+                chain_df,
+                identity=OutputIdentity(
+                    workflow=WorkflowKind.BIAS,
+                    run_id=self.run_id,
+                    system_id=self.system_path.stem,
+                ),
+                evidence=evidence,
+                requested_metrics={"bias_metrics"},
+                artifacts=artifacts,
+            )
+            write_public_bundle(bundle, self.wrk_dir / "results")
+            self.logger.info(
+                "Standalone bias public outputs written to %s", self.wrk_dir / "results"
+            )
 
         self._log_timing_summary()
         return system_df, chain_df

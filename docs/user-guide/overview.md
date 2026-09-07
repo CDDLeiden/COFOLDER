@@ -85,15 +85,18 @@ public bias-training data.
 output/
 ├── raw/                     # Runner-owned raw execution artifacts
 ├── results/
-│   ├── system_metrics.csv   # Merged system-level metrics
-│   ├── chain_metrics.csv    # Merged chain-level metrics
+│   ├── records.jsonl        # Authoritative versioned public records
+│   ├── successes.csv        # Tabular success view
+│   ├── metrics.csv          # Tabular long-form metric view
+│   ├── failures.csv         # Tabular failure view
+│   ├── manifest.json        # Invocation and artifact manifest
 │   └── structures/          # Gathered structure files
 └── log.log                  # Workflow log file
 ```
 
-`screen` uses that same per-run layout inside each row-specific subdirectory and also writes top-level screening summaries such as `screen_results.csv` and `screen_results_with_scores.csv`.
+`screen` uses that same per-run layout inside each row-specific subdirectory and publishes a consolidated contract under its top-level `results/` directory.
 
-`oracle` writes its wrapped `validate` run under `oracle_run/` and adds a top-level `oracle_result.csv` summary.
+`oracle` writes its wrapped `validate` run under `oracle_run/` and publishes its scalar and audit records under the top-level `results/` directory.
 
 `bias` writes diagnostic outputs under `<wrk_dir>/results/bias_train/`, including:
 
@@ -101,8 +104,8 @@ output/
 output/
 ├── results/
 │   └── bias_train/
-│       ├── system_metrics.csv
-│       ├── chain_metrics.csv
+│       ├── records.jsonl
+│       ├── metrics.csv
 │       ├── protein_training_data.csv
 │       ├── ligand_training_data_<CHAIN>.csv
 │       ├── bias_training_data.csv

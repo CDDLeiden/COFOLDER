@@ -3,14 +3,33 @@ from __future__ import annotations
 import copy
 import logging
 import os
+from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.structure import Structure
+from cofolder.modules.contracts import (
+    PUBLIC_SCHEMA_VERSION,
+    ArtifactReference,
+    EvidenceSource,
+    FailureStage,
+    OutputIdentity,
+    PublicManifest,
+    PublicOutputBundle,
+    PublicSerializationError,
+    WorkflowExecutionError,
+    WorkflowKind,
+    bundle_from_frames,
+    failure_from_exception,
+    write_public_bundle,
+)
 from cofolder.modules.input import system
 from cofolder.modules.runners import (
     RunnerExecutionRequest,
     RunnerRuntime,
+    build_runner_chain_identities,
     get_runner,
     merge_runner_runtime,
 )
@@ -51,7 +70,7 @@ AFFINITY_METRIC_GROUPS = {
 }
 
 
-class Validate(object):
+class Validate:
     """High-level orchestrator for validation workflow."""
 
     def __init__(
@@ -83,6 +102,7 @@ class Validate(object):
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
         self.runner_name = str(runner)
+        self.run_id = str(uuid4())
         self.repeats = repeats
         self.seed = seed
         self.assess_robustness = assess_robustness
@@ -133,6 +153,12 @@ class Validate(object):
 
         self.runner = get_runner(self.runner_name)
         self.runner.ensure_available()
+        self.output_identity = OutputIdentity(
+            workflow=WorkflowKind.VALIDATE,
+            run_id=self.run_id,
+            system_id=self.system_path.stem,
+            runner_id=self.runner_name,
+        )
 
         self._system = read.read_yaml(path=self.system_path)
         self.base_system = system.System(system=self._system)
@@ -169,14 +195,72 @@ class Validate(object):
         )
 
         self.timings = DebugTimingCollector(logger=self.logger)
+        self._failure_stage = FailureStage.INPUT_VALIDATION
 
     def _log_timing_summary(self) -> None:
         self.timings.log_summary(logger=self.logger)
 
+    @contextmanager
     def _debug_timer(self, label: str):
-        return self.timings.measure(label, logger=self.logger)
+        previous = self._failure_stage
+        self._failure_stage = self._stage_for_label(label)
+        try:
+            with self.timings.measure(label, logger=self.logger):
+                yield
+        except Exception:
+            raise
+        else:
+            self._failure_stage = previous
+
+    @staticmethod
+    def _stage_for_label(label: str) -> FailureStage:
+        if label.startswith(("runner.prepare", "runner.options", "runner.system")):
+            return FailureStage.PREPARATION
+        if label.startswith("runner.bundle"):
+            return FailureStage.OUTPUT_VALIDATION
+        if label.startswith(
+            ("structures.gather", "results.merge", "results.add_chain")
+        ):
+            return FailureStage.GATHER
+        if label.startswith(("scores.", "structure.")):
+            return FailureStage.ANALYTICS
+        if label.startswith("results.write"):
+            return FailureStage.SERIALIZATION
+        return FailureStage.INPUT_VALIDATION
 
     def run(self):
+        try:
+            return self._run_impl()
+        except WorkflowExecutionError:
+            raise
+        except PublicSerializationError:
+            raise
+        except Exception as exc:
+            failure = failure_from_exception(
+                exc,
+                identity=self.output_identity,
+                stage=self._failure_stage,
+                error_code=f"validate_{self._failure_stage.value}_failed",
+            )
+            output_dir = self.wrk_dir / "results"
+            write_public_bundle(
+                PublicOutputBundle(
+                    manifest=PublicManifest(
+                        schema_version=PUBLIC_SCHEMA_VERSION,
+                        identity=self.output_identity,
+                        status="failed",
+                    ),
+                    records=(failure,),
+                ),
+                output_dir,
+            )
+            raise WorkflowExecutionError(
+                str(exc), failures=(failure,), output_dir=output_dir
+            ) from exc
+        finally:
+            self._log_timing_summary()
+
+    def _run_impl(self):
         with self._debug_timer("validate.total"):
             self.wrk_dir.mkdir(parents=True, exist_ok=True)
             self.raw_dir = self.wrk_dir / "raw"
@@ -247,6 +331,7 @@ class Validate(object):
             preparation_runtime = preparation.runtime
             self.sys = preparation.system_obj
             runner_options = preparation.options_obj
+            chain_identities = build_runner_chain_identities(self.sys)
             with self._debug_timer("runner.system.validate.execution_input"):
                 self.runner.validate_system(
                     self.sys,
@@ -262,6 +347,7 @@ class Validate(object):
             self.logger.info("Updated system saved to YAML: %s", yaml_path)
 
             runner_results = []
+            workflow_failures = []
             for i, seed in enumerate(self.run_seeds, 1):
                 self.logger.info(
                     "Running repeat %d/%d with seed %d using runner '%s'",
@@ -285,6 +371,8 @@ class Validate(object):
                     timings=self.timings,
                     label_prefix=f"repeat_{i}",
                     runtime=preparation_runtime,
+                    identity=replace(self.output_identity, repeat_id=i),
+                    chain_identities=chain_identities,
                 )
                 unresolved_before_run = []
                 if self.reusable_msa_dir is not None and getattr(
@@ -309,8 +397,20 @@ class Validate(object):
                                 "MSA generation was requested once by the screen workflow.\n",
                                 encoding="utf-8",
                             )
+                result = None
                 try:
                     result = self.runner.run(request)
+                except Exception as exc:
+                    workflow_failures.append(
+                        failure_from_exception(
+                            exc,
+                            identity=replace(self.output_identity, repeat_id=i),
+                            stage=FailureStage.BACKEND_EXECUTION,
+                            error_code="runner_backend_execution_failed",
+                            details={"seed": seed},
+                        )
+                    )
+                    self.logger.exception("Runner repeat %d failed: %s", i, exc)
                 finally:
                     if self.reusable_msa_dir is not None and getattr(
                         self.runner, "supports_msa_reuse", False
@@ -342,7 +442,8 @@ class Validate(object):
                                 "for every unresolved protein. Refusing to recalculate them "
                                 "on a later repeat or ligand."
                             )
-                runner_results.append(result)
+                if result is not None:
+                    runner_results.append((i, result))
 
             selected_runner_metric_groups = (
                 self.scoring_functions & RUNNER_METRIC_GROUPS
@@ -352,12 +453,34 @@ class Validate(object):
                 selected_runner_metric_groups - requested_runner_metric_groups
             )
             unavailable_metric_groups = set(unsupported_metric_groups)
+            valid_runner_results = []
+            valid_repeat_ids = []
             with self._debug_timer("runner.bundle_validation"):
-                for repeat, result in enumerate(runner_results, 1):
-                    bundle = validate_runner_bundle(
-                        result,
-                        requested_metric_groups=requested_runner_metric_groups,
-                    )
+                for repeat, result in runner_results:
+                    try:
+                        bundle = validate_runner_bundle(
+                            result,
+                            requested_metric_groups=requested_runner_metric_groups,
+                        )
+                    except Exception as exc:
+                        workflow_failures.append(
+                            failure_from_exception(
+                                exc,
+                                identity=replace(
+                                    self.output_identity, repeat_id=repeat
+                                ),
+                                stage=FailureStage.OUTPUT_VALIDATION,
+                                error_code="runner_output_validation_failed",
+                            )
+                        )
+                        self.logger.exception(
+                            "Runner output validation failed for repeat %d: %s",
+                            repeat,
+                            exc,
+                        )
+                        continue
+                    valid_runner_results.append(result)
+                    valid_repeat_ids.append(repeat)
                     for group_name in sorted(optional_runner_metric_groups):
                         outcome = bundle.metric_outcomes.get(group_name)
                         if outcome is None or outcome.state not in {
@@ -380,24 +503,51 @@ class Validate(object):
                             reason,
                         )
 
-            with self._debug_timer("structures.gather"):
-                gather.gather_structures(
-                    base_dir=self.wrk_dir,
-                    system_name=self.system_path.stem,
-                    repeats=self.repeats,
-                    logger=self.logger,
+            if not valid_runner_results:
+                output_dir = self.wrk_dir / "results"
+                write_public_bundle(
+                    PublicOutputBundle(
+                        manifest=PublicManifest(
+                            schema_version=PUBLIC_SCHEMA_VERSION,
+                            identity=self.output_identity,
+                            status="failed",
+                        ),
+                        records=tuple(workflow_failures),
+                    ),
+                    output_dir,
+                )
+                raise WorkflowExecutionError(
+                    "No runner repeat produced a usable normalized result.",
+                    failures=tuple(workflow_failures),
+                    output_dir=output_dir,
                 )
 
+            with self._debug_timer("structures.gather"):
+                gather_kwargs = {
+                    "base_dir": self.wrk_dir,
+                    "system_name": self.system_path.stem,
+                    "repeats": self.repeats,
+                    "logger": self.logger,
+                }
+                if valid_repeat_ids != list(range(1, self.repeats + 1)):
+                    gather_kwargs["repeat_ids"] = valid_repeat_ids
+                gather.gather_structures(**gather_kwargs)
+
             with self._debug_timer("results.merge_runner_outputs"):
+                merge_kwargs = {
+                    "raw_dir": self.raw_dir,
+                    "repeats": self.repeats,
+                    "logger": self.logger,
+                }
+                if valid_repeat_ids != list(range(1, self.repeats + 1)):
+                    merge_kwargs["repeat_ids"] = valid_repeat_ids
                 system_df, chain_df, _manifests = gather.merge_runner_results(
-                    raw_dir=self.raw_dir,
-                    repeats=self.repeats,
-                    logger=self.logger,
+                    **merge_kwargs
                 )
 
             if not chain_df.empty:
                 with self._debug_timer("results.add_chain_info"):
-                    chain_df = gather.add_chain_info(chain_df, self.sys)
+                    chain_df = gather.add_chain_info(chain_df, chain_identities)
 
             system_df, chain_df = self._apply_unavailable_metric_columns(
                 system_df=system_df,
@@ -412,77 +562,199 @@ class Validate(object):
                 "sasa_normalized",
             }
             if self.scoring_functions & structure_metrics and not chain_df.empty:
-                with self._debug_timer("structure.init"):
-                    structure = Structure(
-                        wrk_dir=self.wrk_dir,
-                        chain_df=chain_df,
-                        cif_folder=Path(self.wrk_dir / "results" / "structures"),
-                    )
-
-                if "ifp_distance" in self.scoring_functions:
-                    with self._debug_timer("scores.ifp_distance"):
-                        chain_df = structure.add_ifp_distance()
-
-                if "ifp_prolif" in self.scoring_functions:
-                    with self._debug_timer("scores.ifp_prolif"):
-                        chain_df = structure.add_ifp_prolif()
-
-                if {"sasa", "sasa_normalized"} & self.scoring_functions:
-                    with self._debug_timer("scores.sasa"):
-                        chain_df = structure.add_sasa(
-                            absolute="sasa" in self.scoring_functions,
-                            normalized="sasa_normalized" in self.scoring_functions,
+                try:
+                    with self._debug_timer("structure.init"):
+                        structure = Structure(
+                            wrk_dir=self.wrk_dir,
+                            chain_df=chain_df,
+                            cif_folder=Path(self.wrk_dir / "results" / "structures"),
                         )
+                except Exception as exc:
+                    workflow_failures.append(
+                        self._analytics_failure(exc, "structure_initialization_failed")
+                    )
+                    self.logger.exception("Structure analytics initialization failed")
+                    structure = None
 
-            with self._debug_timer("scores.reproduction_metrics"):
-                system_df, chain_df = scaffold_reproduction_metrics(
-                    system_df=system_df,
-                    chain_df=chain_df,
-                    reference_path=self.reference_path,
-                    wrk_dir=self.wrk_dir,
-                    pocket_coverage_reference=self.pocket_coverage_reference,
-                    reproduction_metrics=sorted(self.reproduction_metrics),
-                    logger=self.logger,
+                if structure is not None and "ifp_distance" in self.scoring_functions:
+                    try:
+                        with self._debug_timer("scores.ifp_distance"):
+                            chain_df = structure.add_ifp_distance()
+                    except Exception as exc:
+                        workflow_failures.append(
+                            self._analytics_failure(exc, "ifp_distance_failed")
+                        )
+                        self.logger.exception("Distance IFP analytics failed")
+
+                if structure is not None and "ifp_prolif" in self.scoring_functions:
+                    try:
+                        with self._debug_timer("scores.ifp_prolif"):
+                            chain_df = structure.add_ifp_prolif()
+                    except Exception as exc:
+                        workflow_failures.append(
+                            self._analytics_failure(exc, "ifp_prolif_failed")
+                        )
+                        self.logger.exception("ProLIF analytics failed")
+
+                if (
+                    structure is not None
+                    and {
+                        "sasa",
+                        "sasa_normalized",
+                    }
+                    & self.scoring_functions
+                ):
+                    try:
+                        with self._debug_timer("scores.sasa"):
+                            chain_df = structure.add_sasa(
+                                absolute="sasa" in self.scoring_functions,
+                                normalized="sasa_normalized" in self.scoring_functions,
+                            )
+                    except Exception as exc:
+                        workflow_failures.append(
+                            self._analytics_failure(exc, "sasa_failed")
+                        )
+                        self.logger.exception("SASA analytics failed")
+
+            try:
+                with self._debug_timer("scores.reproduction_metrics"):
+                    system_df, chain_df = scaffold_reproduction_metrics(
+                        system_df=system_df,
+                        chain_df=chain_df,
+                        reference_path=self.reference_path,
+                        wrk_dir=self.wrk_dir,
+                        pocket_coverage_reference=self.pocket_coverage_reference,
+                        reproduction_metrics=sorted(self.reproduction_metrics),
+                        logger=self.logger,
+                    )
+            except Exception as exc:
+                workflow_failures.append(
+                    self._analytics_failure(exc, "reproduction_metrics_failed")
                 )
+                self.logger.exception("Reproduction analytics failed")
 
             # Story 2.4 retires recipe-side runtime reconstruction from manifest/runtime_context
             # fallbacks. Shared workflow behavior now depends only on typed runner metadata.
             runtime = merge_runner_runtime(
                 preparation_runtime,
-                *(result.runtime for result in runner_results),
+                *(result.runtime for result in valid_runner_results),
             )
 
             if self.assess_bias:
-                system_df, chain_df = self._apply_bias_metrics(
-                    system_df=system_df,
-                    chain_df=chain_df,
-                    runtime=runtime,
-                )
-
-            with self._debug_timer("results.write.system_chain"):
-                write.write_csv(
-                    system_df,
-                    output_path=self.wrk_dir / "results" / "system_metrics.csv",
-                )
-                write.write_csv(
-                    chain_df, output_path=self.wrk_dir / "results" / "chain_metrics.csv"
-                )
-
-            diffusion_samples = self._resolve_diffusion_samples(system_df, runtime)
-            if self.assess_robustness and (self.repeats > 1 or diffusion_samples > 1):
-                with self._debug_timer("scores.robustness_metrics"):
-                    results_df = gather.gather_robustness_results(
+                try:
+                    system_df, chain_df = self._apply_bias_metrics(
                         system_df=system_df,
                         chain_df=chain_df,
-                        wrk_dir=self.wrk_dir,
-                        reference_path=self.reference_path,
+                        runtime=runtime,
                     )
-                    write.write_csv(
-                        results_df,
-                        output_path=self.wrk_dir / "results" / "robustness_metrics.csv",
+                except Exception as exc:
+                    workflow_failures.append(
+                        self._analytics_failure(exc, "bias_metrics_failed")
                     )
+                    self.logger.exception("Bias analytics failed")
 
-        self._log_timing_summary()
+            diffusion_samples = self._resolve_diffusion_samples(system_df, runtime)
+            robustness_df = None
+            if self.assess_robustness and (self.repeats > 1 or diffusion_samples > 1):
+                try:
+                    with self._debug_timer("scores.robustness_metrics"):
+                        robustness_df = gather.gather_robustness_results(
+                            system_df=system_df,
+                            chain_df=chain_df,
+                            wrk_dir=self.wrk_dir,
+                            reference_path=self.reference_path,
+                        )
+                except Exception as exc:
+                    workflow_failures.append(
+                        self._analytics_failure(
+                            exc,
+                            "robustness_metrics_failed",
+                            stage=FailureStage.AGGREGATION,
+                        )
+                    )
+                    self.logger.exception("Robustness aggregation failed")
+
+            with self._debug_timer("results.write.public_contract"):
+                self._write_public_results(
+                    system_df=system_df,
+                    chain_df=chain_df,
+                    unavailable_metric_groups=unavailable_metric_groups,
+                    failures=workflow_failures,
+                    robustness_df=robustness_df,
+                )
+
+    def _analytics_failure(
+        self,
+        exc: BaseException,
+        error_code: str,
+        *,
+        stage: FailureStage = FailureStage.ANALYTICS,
+    ):
+        return failure_from_exception(
+            exc,
+            identity=self.output_identity,
+            stage=stage,
+            error_code=error_code,
+        )
+
+    def _write_public_results(
+        self,
+        *,
+        system_df,
+        chain_df,
+        unavailable_metric_groups: set[str],
+        failures=(),
+        robustness_df=None,
+    ) -> None:
+        evidence: list[EvidenceSource] = []
+        if self.reference_path is not None:
+            evidence.append(
+                EvidenceSource(
+                    kind="reference_structure",
+                    identifier=self.reference_path.name,
+                    path=str(self.reference_path),
+                )
+            )
+        if self.pocket_coverage_reference:
+            evidence.append(
+                EvidenceSource(
+                    kind="custom_pocket",
+                    identifier="configured_custom_pocket",
+                )
+            )
+        requested = set(self.scoring_functions)
+        if self.reproduction_metrics:
+            requested.add("reproduction_metrics")
+        if self.assess_bias:
+            requested.add("bias_metrics")
+        artifact_refs: list[ArtifactReference] = []
+        for label, relative_path in (
+            ("predicted_structures", "structures"),
+            ("aligned_structures", "structures_aligned"),
+            ("robustness_matrices", "matrices"),
+            ("interaction_fingerprints", "ifp"),
+            ("bias_supporting_outputs", "bias_train"),
+        ):
+            if (self.wrk_dir / "results" / relative_path).exists():
+                artifact_refs.append(
+                    ArtifactReference(
+                        label=label,
+                        relative_path=relative_path,
+                        kind="directory",
+                    )
+                )
+        bundle = bundle_from_frames(
+            system_df,
+            chain_df,
+            identity=self.output_identity,
+            evidence=evidence,
+            requested_metrics=requested,
+            unavailable_groups=unavailable_metric_groups,
+            failures=failures,
+            artifacts=artifact_refs,
+            robustness_df=robustness_df,
+        )
+        write_public_bundle(bundle, self.wrk_dir / "results")
 
     def _required_runner_metric_groups(self) -> set[str]:
         selected = self.scoring_functions & RUNNER_METRIC_GROUPS

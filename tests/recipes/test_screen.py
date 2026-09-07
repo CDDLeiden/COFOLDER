@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.modules.input.system import System
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 from cofolder.modules.runners.contracts import (
@@ -329,26 +330,25 @@ class TestScreenRun:
         monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
         monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
 
-        results = Screen(
-            wrk_dir=str(temp_dir / "screen"),
-            system_path=str(system_path),
-            options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
-            variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
-            col_id="compound_id",
-            scoring_functions=["confidence_metrics"],
-            assess_robustness=False,
-        ).run()
+        with pytest.raises(WorkflowExecutionError) as caught:
+            Screen(
+                wrk_dir=str(temp_dir / "screen"),
+                system_path=str(system_path),
+                options_path=str(sample_options_yaml),
+                variable=["sequences,1,ligand,smiles"],
+                variable_csv=str(sample_csv_file),
+                col_variable=["smiles"],
+                col_id="compound_id",
+                scoring_functions=["confidence_metrics"],
+                assess_robustness=False,
+            ).run()
 
         assert runner.msa_missing_at_run == [True]
-        assert results["status"].tolist() == ["failed", "failed"]
-        assert "system__confidence_score" in results.columns
-        assert "ligand_B__ifp_distance" in results.columns
+        assert len(caught.value.failures) == 2
         assert (
-            "without producing valid reusable MSAs" in results.loc[0, "error_message"]
+            "without producing valid reusable MSAs" in caught.value.failures[0].message
         )
-        assert "already attempted" in results.loc[1, "error_message"]
+        assert "already attempted" in caught.value.failures[1].message
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_preserves_constraints_unrelated_to_ligand_replacement(
@@ -423,19 +423,19 @@ class TestScreenRun:
 
         monkeypatch.setattr("cofolder.recipes.screen.Validate", _PreflightOnlyValidate)
 
-        Screen(
-            wrk_dir=str(temp_dir / "screen"),
-            system_path=str(system_path),
-            options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
-            variable_csv=str(csv_path),
-            col_variable=["smiles"],
-            col_id="id",
-        ).run()
+        with pytest.raises(WorkflowExecutionError) as caught:
+            Screen(
+                wrk_dir=str(temp_dir / "screen"),
+                system_path=str(system_path),
+                options_path=str(sample_options_yaml),
+                variable=["sequences,1,ligand,smiles"],
+                variable_csv=str(csv_path),
+                col_variable=["smiles"],
+                col_id="id",
+            ).run()
 
-        summary = pd.read_csv(temp_dir / "screen" / "screen_results.csv")
-        assert summary["status"].tolist() == ["failed"]
-        assert "atom 'C1' does not exist" in summary.loc[0, "error_message"]
+        assert "atom 'C1' does not exist" in caught.value.failures[0].message
+        assert (temp_dir / "screen" / "results" / "failures.csv").is_file()
 
     @patch("cofolder.recipes.screen.Validate")
     def test_run_uses_boltz2_as_default_runner(
@@ -459,17 +459,15 @@ class TestScreenRun:
             col_id="compound_id",
         )
 
-        screener.run()
+        merged = screener.run()
 
         first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
         assert first_call_kwargs["runner"] == "boltz2"
         assert first_call_kwargs["scoring_functions"] is None
         assert mock_validator.run.call_count == 2
 
-        summary = pd.read_csv(temp_dir / "screen_results.csv")
-        merged = pd.read_csv(temp_dir / "screen_results_with_scores.csv")
-        assert summary["status"].tolist() == ["success", "success"]
         assert merged["status"].tolist() == ["success", "success"]
+        assert (temp_dir / "results" / "records.jsonl").is_file()
 
     @patch("cofolder.recipes.screen.Validate")
     def test_run_passes_explicit_boltz_community_runner(
@@ -523,10 +521,9 @@ class TestScreenRun:
             col_variable=["smiles"],
             col_id="compound_id",
         )
-        screener.run()
+        out_df = screener.run()
 
         assert mock_validate_run.call_count == 1
-        out_df = pd.read_csv(temp_dir / "screen_results.csv")
         assert len(out_df) == 2
         bad = out_df[out_df["compound_id"] == "CMPD_BAD"].iloc[0]
         good = out_df[out_df["compound_id"] == "CMPD_OK"].iloc[0]
@@ -605,7 +602,7 @@ class TestScreenRun:
         )
         returned_df = screener.run()
 
-        merged_df = pd.read_csv(temp_dir / "screen_results_with_scores.csv")
+        merged_df = returned_df
         assert returned_df.columns.tolist() == merged_df.columns.tolist()
         assert returned_df["compound_id"].tolist() == merged_df["compound_id"].tolist()
         assert returned_df["ligand_B__affinity_pred_value"].tolist() == [6.2, 6.2]
@@ -650,13 +647,11 @@ class TestScreenRun:
             merge_data="mw",
         )
 
-        screener.run()
+        out_df = screener.run()
 
         assert mock_validate_run.call_count == 2
 
-        out_csv = temp_dir / "screen_results.csv"
-        assert out_csv.exists()
-        out_df = pd.read_csv(out_csv)
+        assert (temp_dir / "results" / "records.jsonl").exists()
         assert len(out_df) == 2
         assert set(
             [
@@ -671,9 +666,7 @@ class TestScreenRun:
         ).issubset(out_df.columns)
         assert set(out_df["status"].tolist()) == {"success"}
 
-        merged_csv = temp_dir / "screen_results_with_scores.csv"
-        assert merged_csv.exists()
-        merged_df = pd.read_csv(merged_csv)
+        merged_df = out_df
         assert len(merged_df) == 2
         assert set(
             ["compound_id", "smiles", "status", "error_message", "run_dir"]
@@ -724,7 +717,6 @@ class TestScreenRun:
         def _run_side_effect():
             if mock_validate_run.call_count == 1:
                 raise RuntimeError("boom")
-            return None
 
         mock_validate_run.side_effect = _run_side_effect
 
@@ -738,14 +730,13 @@ class TestScreenRun:
             col_id="compound_id",
         )
 
-        screener.run()
+        out_df = screener.run()
 
-        out_df = pd.read_csv(temp_dir / "screen_results.csv")
         assert len(out_df) == 2
         assert "failed" in set(out_df["status"].tolist())
         assert "success" in set(out_df["status"].tolist())
 
-        merged_df = pd.read_csv(temp_dir / "screen_results_with_scores.csv")
+        merged_df = out_df
         assert len(merged_df) == 2
         assert "failed" in set(merged_df["status"].tolist())
         assert "success" in set(merged_df["status"].tolist())

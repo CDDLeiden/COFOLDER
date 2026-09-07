@@ -88,13 +88,9 @@ def test_screen_clusters_valid_ifps_and_excludes_invalid_or_incompatible_rows(
         "not_evaluable",
         "not_evaluable",
     ]
-    for filename in ("screen_results.csv", "screen_results_with_scores.csv"):
-        written = pd.read_csv(temp_dir / "screen" / filename)
-        assert written["ifp_cluster_status"].tolist() == results[
-            "ifp_cluster_status"
-        ].tolist()
+    assert (temp_dir / "screen" / "results" / "records.jsonl").is_file()
 
-    summary = pd.read_csv(temp_dir / "screen" / "ifp_cluster_summary.csv")
+    summary = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_summary.csv")
     assert summary["ifp_cluster_id"].tolist() == ["IFP001", "IFP002", "IFP003"]
     assert summary["size"].tolist() == [2, 1, 1]
     assert json.loads(summary.loc[0, "member_ids"]) == ["A", "B"]
@@ -141,9 +137,9 @@ def test_acceptance_screen_combines_filtering_clustering_and_returned_dataframe(
         "rejected",
     ]
     assert results["ifp_cluster_id"].tolist() == ["IFP001", "IFP001", "IFP002"]
-    assert len(pd.read_csv(work_dir / "screen_results.csv")) == 3
-    assert len(pd.read_csv(work_dir / "screen_results_with_scores.csv")) == 3
-    assert (work_dir / "ifp_cluster_summary.csv").is_file()
+    assert len(results) == 3
+    assert (work_dir / "results" / "records.jsonl").is_file()
+    assert (work_dir / "results" / "ifp_cluster_summary.csv").is_file()
 
 
 @patch("cofolder.recipes.screen.Validate.run")
@@ -163,7 +159,7 @@ def test_clustering_disabled_keeps_stable_columns_without_summary(
 
     assert results["ifp_cluster_status"].tolist() == ["not_applied", "not_applied"]
     assert results["ifp_cluster_id"].isna().all()
-    assert not (temp_dir / "ifp_cluster_summary.csv").exists()
+    assert not (temp_dir / "results" / "ifp_cluster_summary.csv").exists()
 
 
 @pytest.mark.parametrize("threshold", [-0.01, 1.01, float("nan")])

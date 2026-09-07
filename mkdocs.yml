@@ -81,6 +81,7 @@ nav:
       - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
+      - Public output contract: user-guide/public-output-contract.md
   - Tutorials:
       - Tutorial Map: tutorials/index.md
       - Basic Usage: tutorials/basic.md
@@ -100,6 +101,7 @@ nav:
           - Entities: api/modules/entities.md
           - Utils: api/modules/utils.md
           - Analytics: api/modules/analytics.md
+          - Public Contracts: api/modules/contracts.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 

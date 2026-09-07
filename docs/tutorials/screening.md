@@ -88,7 +88,7 @@ Results are saved in a CSV file:
 ```python
 import pandas as pd
 
-results = pd.read_csv("screening_output/screen_results_with_scores.csv")
+results = pd.read_csv("screening_output/results/metrics.csv")
 
 # Sort by a system-level confidence metric
 top_hits = results.sort_values("system__confidence_score", ascending=False).head(10)

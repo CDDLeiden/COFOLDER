@@ -22,6 +22,7 @@ from cofolder.modules.runners.contracts import (
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
+    build_runner_public_records,
 )
 from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.modules.utils import read
@@ -351,6 +352,8 @@ class BoltzRunner(BaseRunner):
             runtime=runtime,
             sample_records=sample_records,
             metric_outcomes=metric_outcomes,
+            chain_identities=request.chain_identities,
+            records=build_runner_public_records(system_df, chain_df, request),
         )
 
     def _copy_structures(

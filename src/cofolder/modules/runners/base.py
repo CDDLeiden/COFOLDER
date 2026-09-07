@@ -11,7 +11,6 @@ from cofolder.modules.runners.contracts import (
     RunnerExecutionResult,
     RunnerInputCapabilities,
     RunnerPreparationResult,
-    RunnerRuntime,
 )
 
 RunnerPreparation = RunnerPreparationResult

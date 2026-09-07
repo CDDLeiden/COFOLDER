@@ -8,6 +8,8 @@ from typing import Any
 
 import pandas as pd
 
+from cofolder.modules.contracts import read_public_metric_frames
+
 SYSTEM_METADATA_COLUMNS = frozenset(
     {"idx", "cif_file", "model_name", "repeat", "diffusion_sample"}
 )
@@ -27,9 +29,12 @@ CHAIN_METADATA_COLUMNS = frozenset(
 
 
 def read_metric_frames(run_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read Validate's system and chain CSVs, returning empty frames if absent."""
+    """Read Validate metrics, preferring the versioned public record contract."""
 
     results_dir = Path(run_dir) / "results"
+    records_path = results_dir / "records.jsonl"
+    if records_path.exists():
+        return read_public_metric_frames(run_dir)
     system_path = results_dir / "system_metrics.csv"
     chain_path = results_dir / "chain_metrics.csv"
     system_df = pd.read_csv(system_path) if system_path.exists() else pd.DataFrame()
