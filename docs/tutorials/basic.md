@@ -23,8 +23,8 @@ sequences:
       id: "protein_1"
       fasta: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
   - ligand:
+      id: B
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
 
 ## Step 2: Configure Runner Options
@@ -32,11 +32,13 @@ sequences:
 Create `options.yaml`:
 
 ```yaml
-out_dir: output
-devices: [0]
-num_models: 1
-recycling_steps: 3
-diffusion_samples: 1
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ## Step 3: Run Prediction
@@ -87,12 +89,12 @@ print(system_df[["model_name", "confidence_score"]].head())
 Experiment with different runner parameters:
 
 ```yaml
-# Higher quality prediction
-recycling_steps: 5
-diffusion_samples: 5
-
-# Ensemble prediction
-num_models: 5
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 5
+runner:
+  recycling_steps: 5
 ```
 
 ### Add 3D Conformer Generation

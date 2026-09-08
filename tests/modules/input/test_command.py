@@ -20,7 +20,8 @@ class TestCommandInit:
         cmd = Command(options_path=str(sample_options_yaml))
 
         assert cmd.options is not None
-        assert "options" in cmd.options
+        assert cmd.options["version"] == 1
+        assert cmd.options["runner"]["recycling_steps"] == 3
 
     def test_init_with_both_raises_error(self, sample_options_yaml):
         """Test that providing both options and options_path raises error."""

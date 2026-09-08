@@ -81,10 +81,10 @@ class Command:
     """
     def __init__(self, options=None, options_path=None):
         self.logger = logging.getLogger(__name__)
-        if options and options_path:
+        if options is not None and options_path is not None:
             raise ValueError("Provide either 'options' or 'options_path', not both.")
 
-        if options:
+        if options is not None:
             self.options = options
         elif options_path:
             self.logger.debug(f"Loading options YAML from {options_path}")
@@ -143,9 +143,9 @@ class Command:
 
         for item in self.options.get("options", []):
             for key, value in item.items():
-                if key == "use_msa_server" or value in (None, "None", "False"):
+                if key == "use_msa_server" or value in (None, "None", "False", False):
                     continue
-                if value == "True":
+                if value in ("True", True):
                     cmd.append(f"--{key}")
                 elif value == "multiprocessing.cpu_count()":
                     cmd.extend([f"--{key}", str(multiprocessing.cpu_count())])

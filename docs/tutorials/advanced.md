@@ -16,8 +16,8 @@ sequences:
       id: "chain_B"
       fasta: "SEQUENCE_B..."
   - ligand:
+      id: L
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
 
 ### Multiple Ligands
@@ -29,11 +29,11 @@ sequences:
       id: "protein"
       fasta: "SEQUENCE..."
   - ligand:
-      smiles: "SMILES_1"
-      ccd: "LIG1"
+      id: L1
+      smiles: "CCO"
   - ligand:
-      smiles: "SMILES_2"
-      ccd: "LIG2"
+      id: L2
+      smiles: "CCN"
 ```
 
 ## Ensemble Predictions
@@ -42,11 +42,13 @@ Generate multiple predictions for uncertainty estimation:
 
 ```yaml
 # options.yaml
-out_dir: ensemble_output
-devices: [0]
-num_models: 5           # Generate 5 models
-recycling_steps: 5
-diffusion_samples: 10   # 10 samples per model
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 10
+runner:
+  devices: 1
+  recycling_steps: 5
 ```
 
 ## Custom Boltz Parameters
@@ -54,24 +56,28 @@ diffusion_samples: 10   # 10 samples per model
 ### High-Quality Predictions
 
 ```yaml
-out_dir: high_quality
-devices: [0]
-num_models: 5
-recycling_steps: 10
-diffusion_samples: 20
-sampling_steps: 500
-diffusion_temperature: 0.8
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 20
+runner:
+  devices: 1
+  recycling_steps: 10
+  sampling_steps: 500
+  step_scale: 1.5
 ```
 
 ### Fast Screening
 
 ```yaml
-out_dir: fast_screen
-devices: [0]
-num_models: 1
-recycling_steps: 1
-diffusion_samples: 1
-sampling_steps: 100
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 1
+  sampling_steps: 100
 ```
 
 ## Covalent Binding

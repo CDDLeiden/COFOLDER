@@ -6,6 +6,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any, Protocol
 
+from cofolder.modules.input.config import RunnerOptionsSchema, load_runner_options
+from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
     RunnerExecutionResult,
@@ -26,6 +28,10 @@ class BaseRunner(ABC):
         constraint_types=frozenset(),
     )
     supports_msa_reuse = False
+    options_schema: RunnerOptionsSchema
+    ligand_preparation_capabilities = LigandPreparationCapabilities(
+        native_smiles=True, conformer_modes=frozenset()
+    )
 
     @staticmethod
     def _distribution_installed(distribution_name: str) -> bool:
@@ -83,7 +89,9 @@ class BaseRunner(ABC):
         options_obj: Any,
         *,
         check_atom_names: bool = True,
-    ) -> None:
+        source_path: Path | None = None,
+        requirements: Any = None,
+    ):
         """Validate the shared YAML contract against this runner's capabilities."""
 
         from cofolder.modules.input.validation import validate_system_input
@@ -92,13 +100,18 @@ class BaseRunner(ABC):
         find_value = getattr(options_obj, "find_value", None)
         if callable(find_value):
             cache_path = find_value(key="cache") or find_value(key="cache_path")
-        validate_system_input(
+        return validate_system_input(
             system_obj,
+            source_path=source_path,
             runner_name=self.name,
             capabilities=self.input_capabilities,
+            requirements=requirements,
             cache_path=cache_path,
             check_atom_names=check_atom_names,
         )
+
+    def _load_typed_options(self, options_path: Path):
+        return load_runner_options(options_path, schema=self.options_schema)
 
     def prepare_system(
         self,
@@ -158,6 +171,8 @@ class Runner(Protocol):
     capabilities: set[str]
     input_capabilities: RunnerInputCapabilities
     supports_msa_reuse: bool
+    options_schema: RunnerOptionsSchema
+    ligand_preparation_capabilities: LigandPreparationCapabilities
 
     def check_availability(self) -> tuple[bool, str | None]: ...
 
@@ -169,7 +184,9 @@ class Runner(Protocol):
         options_obj: Any,
         *,
         check_atom_names: bool = True,
-    ) -> None: ...
+        source_path: Path | None = None,
+        requirements: Any = None,
+    ): ...
 
     def load_options(self, options_path: Path): ...
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import math
@@ -39,11 +38,22 @@ from cofolder.modules.contracts import (
     metric_records_from_frames,
     write_public_bundle,
 )
-from cofolder.modules.input import system
+from cofolder.modules.input import (
+    SystemInputValidationError,
+    WorkflowInputRequirements,
+    load_yaml_document,
+    system,
+)
+from cofolder.modules.input.ligand import (
+    LigandSourceIdentity,
+    replace_ligand_smiles,
+    resolve_ligand_target,
+    validate_smiles,
+)
 from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import get_runner
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
-from cofolder.modules.utils import read, write
+from cofolder.modules.utils import write
 from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
 from cofolder.recipes.validate import Validate
 
@@ -71,9 +81,9 @@ class Screen:
         system_path: str,
         options_path: str,
         runner: str = "boltz2",
-        variable: list[str] | None = None,
         variable_csv: str | None = None,
-        col_variable: list[str] | None = None,
+        ligand_chain: str | None = None,
+        smiles_column: str | None = None,
         col_id: str | None = None,
         merge_data: str | None = None,
         repeats: int = 1,
@@ -94,7 +104,6 @@ class Screen:
         pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
         ifp_filter_threshold: float | None = None,
-        ifp_ligand_chain: str | None = None,
         cluster_ifps: bool = False,
         ifp_cluster_similarity_threshold: float = 0.5,
     ):
@@ -104,21 +113,16 @@ class Screen:
         self.runner = str(runner)
         self.run_id = str(uuid4())
 
-        self.variable_raw = variable or []
-        self.col_variable = col_variable or []
+        self.ligand_chain = str(ligand_chain).strip() if ligand_chain else ""
+        self.smiles_column = str(smiles_column).strip() if smiles_column else ""
         self.col_id = col_id
         self.variable_csv = Path(variable_csv) if variable_csv else None
         self.merge_data = self._parse_list(merge_data)
         self.ifp_filter_threshold = ifp_filter_threshold
-        self.ifp_ligand_chain = (
-            str(ifp_ligand_chain).strip() if ifp_ligand_chain is not None else None
-        )
         self.pocket_coverage_reference = pocket_coverage_reference
         self.cluster_ifps = bool(cluster_ifps)
         self.ifp_cluster_similarity_threshold = ifp_cluster_similarity_threshold
         self._ifp_filter_reference_spec: dict[str, Any] | None = None
-
-        self.variable_paths = [self._parse_path(v) for v in self.variable_raw]
 
         self.validate_kwargs: dict[str, Any] = {
             "repeats": repeats,
@@ -140,34 +144,19 @@ class Screen:
             "reproduction_metrics": reproduction_metrics,
         }
 
-        self.base_system = read.read_yaml(path=self.system_path)
-        self.base_system_obj = system.System(system=self.base_system)
-        resolve_declared_msa_paths(
-            self.base_system_obj,
-            base_dir=self.system_path.parent,
-        )
-        self.base_system = self.base_system_obj.system
+        self.base_system: dict[str, Any] = {}
+        self.base_system_obj: system.System | None = None
+        self.ligand_target = None
         self.runner_impl = get_runner(self.runner)
+        self._failure_stage = FailureStage.INPUT_VALIDATION
         self.reusable_msa_dir = (
             self.wrk_dir / "shared" / "msa" / self.runner
             if getattr(self.runner_impl, "supports_msa_reuse", False)
             else None
         )
-        if self.reusable_msa_dir is not None:
-            options_obj = self.runner_impl.load_options(self.options_path)
-            resolve_msa_reuse_settings = getattr(
-                self.runner_impl, "msa_reuse_settings", None
-            )
-            self.msa_reuse_settings = (
-                resolve_msa_reuse_settings(options_obj)
-                if callable(resolve_msa_reuse_settings)
-                else {}
-            )
-        else:
-            self.msa_reuse_settings = {}
+        self.msa_reuse_settings = {}
         self.logger = logging.getLogger("cofolder.screen")
 
-        self._validate_config()
 
     def _validate_config(self) -> None:
         if self.variable_csv is None:
@@ -178,13 +167,10 @@ class Screen:
             raise ValueError(f"--variable_csv is not a file: {self.variable_csv}")
         if self.col_id is None or not str(self.col_id).strip():
             raise ValueError("--col_id is required.")
-        if not self.variable_raw or not self.col_variable:
-            raise ValueError("At least one --variable/--col_variable pair is required.")
-        if len(self.variable_raw) != len(self.col_variable):
-            raise ValueError(
-                "Number of --variable entries must match number of --col_variable entries. "
-                f"Got variable={len(self.variable_raw)} col_variable={len(self.col_variable)}."
-            )
+        if not self.ligand_chain:
+            raise ValueError("--ligand_chain is required.")
+        if not self.smiles_column:
+            raise ValueError("--smiles_column is required.")
 
         try:
             self.ifp_cluster_similarity_threshold = float(
@@ -212,8 +198,6 @@ class Screen:
             )
 
         if self.ifp_filter_threshold is None:
-            if self.cluster_ifps:
-                self._validate_ifp_ligand_selection("--cluster_ifps")
             return
 
         try:
@@ -235,17 +219,6 @@ class Screen:
             )
 
         self._validate_filter_reference()
-        self._validate_ifp_ligand_selection("--ifp_filter_threshold")
-
-    def _validate_ifp_ligand_selection(self, option: str) -> None:
-        ligand_count = self._configured_ligand_count()
-        if ligand_count == 0:
-            raise ValueError(f"{option} requires a system containing a ligand.")
-        if ligand_count > 1 and not self.ifp_ligand_chain:
-            raise ValueError(
-                f"--ifp_ligand_chain is required with {option} when the system "
-                "contains multiple ligand chains."
-            )
 
     def _validate_filter_reference(self) -> None:
         """Parse the filter reference before any prediction work starts."""
@@ -273,16 +246,6 @@ class Screen:
         if self._ifp_filter_reference_spec is None:
             raise ValueError("--pocket_coverage_reference must not be empty.")
 
-    def _configured_ligand_count(self) -> int:
-        count = 0
-        for entry in self.base_system.get("sequences", []):
-            if not isinstance(entry, dict) or "ligand" not in entry:
-                continue
-            ligand = entry.get("ligand")
-            identifier = ligand.get("id") if isinstance(ligand, dict) else None
-            count += len(identifier) if isinstance(identifier, list) else 1
-        return count
-
     def run(self) -> pd.DataFrame:
         try:
             return self._run_impl()
@@ -298,8 +261,8 @@ class Screen:
             failure = failure_from_exception(
                 exc,
                 identity=identity,
-                stage=FailureStage.INPUT_VALIDATION,
-                error_code="screen_input_validation_failed",
+                stage=self._failure_stage,
+                error_code=getattr(exc, "error_code", "screen_input_validation_failed"),
             )
             output_dir = self.wrk_dir / "results"
             write_public_bundle(
@@ -321,11 +284,38 @@ class Screen:
         """Run the screen, publish contract records, and return the merged results."""
 
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
+        self._validate_config()
+        document = load_yaml_document(self.system_path)
+        if not isinstance(document.value, dict):
+            raise SystemInputValidationError(
+                "System YAML root must be a mapping.", source_path=self.system_path
+            )
+        self.base_system_obj = system.System(system=document.value)
+        resolve_declared_msa_paths(
+            self.base_system_obj, base_dir=self.system_path.parent
+        )
+        options_obj = self.runner_impl.load_options(self.options_path)
+        validated = self.runner_impl.validate_system(
+            self.base_system_obj,
+            options_obj,
+            check_atom_names=False,
+            source_path=self.system_path,
+            requirements=WorkflowInputRequirements(
+                require_protein=True, require_ligand=True
+            ),
+        )
+        self.base_system_obj = validated.system
+        self.base_system = self.base_system_obj.system
+        self.ligand_target = resolve_ligand_target(
+            self.base_system_obj, self.ligand_chain
+        )
+        if self.reusable_msa_dir is not None:
+            self.msa_reuse_settings = self.runner_impl.msa_reuse_settings(options_obj)
         df = pd.read_csv(self.variable_csv)
         if df.empty:
             raise ValueError("Screen input CSV must contain at least one compound row.")
 
-        required_cols = [self.col_id, *self.col_variable, *self.merge_data]
+        required_cols = [self.col_id, self.smiles_column, *self.merge_data]
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
             raise ValueError(f"CSV missing required columns: {', '.join(missing)}")
@@ -336,6 +326,30 @@ class Screen:
                 f"CSV column '{self.col_id}' contains duplicate compound IDs: "
                 f"{', '.join(duplicates)}"
             )
+
+        assert self.ligand_target is not None
+        normalized_ligands: dict[int, Any] = {}
+        ligand_errors: dict[int, Exception] = {}
+        for ordinal, (_, row) in enumerate(df.iterrows(), 1):
+            compound_id = str(row[self.col_id])
+            try:
+                normalized_ligands[ordinal] = validate_smiles(
+                    row[self.smiles_column],
+                    source=LigandSourceIdentity(
+                        entity_id=self.ligand_target.entity_id,
+                        chain_ids=self.ligand_target.chain_ids,
+                        source_record_id=compound_id,
+                    ),
+                    source_path=self.variable_csv,
+                    field_path=(ordinal, self.smiles_column),
+                )
+            except Exception as exc:
+                ligand_errors[ordinal] = exc
+
+        if normalized_ligands:
+            self._failure_stage = FailureStage.PREPARATION
+            self.runner_impl.ensure_available()
+            self._failure_stage = FailureStage.INPUT_VALIDATION
 
         records: list[dict[str, Any]] = []
         records_with_scores: list[dict[str, Any]] = []
@@ -362,8 +376,7 @@ class Screen:
             self._ensure_screen_metric_schema(detailed)
             detailed.update(self._default_cluster_result())
             summary.update(self._default_cluster_result())
-            for col in self.col_variable:
-                summary[col] = row.get(col)
+            summary[self.smiles_column] = row.get(self.smiles_column)
             for col in self.merge_data:
                 summary[col] = row.get(col)
 
@@ -372,22 +385,15 @@ class Screen:
             sys_obj: system.System | None = None
             row_stage = FailureStage.INPUT_VALIDATION
             try:
-                sys_obj = system.System(system=copy.deepcopy(self.base_system))
-                for path, col in zip(self.variable_paths, self.col_variable):
-                    value = row[col]
-                    if pd.isna(value) or (
-                        isinstance(value, str) and value.strip() == ""
-                    ):
-                        raise ValueError(
-                            f"Empty value for mapped column '{col}' in row {i} ({compound_id})."
-                        )
-                    if self._path_targets_smiles(path) and not self._is_valid_smiles(
-                        str(value)
-                    ):
-                        raise ValueError(
-                            f"Invalid SMILES in column '{col}' for row {i} ({compound_id}): {value}"
-                        )
-                    sys_obj.update_system(value=value, path=path)
+                assert self.ligand_target is not None
+                if i in ligand_errors:
+                    raise ligand_errors[i]
+                normalized_ligand = normalized_ligands[i]
+                sys_obj = replace_ligand_smiles(
+                    self.base_system_obj,
+                    target=self.ligand_target,
+                    ligand=normalized_ligand,
+                )
 
                 if self.reusable_msa_dir is not None:
                     injected = self.runner_impl.inject_reusable_msas(
@@ -480,7 +486,9 @@ class Screen:
                             runner_id=self.runner,
                         ),
                         stage=row_stage,
-                        error_code="screen_compound_failed",
+                        error_code=getattr(
+                            source_exc, "error_code", "screen_compound_failed"
+                        ),
                         details={"row_index": i},
                     )
                 )
@@ -699,9 +707,9 @@ class Screen:
         ligand_rows = chain_df[
             chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
         ]
-        if self.ifp_ligand_chain:
+        if self.ligand_chain:
             ligand_rows = ligand_rows[
-                ligand_rows["CHAIN_ID"].astype(str) == self.ifp_ligand_chain
+                ligand_rows["CHAIN_ID"].astype(str) == self.ligand_chain
             ]
         elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
             return None, "ambiguous_ligand_chain"
@@ -747,9 +755,9 @@ class Screen:
         ligand_rows = chain_df[
             chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
         ]
-        if self.ifp_ligand_chain:
+        if self.ligand_chain:
             ligand_rows = ligand_rows[
-                ligand_rows["CHAIN_ID"].astype(str) == self.ifp_ligand_chain
+                ligand_rows["CHAIN_ID"].astype(str) == self.ligand_chain
             ]
         elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
             return self._not_evaluable_filter_result("ambiguous_ligand_chain")
@@ -919,15 +927,6 @@ class Screen:
         return df
 
     @staticmethod
-    def _parse_path(path_str: str) -> list[Any]:
-        if not path_str or not str(path_str).strip():
-            raise ValueError("--variable path cannot be empty.")
-        return [
-            int(v.strip()) if v.strip().isdigit() else v.strip()
-            for v in str(path_str).split(",")
-        ]
-
-    @staticmethod
     def _parse_list(input_str: str | None) -> list[str]:
         if not input_str:
             return []
@@ -937,19 +936,3 @@ class Screen:
     def _safe_name(value: str) -> str:
         token = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip())
         return token or "item"
-
-    @staticmethod
-    def _path_targets_smiles(path: list[Any]) -> bool:
-        return bool(path) and str(path[-1]).strip().lower() == "smiles"
-
-    @staticmethod
-    def _is_valid_smiles(smiles: str) -> bool:
-        try:
-            from rdkit import Chem
-        except Exception:
-            # If RDKit is unavailable, do not block screen row execution here.
-            return True
-        s = str(smiles).strip()
-        if not s:
-            return False
-        return Chem.MolFromSmiles(s) is not None

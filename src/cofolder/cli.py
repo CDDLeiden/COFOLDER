@@ -1,14 +1,15 @@
 import argparse
-import os
 import logging
+import os
 import shlex
 import sys
 from importlib import import_module
 from pathlib import Path
 
 from cofolder import __version__
-from cofolder.modules.runners import get_runner, list_runner_names
-
+from cofolder.modules.contracts import FailureStage, WorkflowExecutionError
+from cofolder.modules.input import InputValidationError
+from cofolder.modules.runners import list_runner_names
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
 
@@ -356,8 +357,6 @@ class BaseRecipe:
 
     @staticmethod
     def _validate_common_args(args):
-        get_runner(args.runner).ensure_available()
-
         # ---- scoring functions validation ----
         if args.scoring_functions is not None:
             invalid = set(args.scoring_functions) - set(SCORING_FUNCTIONS)
@@ -511,16 +510,9 @@ class ScreenRecipe(BaseRecipe):
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
 
-        parser.add_argument(
-            '-v', '--variable',
-            type=str,
-            action='append',
-            default=None,
-            help='Repeatable comma-separated YAML path(s) to update.'
-        )
-
         parser.add_argument('-c', '--variable_csv', type=str, required=True)
-        parser.add_argument('--col_variable', type=str, action='append', default=None)
+        parser.add_argument('--ligand_chain', type=str, required=True)
+        parser.add_argument('--smiles_column', type=str, required=True)
         parser.add_argument('--col_id', type=str, required=True)
 
         parser.add_argument(
@@ -536,12 +528,6 @@ class ScreenRecipe(BaseRecipe):
                 "Annotate rows by distance-IFP reference overlap at this inclusive "
                 "threshold ([0, 1]); filtering is disabled when omitted."
             ),
-        )
-        parser.add_argument(
-            "--ifp_ligand_chain",
-            type=str,
-            default=None,
-            help="Ligand chain to evaluate; required for systems with multiple ligand chains.",
         )
         parser.add_argument(
             "--cluster_ifps",
@@ -566,23 +552,14 @@ class ScreenRecipe(BaseRecipe):
         logger = ScreenRecipe.setup(args)
         logger.info("Starting COFOLDER screening pipeline.")
 
-        if not args.variable or not args.col_variable:
-            raise ValueError("At least one --variable/--col_variable pair is required.")
-        if len(args.variable) != len(args.col_variable):
-            raise ValueError(
-                "Number of --variable entries must match number of --col_variable entries. "
-                f"Got variable={len(args.variable)} col_variable={len(args.col_variable)}."
-            )
-
         screen_cls = _load_recipe_class("cofolder.recipes.screen", "Screen")
         screener = screen_cls(
-            variable=args.variable,
             variable_csv=args.variable_csv,
-            col_variable=args.col_variable,
+            ligand_chain=args.ligand_chain,
+            smiles_column=args.smiles_column,
             col_id=args.col_id,
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
-            ifp_ligand_chain=args.ifp_ligand_chain,
             cluster_ifps=args.cluster_ifps,
             ifp_cluster_similarity_threshold=args.ifp_cluster_similarity_threshold,
             **BaseRecipe.common_kwargs(args),
@@ -624,6 +601,12 @@ class OracleRecipe(BaseRecipe):
             default="first",
             help="Aggregation applied when multiple metric rows are present."
         )
+        parser.add_argument(
+            "--ligand_chain",
+            type=str,
+            default=None,
+            help="Ligand chain to replace; required for systems with multiple ligands.",
+        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
@@ -637,6 +620,7 @@ class OracleRecipe(BaseRecipe):
             input_mol_file=args.input_mol_file,
             output_metric=args.output_metric,
             aggregate=args.aggregate,
+            ligand_chain=args.ligand_chain,
             **BaseRecipe.common_kwargs(args),
         )
 
@@ -693,4 +677,20 @@ def main(argv=None):
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(raw_argv)
     args._cli_argv = raw_argv
-    args.func(args)
+    try:
+        args.func(args)
+    except InputValidationError as exc:
+        logging.error("%s", exc)
+        return 2
+    except ValueError as exc:
+        logging.error("%s", exc)
+        return 2
+    except WorkflowExecutionError as exc:
+        logging.error("%s", exc)
+        if exc.failures and all(
+            failure.stage == FailureStage.INPUT_VALIDATION
+            for failure in exc.failures
+        ):
+            return 2
+        return 1
+    return 0

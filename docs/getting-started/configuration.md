@@ -122,26 +122,36 @@ sequences:
 
 The options YAML file controls runner prediction parameters.
 
+The format is strict and runner-specific. `version` and `runner` are required;
+`runtime` is optional. Unknown keys and values with the wrong type, range, or enum
+are rejected before preparation or backend execution. Workflow-owned values such as
+the output directory, seed, model selection, and automatic MSA-server enablement
+belong to the workflow and cannot be set here.
+
 ### Basic Options
 
 ```yaml
-out_dir: output          # Output directory
-devices: [0]            # GPU devices to use
-num_models: 1           # Number of models to run
-recycling_steps: 3      # Number of recycling iterations
-diffusion_samples: 1    # Number of diffusion samples
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ### Advanced Options
 
 ```yaml
-out_dir: output
-devices: [0, 1]         # Multi-GPU support
-num_models: 5           # Ensemble prediction
-recycling_steps: 5      # More recycling for accuracy
-diffusion_samples: 10   # Multiple samples for diversity
-sampling_steps: 200     # Diffusion sampling steps
-diffusion_temperature: 1.0  # Temperature for sampling
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 10
+runner:
+  devices: 2
+  recycling_steps: 5
+  sampling_steps: 200
+  step_scale: 1.5
 ```
 
 ## Command-Line Options
@@ -159,6 +169,11 @@ diffusion_temperature: 1.0  # Temperature for sampling
 --conformers {2D,3D,sdf}
 ```
 
+OpenFold3 uses the same outer namespace. Its `runner` section accepts the explicit
+native inference sections such as `model_update`, `pl_trainer_args`,
+`dataset_config_kwargs`, `output_writer_settings`, `msa_computation_settings`, and
+`template_preprocessor_settings`; their nested keys are also validated.
+
 Generate conformers for SMILES input:
 - `2D`: Generate 2D coordinates
 - `3D`: Generate 3D conformers using ETKDG + UFF
@@ -167,9 +182,9 @@ Generate conformers for SMILES input:
 ### Screen-Specific Options
 
 ```bash
--v, --variable "sequences,1,ligand,smiles"
 -c, --variable_csv compounds.csv
---col_variable smiles
+--ligand_chain B
+--smiles_column smiles
 --col_id compound_id
 ```
 

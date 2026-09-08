@@ -167,8 +167,22 @@ class _FakeRunner:
     def ensure_available(self):
         return None
 
-    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
-        return None
+    def validate_system(
+        self,
+        system_obj,
+        options_obj,
+        *,
+        check_atom_names=True,
+        source_path=None,
+        requirements=None,
+    ):
+        return Boltz2Runner().validate_system(
+            system_obj,
+            options_obj,
+            check_atom_names=check_atom_names,
+            source_path=source_path,
+            requirements=requirements,
+        )
 
     def load_options(self, options_path):
         return {"options_path": str(options_path)}
@@ -288,12 +302,27 @@ class _CapturingRunner(_FakeRunner):
         self.validation_snapshots = []
         self.execution_constraints = None
 
-    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
+    def validate_system(
+        self,
+        system_obj,
+        options_obj,
+        *,
+        check_atom_names=True,
+        source_path=None,
+        requirements=None,
+    ):
         self.validation_snapshots.append(
             (
                 check_atom_names,
                 json.loads(json.dumps(system_obj.system.get("constraints", []))),
             )
+        )
+        return super().validate_system(
+            system_obj,
+            options_obj,
+            check_atom_names=check_atom_names,
+            source_path=source_path,
+            requirements=requirements,
         )
 
     def run(self, request):
@@ -783,26 +812,28 @@ def _patch_validate_pipeline_real_boltz_community(
 class TestValidateInit:
     """Tests for Validate initialization."""
 
-    def test_init_checks_runner_availability_before_loading_inputs(
+    def test_runner_availability_is_checked_inside_guarded_run(
         self,
         sample_system_yaml,
         sample_options_yaml,
         temp_dir,
     ):
         fake_runner = Mock()
+        fake_runner.capabilities = set()
+        fake_runner.load_options.return_value = {}
         fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
 
         with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
-            with patch("cofolder.recipes.validate.read.read_yaml") as mock_read_yaml:
-                with pytest.raises(RuntimeError, match="install boltz first"):
-                    Validate(
-                        wrk_dir=str(temp_dir),
-                        system_path=str(sample_system_yaml),
-                        options_path=str(sample_options_yaml),
-                        scoring_functions=[],
-                    )
+            validator = Validate(
+                wrk_dir=str(temp_dir),
+                system_path=str(sample_system_yaml),
+                options_path=str(sample_options_yaml),
+                scoring_functions=[],
+            )
+            with pytest.raises(WorkflowExecutionError, match="install boltz first"):
+                validator.run()
 
-        mock_read_yaml.assert_not_called()
+        fake_runner.ensure_available.assert_called_once()
 
     def test_init_basic(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Validate(
@@ -815,7 +846,7 @@ class TestValidateInit:
         assert str(validator.wrk_dir) == str(temp_dir)
         assert str(validator.system_path) == str(sample_system_yaml)
         assert str(validator.options_path) == str(sample_options_yaml)
-        assert validator.base_system is not None
+        assert validator.base_system is None
         assert validator.runner_name == "boltz2"
         assert validator.scoring_functions == set()
         assert validator.reference_path is None
@@ -864,6 +895,34 @@ class TestValidateInit:
 
 
 class TestValidateRun:
+    def test_invalid_runner_options_fail_preflight_without_backend_call(
+        self, monkeypatch, sample_system_yaml, temp_dir
+    ):
+        options_path = temp_dir / "invalid-options.yaml"
+        options_path.write_text(
+            "version: 1\nruntime: {}\nrunner:\n  seed: 42\n",
+            encoding="utf-8",
+        )
+        runner = _FakeRunner()
+        runner.load_options = Boltz2Runner().load_options
+        runner.run = Mock()
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        validator = Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(sample_system_yaml),
+            options_path=str(options_path),
+            scoring_functions=[],
+        )
+
+        with pytest.raises(WorkflowExecutionError) as caught:
+            validator.run()
+
+        runner.run.assert_not_called()
+        assert caught.value.failures[0].error_code == "options_validation_failed"
+        assert caught.value.failures[0].stage.value == "input_validation"
+        assert caught.value.failures[0].details["source_path"] == str(options_path)
+
     def test_constraints_reach_runner_unchanged(
         self, monkeypatch, sample_options_yaml, temp_dir
     ):
@@ -1163,7 +1222,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MAAA"}},
-                {"protein": {"id": "C", "fasta": "MBBB"}},
+                {"protein": {"id": "C", "fasta": "MCCC"}},
                 {"ligand": {"id": "B", "smiles": "CCO"}},
                 {"ligand": {"id": "D", "smiles": "CCN"}},
             ]
@@ -1244,7 +1303,7 @@ class TestValidateRun:
         protein_ref.write_text(
             "pdb_id,release_date,sequence,sequence_similarity\n"
             "1AAA,2022-01-01,MAAA,100.0\n"
-            "2CCC,2022-01-01,MBBB,100.0\n",
+            "2CCC,2022-01-01,MCCC,100.0\n",
             encoding="utf-8",
         )
         ligand_ref.write_text(
@@ -1655,9 +1714,9 @@ class TestValidateRun:
             wrk_dir=str(screen_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
 

@@ -14,8 +14,14 @@ def _():
         sys.path.insert(0, str(notebook_dir))
 
     import marimo as mo
-
-    from _marimo_helpers import EXAMPLES_DIR, code_block, format_command, make_workspace, read_text, run_command
+    from _marimo_helpers import (
+        EXAMPLES_DIR,
+        code_block,
+        format_command,
+        make_workspace,
+        read_text,
+        run_command,
+    )
 
     return EXAMPLES_DIR, code_block, format_command, make_workspace, mo, read_text, run_command
 
@@ -42,9 +48,9 @@ def _(code_block, format_command, mo, options_path, read_text, screen_csv, syste
         screen_csv,
         "--col_id",
         "Name",
-        "--variable",
-        "sequences,1,ligand,smiles",
-        "--col_variable",
+        "--ligand_chain",
+        "B",
+        "--smiles_column",
         "SMILES",
         "--merge_data",
         "pIC50",
@@ -101,7 +107,6 @@ def _(mo, run_command, run_screen, screen_command, workspace):
 @app.cell
 def _(mo, screen_output):
     mo.md(f"## Command output\n```text\n{screen_output}\n```")
-    return
 
 
 if __name__ == "__main__":

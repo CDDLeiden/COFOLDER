@@ -15,8 +15,8 @@ sequences:
       id: "protein_1"
       fasta: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
   - ligand:
+      id: B
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
 
 ### 2. Configure Runner Options
@@ -24,11 +24,13 @@ sequences:
 Create a runner options file (`options.yaml`):
 
 ```yaml
-out_dir: output
-devices: [0]
-num_models: 1
-recycling_steps: 3
-diffusion_samples: 1
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ### 3. Run Validation
@@ -62,7 +64,7 @@ cofolder validate -s system.yaml -o options.yaml
 ### Screen a Library
 
 ```bash
-cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --variable sequences,1,ligand,smiles --col_variable smiles
+cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --ligand_chain B --smiles_column smiles
 ```
 
 ### Use as Oracle

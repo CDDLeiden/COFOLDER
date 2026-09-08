@@ -14,29 +14,21 @@ The simplest format for small molecules:
 
 ```yaml
 ligand:
+  id: L
   smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-  ccd: "IBP"
 ```
 
-### SDF Files
+### SDF Conformers
 
-For molecules with 3D coordinates:
+Keep canonical SMILES in the system and request coordinates at invocation time:
 
-```yaml
-ligand:
-  sdf: "path/to/ligand.sdf"
-  ccd: "LIG"
+```bash
+cofolder validate -s system.yaml -o options.yaml \
+  --conformers sdf --sdf_file path/to/ligand.sdf
 ```
 
-### PDB/CIF Files
-
-For ligands from crystal structures:
-
-```yaml
-ligand:
-  pdb: "path/to/ligand.pdb"
-  ccd: "ATP"
-```
+The SDF molecule must match the normalized SMILES chemistry. Direct `sdf` and
+`pdb` fields are not system-YAML ligand formats.
 
 ### CCD Identifiers
 
@@ -44,6 +36,7 @@ For standard residues in the Chemical Component Dictionary:
 
 ```yaml
 ligand:
+  id: L
   ccd: "ATP"  # Adenosine triphosphate
 ```
 
@@ -162,18 +155,16 @@ safe_id = sanitize_mol_id("VERY_LONG_COMPOUND_ID")  # Truncates to 5 chars
 
 ### SMILES Validation
 
-Always validate SMILES before processing:
+Use the shared validator to parse, sanitize, canonicalize, and retain source identity:
 
 ```python
-from rdkit import Chem
+from cofolder.modules.input import LigandSourceIdentity, validate_smiles
 
-smiles = "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-mol = Chem.MolFromSmiles(smiles)
-
-if mol is None:
-    print("Invalid SMILES!")
-else:
-    print("Valid SMILES")
+ligand = validate_smiles(
+    "CC(C)Cc1ccc(cc1)C(C)C(=O)O",
+    source=LigandSourceIdentity("entity:1", ("L",)),
+)
+print(ligand.canonical_smiles)
 ```
 
 ### Stereochemistry

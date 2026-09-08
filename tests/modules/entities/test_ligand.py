@@ -5,6 +5,16 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 from cofolder.modules.entities import ligand
+from cofolder.modules.input import LigandSelectionError, LigandValidationError
+from cofolder.modules.input.ligand import (
+    LigandPreparationCapabilities,
+    LigandSourceIdentity,
+    prepare_ligand,
+    replace_ligand_smiles,
+    resolve_ligand_target,
+    validate_smiles,
+)
+from cofolder.modules.input.system import System
 
 
 class TestSanitizeMolId:
@@ -226,3 +236,101 @@ class TestMolToCcd:
             # The actual CCD conversion might fail without Boltz installed
             # We just want to make sure the function is callable
             pass
+# Shared ligand-input contract -------------------------------------------------
+
+
+def test_validate_smiles_preserves_source_identity_and_stereochemistry():
+    source = LigandSourceIdentity("entity:1", ("B",), "CMPD-1")
+
+    normalized = validate_smiles(" C[C@H](O)F ", source=source)
+
+    assert normalized.source == source
+    assert "@" in normalized.canonical_smiles
+
+
+def test_invalid_smiles_reports_entity_and_source_record():
+    source = LigandSourceIdentity("entity:1", ("B",), "CMPD-9")
+
+    with pytest.raises(LigandValidationError) as caught:
+        validate_smiles("not smiles", source=source)
+
+    assert caught.value.entity_id == "entity:1"
+    assert caught.value.chain_id == "B"
+    assert caught.value.source_record_id == "CMPD-9"
+
+
+def test_ligand_replacement_changes_only_selected_chemistry():
+    original = System(
+        system={
+            "name": "fixed",
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC", "msa": "empty"}},
+                {"ligand": {"id": ["B", "C"], "ccd": "ETH", "note": "keep"}},
+                {"ligand": {"id": "D", "smiles": "CCN"}},
+            ],
+            "constraints": [{"pocket": {"binder": "B", "contacts": [["A", 1]]}}],
+        }
+    )
+    target = resolve_ligand_target(original, "C")
+    normalized = validate_smiles(
+        "C(C)O", source=LigandSourceIdentity(target.entity_id, target.chain_ids)
+    )
+
+    replaced = replace_ligand_smiles(original, target=target, ligand=normalized)
+
+    assert original.system["sequences"][1]["ligand"]["ccd"] == "ETH"
+    ligand = replaced.system["sequences"][1]["ligand"]
+    assert ligand == {"id": ["B", "C"], "note": "keep", "smiles": "CCO"}
+    assert replaced.system["sequences"][0] == original.system["sequences"][0]
+    assert replaced.system["sequences"][2] == original.system["sequences"][2]
+    assert replaced.system["constraints"] == original.system["constraints"]
+
+
+def test_ligand_selector_rejects_non_ligand_chain():
+    value = System(
+        system={"sequences": [{"protein": {"id": "A", "sequence": "AC"}}]}
+    )
+
+    with pytest.raises(LigandSelectionError, match="not a ligand"):
+        resolve_ligand_target(value, "A")
+
+
+def test_prepare_ligand_rejects_unsupported_conformer_mode(temp_dir):
+    normalized = validate_smiles(
+        "CCO", source=LigandSourceIdentity("entity:1", ("B",))
+    )
+
+    with pytest.raises(LigandValidationError, match="does not support 3D"):
+        prepare_ligand(
+            normalized,
+            mode="3D",
+            sdf_path=None,
+            capabilities=LigandPreparationCapabilities(
+                native_smiles=True, conformer_modes=frozenset()
+            ),
+            work_dir=temp_dir,
+        )
+
+
+def test_prepare_ligand_rejects_mismatched_sdf_chemistry(temp_dir):
+    normalized = validate_smiles(
+        "CCO", source=LigandSourceIdentity("entity:1", ("B",), "CMPD-1")
+    )
+    sdf_path = temp_dir / "different.sdf"
+    writer = Chem.SDWriter(str(sdf_path))
+    writer.write(Chem.MolFromSmiles("CCN"))
+    writer.close()
+
+    with pytest.raises(LigandValidationError, match="does not match") as caught:
+        prepare_ligand(
+            normalized,
+            mode="sdf",
+            sdf_path=sdf_path,
+            capabilities=LigandPreparationCapabilities(
+                native_smiles=True, conformer_modes=frozenset({"sdf"})
+            ),
+            work_dir=temp_dir,
+        )
+
+    assert caught.value.source_record_id == "CMPD-1"
+    assert caught.value.source_path == sdf_path

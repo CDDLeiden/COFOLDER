@@ -25,11 +25,10 @@ from cofolder.modules.contracts import (
     failure_from_exception,
     write_public_bundle,
 )
-from cofolder.modules.input import system
+from cofolder.modules.input import load_yaml_document, system
 from cofolder.modules.runners import (
     RunnerExecutionRequest,
     RunnerRuntime,
-    build_runner_chain_identities,
     get_runner,
     merge_runner_runtime,
 )
@@ -39,7 +38,7 @@ from cofolder.modules.runners.msa import (
     unresolved_protein_sequences,
 )
 from cofolder.modules.runners.validators import validate_runner_bundle
-from cofolder.modules.utils import gather, helpers, read, write
+from cofolder.modules.utils import gather, helpers, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.recipes.bias import BiasAssessmentWorkflow
 
@@ -152,7 +151,6 @@ class Validate:
         )
 
         self.runner = get_runner(self.runner_name)
-        self.runner.ensure_available()
         self.output_identity = OutputIdentity(
             workflow=WorkflowKind.VALIDATE,
             run_id=self.run_id,
@@ -160,12 +158,8 @@ class Validate:
             runner_id=self.runner_name,
         )
 
-        self._system = read.read_yaml(path=self.system_path)
-        self.base_system = system.System(system=self._system)
-        resolve_declared_msa_paths(
-            self.base_system,
-            base_dir=self.system_path.parent,
-        )
+        self._system = None
+        self.base_system: system.System | None = None
 
         self.logger.debug(
             "Initializing Validate with parameters: %s",
@@ -214,7 +208,7 @@ class Validate:
 
     @staticmethod
     def _stage_for_label(label: str) -> FailureStage:
-        if label.startswith(("runner.prepare", "runner.options", "runner.system")):
+        if label.startswith("runner.prepare"):
             return FailureStage.PREPARATION
         if label.startswith("runner.bundle"):
             return FailureStage.OUTPUT_VALIDATION
@@ -240,7 +234,11 @@ class Validate:
                 exc,
                 identity=self.output_identity,
                 stage=self._failure_stage,
-                error_code=f"validate_{self._failure_stage.value}_failed",
+                error_code=getattr(
+                    exc,
+                    "error_code",
+                    f"validate_{self._failure_stage.value}_failed",
+                ),
             )
             output_dir = self.wrk_dir / "results"
             write_public_bundle(
@@ -288,6 +286,33 @@ class Validate:
 
             with self._debug_timer("runner.options.load"):
                 runner_options = self.runner.load_options(self.options_path)
+            if (
+                self.conformers
+                and self.conformers
+                not in self.runner.ligand_preparation_capabilities.conformer_modes
+            ):
+                from cofolder.modules.input import LigandValidationError
+
+                raise LigandValidationError(
+                    f"Runner '{self.runner_name}' does not support "
+                    f"{self.conformers} ligand conformers.",
+                    source_path=self.system_path,
+                )
+            with self._debug_timer("system_yaml.load"):
+                document = load_yaml_document(self.system_path)
+                self._system = document.value
+                if not isinstance(self._system, dict):
+                    from cofolder.modules.input import SystemInputValidationError
+
+                    raise SystemInputValidationError(
+                        "System YAML root must be a mapping.",
+                        source_path=self.system_path,
+                    )
+                self.base_system = system.System(system=self._system)
+                resolve_declared_msa_paths(
+                    self.base_system,
+                    base_dir=self.system_path.parent,
+                )
             resolve_msa_reuse_settings = getattr(
                 self.runner, "msa_reuse_settings", None
             )
@@ -297,6 +322,7 @@ class Validate:
                 else {}
             )
 
+            assert self.base_system is not None
             self.sys = system.System(system=copy.deepcopy(self.base_system.system))
             if self.reusable_msa_dir is not None and getattr(
                 self.runner, "supports_msa_reuse", False
@@ -313,11 +339,14 @@ class Validate:
                         self.reusable_msa_dir,
                     )
             with self._debug_timer("runner.system.validate.preparation_input"):
-                self.runner.validate_system(
+                validated_system = self.runner.validate_system(
                     self.sys,
                     runner_options,
                     check_atom_names=False,
+                    source_path=self.system_path,
                 )
+            with self._debug_timer("runner.prepare.availability"):
+                self.runner.ensure_available()
             with self._debug_timer("runner.prepare_system"):
                 preparation = self.runner.prepare_system(
                     # keep backend-specific prep behind the runner boundary
@@ -331,12 +360,13 @@ class Validate:
             preparation_runtime = preparation.runtime
             self.sys = preparation.system_obj
             runner_options = preparation.options_obj
-            chain_identities = build_runner_chain_identities(self.sys)
+            chain_identities = validated_system.chain_identities
             with self._debug_timer("runner.system.validate.execution_input"):
                 self.runner.validate_system(
                     self.sys,
                     runner_options,
                     check_atom_names=True,
+                    source_path=self.system_path,
                 )
             for warning in preparation.warnings:
                 self.logger.warning("%s", warning)

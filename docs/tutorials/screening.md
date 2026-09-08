@@ -38,8 +38,8 @@ sequences:
       id: "kinase"
       fasta: "MENLNMDLLYMAAAVMMGLAAIGAAIGIGILGGKFLEGAARQPDLIPLLRTQFFIVKGGLPFMMVGMAG..."
   - ligand:
-      smiles: "PLACEHOLDER"  # Will be replaced
-      ccd: "LIG"
+      id: B
+      smiles: "CCO"  # Valid template chemistry; replaced for each CSV row
 ```
 
 ## Step 3: Configure Screening
@@ -47,11 +47,13 @@ sequences:
 Create `screening_options.yaml`:
 
 ```yaml
-out_dir: screening_results
-devices: [0]
-num_models: 1
-recycling_steps: 3
-diffusion_samples: 1
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ## Step 4: Run Screening
@@ -62,7 +64,7 @@ cofolder screen \
   -o screening_options.yaml \
   -c library.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   --merge_data "mw,logp" \
   -w ./screening_output
 ```
@@ -110,7 +112,7 @@ Add clustering when no experimental pose or predefined pocket is available:
 cofolder screen \
   -s system_template.yaml -o screening_options.yaml -c library.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   --scoring_functions confidence_metrics affinity_metrics affinity_metrics_ext \
     sasa sasa_normalized ifp_distance \
   --cluster_ifps \
@@ -153,17 +155,17 @@ Split library and run parallel jobs:
 # GPU 0
 cofolder screen -s system.yaml -o options.yaml \
   -c library_part1.csv --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles
+  --ligand_chain B --smiles_column smiles
 
 # GPU 1 (in parallel)
 cofolder screen -s system.yaml -o options.yaml \
   -c library_part2.csv --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles
+  --ligand_chain B --smiles_column smiles
 ```
 
-### Multi-Variable Mapping
+### Fixed-System Ligand Replacement
 
-Update multiple fields in one run:
+Select one ligand entity and provide its SMILES column:
 
 ```bash
 cofolder screen \
@@ -171,8 +173,7 @@ cofolder screen \
   -o options.yaml \
   -c library.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
-  --variable sequences,1,ligand,ccd --col_variable ccd
+  --ligand_chain B --smiles_column smiles
 ```
 
 ## Best Practices

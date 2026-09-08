@@ -1,5 +1,7 @@
-options:
-    - cache: ./cache/.boltz
-    - use_potentials: "True"
-    - diffusion_samples: 2
-    - diffusion_samples_affinity: 2
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 2
+runner:
+  use_potentials: true
+  diffusion_samples_affinity: 2

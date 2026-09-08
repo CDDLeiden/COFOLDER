@@ -96,9 +96,13 @@ def _write_options_yaml(temp_dir: Path, *, samples_per_seed: int = 2) -> Path:
     options_path.write_text(
         yaml.safe_dump(
             {
-                "cache_path": "/tmp/openfold3-cache",
-                "samples_per_seed": samples_per_seed,
-                "extra_args": ["--use-msa-server=False"],
+                "version": 1,
+                "runtime": {
+                    "cache_path": "/tmp/openfold3-cache",
+                    "diffusion_samples": samples_per_seed,
+                    "extra_args": ["--use-msa-server=False"],
+                },
+                "runner": {},
             }
         ),
         encoding="utf-8",

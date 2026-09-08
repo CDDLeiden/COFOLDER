@@ -1,11 +1,19 @@
 """Tests for cofolder.cli module."""
 import logging
+import runpy
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from cofolder import cli
-from cofolder.modules.contracts import WorkflowExecutionError
+
+
+def test_module_entrypoint_propagates_main_exit_code():
+    with patch("cofolder.cli.main", return_value=2):
+        with pytest.raises(SystemExit) as caught:
+            runpy.run_module("cofolder.__main__", run_name="__main__")
+
+    assert caught.value.code == 2
 
 
 class TestCLIMain:
@@ -62,31 +70,28 @@ class TestCLIMain:
         assert exc_info.value.code == 0
 
     def test_unavailable_runner_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
+        from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+
         args = [
             "validate",
             "-s", str(sample_system_yaml),
             "-o", str(sample_options_yaml),
             "-w", str(temp_dir),
         ]
-        fake_runner = MagicMock()
+        fake_runner = Boltz2Runner()
+        fake_runner.ensure_available = MagicMock()
         fake_runner.ensure_available.side_effect = RuntimeError("install boltz")
-        with patch("cofolder.cli.get_runner", return_value=fake_runner):
-            with pytest.raises(RuntimeError, match="install boltz"):
-                cli.main(args)
+        with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
+            assert cli.main(args) == 1
 
-    def test_unavailable_runner_is_checked_before_input_path_validation(self, temp_dir):
+    def test_input_paths_are_checked_before_runner_availability(self, temp_dir):
         args = [
             "validate",
             "-s", str(temp_dir / "missing_system.yaml"),
             "-o", str(temp_dir / "missing_options.yaml"),
             "-w", str(temp_dir),
         ]
-        fake_runner = MagicMock()
-        fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
-
-        with patch("cofolder.cli.get_runner", return_value=fake_runner):
-            with pytest.raises(RuntimeError, match="install boltz first"):
-                cli.main(args)
+        assert cli.main(args) == 2
 
     def test_bias_command_does_not_require_options_or_runner(
         self,
@@ -117,9 +122,8 @@ class TestCLIMain:
             "-w", str(temp_dir),
         ]
 
-        with patch("cofolder.cli.get_runner", side_effect=AssertionError("runner lookup should not happen")):
-            with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
-                cli.main(args)
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
 
         bias_cls.assert_called_once()
         bias_runner.run.assert_called_once()
@@ -239,27 +243,22 @@ class TestScreenRecipe:
             "-o", "options.yaml",
             "-c", "compounds.csv",
             "--col_id", "id",
-            "-v", "sequences,0,ligand,smiles",
-            "--col_variable", "smiles",
-            "-v", "sequences,0,ligand,ccd",
-            "--col_variable", "ccd",
+            "--ligand_chain", "B",
+            "--smiles_column", "smiles",
             "--ifp_filter_threshold", "0.75",
-            "--ifp_ligand_chain", "B",
             "--cluster_ifps",
             "--ifp_cluster_similarity_threshold", "0.8",
         ])
 
         assert args.system_path == "system.yaml"
-        assert args.variable == ["sequences,0,ligand,smiles", "sequences,0,ligand,ccd"]
-        assert args.col_variable == ["smiles", "ccd"]
+        assert args.ligand_chain == "B"
+        assert args.smiles_column == "smiles"
         assert args.ifp_filter_threshold == 0.75
-        assert args.ifp_ligand_chain == "B"
         assert args.cluster_ifps is True
         assert args.ifp_cluster_similarity_threshold == 0.8
         assert args.scoring_functions is None
 
-    def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):
-        """Test that screen main rejects mismatched --variable/--col_variable counts."""
+    def test_main_rejects_legacy_mutation_path_flags(self, sample_system_yaml, sample_options_yaml, temp_dir):
         args = [
             "screen",
             "-s", str(sample_system_yaml),
@@ -272,8 +271,9 @@ class TestScreenRecipe:
             "-w", str(temp_dir),
         ]
 
-        with pytest.raises(ValueError, match="Number of --variable entries must match"):
+        with pytest.raises(SystemExit) as caught:
             cli.main(args)
+        assert caught.value.code == 2
 
 
 class TestOracleRecipe:
@@ -392,11 +392,11 @@ class TestBiasRecipe:
             "-w", str(temp_dir),
         ]
 
-        with pytest.raises(ValueError, match="at least one public or custom reference input"):
-            cli.main(["bias", "-s", str(system_path), "-w", str(temp_dir)])
+        assert cli.main(
+            ["bias", "-s", str(system_path), "-w", str(temp_dir)]
+        ) == 2
 
-        with pytest.raises(WorkflowExecutionError, match="missing required reference sources"):
-            cli.main(args)
+        assert cli.main(args) == 1
 
     def test_main_accepts_build_mode_with_fresh_output_paths(
         self,
@@ -518,8 +518,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="must be between 0 and 1"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -536,8 +535,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="requires --protein_training_data_path"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -559,8 +557,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--bias_training_components_cif does not exist"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -580,8 +577,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="components.cif not found for bias-training build"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -607,8 +603,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--protein_training_data_path does not exist"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -623,16 +618,15 @@ class TestBiasRecipe:
         custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--custom_protein_reference_path must use one of these file types"):
-                cli.main(
-                    [
-                        "bias",
-                        "-s", str(sample_system_yaml),
-                        "--custom_protein_reference_path", str(custom_protein),
-                        "--custom_ligand_reference_path", str(custom_ligand),
-                        "-w", str(temp_dir),
-                    ]
-                )
+            assert cli.main(
+                [
+                    "bias",
+                    "-s", str(sample_system_yaml),
+                    "--custom_protein_reference_path", str(custom_protein),
+                    "--custom_ligand_reference_path", str(custom_ligand),
+                    "-w", str(temp_dir),
+                ]
+            ) == 2
 
         mock_loader.assert_not_called()
 
@@ -674,13 +668,12 @@ class TestBiasRecipe:
         custom_protein.write_text("sequence\nMKRAAT\n", encoding="utf-8")
         custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
 
-        with pytest.raises(ValueError, match="--custom_ligand_reference_path must use one of these file types"):
-            cli.main(
-                [
-                    "bias",
-                    "-s", str(sample_system_yaml),
-                    "--custom_protein_reference_path", str(custom_protein),
-                    "--custom_ligand_reference_path", str(custom_ligand),
-                    "-w", str(temp_dir),
-                ]
-            )
+        assert cli.main(
+            [
+                "bias",
+                "-s", str(sample_system_yaml),
+                "--custom_protein_reference_path", str(custom_protein),
+                "--custom_ligand_reference_path", str(custom_ligand),
+                "-w", str(temp_dir),
+            ]
+        ) == 2

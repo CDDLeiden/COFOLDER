@@ -33,8 +33,22 @@ class _ReusableScreenRunner:
     def ensure_available(self):
         return None
 
-    def validate_system(self, system_obj, options_obj, *, check_atom_names=True):
-        return None
+    def validate_system(
+        self,
+        system_obj,
+        options_obj,
+        *,
+        check_atom_names=True,
+        source_path=None,
+        requirements=None,
+    ):
+        return Boltz2Runner().validate_system(
+            system_obj,
+            options_obj,
+            check_atom_names=check_atom_names,
+            source_path=source_path,
+            requirements=requirements,
+        )
 
     def load_options(self, options_path):
         return {}
@@ -148,56 +162,56 @@ class TestScreenInit:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
 
-        assert screener.variable_paths == [["sequences", 1, "ligand", "smiles"]]
-        assert screener.col_variable == ["smiles"]
+        assert screener.ligand_chain == "B"
+        assert screener.smiles_column == "smiles"
+        assert screener.smiles_column == "smiles"
 
-    def test_pair_count_mismatch_raises(
+    def test_missing_ligand_selector_raises(
         self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
     ):
-        with pytest.raises(ValueError, match="Number of --variable entries must match"):
+        with pytest.raises(WorkflowExecutionError, match="--ligand_chain is required"):
             Screen(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
-                variable=["sequences,1,ligand,smiles", "sequences,1,ligand,ccd"],
                 variable_csv=str(sample_csv_file),
-                col_variable=["smiles"],
+                smiles_column="smiles",
                 col_id="compound_id",
-            )
+            ).run()
 
     def test_missing_variable_csv_raises(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="--variable_csv is required"):
+        with pytest.raises(WorkflowExecutionError, match="--variable_csv is required"):
             Screen(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
-                variable=["sequences,1,ligand,smiles"],
+                ligand_chain="B",
                 variable_csv=None,
-                col_variable=["smiles"],
+                smiles_column="smiles",
                 col_id="compound_id",
-            )
+            ).run()
 
     def test_missing_col_id_raises(
         self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
     ):
-        with pytest.raises(ValueError, match="--col_id is required"):
+        with pytest.raises(WorkflowExecutionError, match="--col_id is required"):
             Screen(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
-                variable=["sequences,1,ligand,smiles"],
+                ligand_chain="B",
                 variable_csv=str(sample_csv_file),
-                col_variable=["smiles"],
+                smiles_column="smiles",
                 col_id=None,
-            )
+            ).run()
 
 
 class TestScreenRun:
@@ -228,9 +242,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir / "screen"),
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
             repeats=2,
             scoring_functions=["confidence_metrics"],
@@ -289,9 +303,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir / "screen"),
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
             scoring_functions=["confidence_metrics"],
             assess_robustness=False,
@@ -335,9 +349,9 @@ class TestScreenRun:
                 wrk_dir=str(temp_dir / "screen"),
                 system_path=str(system_path),
                 options_path=str(sample_options_yaml),
-                variable=["sequences,1,ligand,smiles"],
+                ligand_chain="B",
                 variable_csv=str(sample_csv_file),
-                col_variable=["smiles"],
+                smiles_column="smiles",
                 col_id="compound_id",
                 scoring_functions=["confidence_metrics"],
                 assess_robustness=False,
@@ -378,9 +392,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir / "screen"),
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
-            variable=["sequences,2,ligand,smiles"],
+            ligand_chain="L",
             variable_csv=str(csv_path),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="id",
         ).run()
 
@@ -428,9 +442,9 @@ class TestScreenRun:
                 wrk_dir=str(temp_dir / "screen"),
                 system_path=str(system_path),
                 options_path=str(sample_options_yaml),
-                variable=["sequences,1,ligand,smiles"],
+                ligand_chain="L",
                 variable_csv=str(csv_path),
-                col_variable=["smiles"],
+                smiles_column="smiles",
                 col_id="id",
             ).run()
 
@@ -453,9 +467,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
 
@@ -481,18 +495,21 @@ class TestScreenRun:
         mock_validator = MagicMock()
         mock_validate_cls.return_value = mock_validator
 
-        screener = Screen(
-            wrk_dir=str(temp_dir),
-            system_path=str(sample_system_yaml),
-            options_path=str(sample_options_yaml),
-            runner="boltz-community",
-            variable=["sequences,1,ligand,smiles"],
-            variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
-            col_id="compound_id",
-        )
-
-        screener.run()
+        with patch(
+            "cofolder.modules.runners.boltz_community_runner.BoltzCommunityRunner.check_availability",
+            return_value=(True, None),
+        ):
+            screener = Screen(
+                wrk_dir=str(temp_dir),
+                system_path=str(sample_system_yaml),
+                options_path=str(sample_options_yaml),
+                runner="boltz-community",
+                ligand_chain="B",
+                variable_csv=str(sample_csv_file),
+                smiles_column="smiles",
+                col_id="compound_id",
+            )
+            screener.run()
 
         first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
         assert first_call_kwargs["runner"] == "boltz-community"
@@ -516,9 +533,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(csv_path),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
         out_df = screener.run()
@@ -594,9 +611,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
             merge_data="mw",
         )
@@ -640,9 +657,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
             merge_data="mw",
         )
@@ -690,9 +707,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles", "sequences,1,ligand,ccd"],
+            ligand_chain="B",
             variable_csv=str(csv_path),
-            col_variable=["smiles", "ccd"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
 
@@ -703,7 +720,7 @@ class TestScreenRun:
         data = yaml.safe_load(run_system_yaml.read_text(encoding="utf-8"))
         lig = data["sequences"][1]["ligand"]
         assert lig["smiles"] == "CCO"
-        assert lig["ccd"] == "EDO"
+        assert "ccd" not in lig
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_continue_on_failure(
@@ -724,9 +741,9 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            variable=["sequences,1,ligand,smiles"],
+            ligand_chain="B",
             variable_csv=str(sample_csv_file),
-            col_variable=["smiles"],
+            smiles_column="smiles",
             col_id="compound_id",
         )
 

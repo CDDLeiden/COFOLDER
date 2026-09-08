@@ -33,7 +33,7 @@ cofolder screen \
   -o examples/options.yaml \
   -c examples/ligand_screen.csv \
   --col_id Name \
-  --variable sequences,1,ligand,smiles --col_variable SMILES \
+  --ligand_chain B --smiles_column SMILES \
   --scoring_functions ifp_distance \
   --cluster_ifps \
   -w ./screen_out

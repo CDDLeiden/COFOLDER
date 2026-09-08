@@ -14,6 +14,8 @@ import pandas as pd
 
 from cofolder.modules.analytics import stats
 from cofolder.modules.input.command import Command
+from cofolder.modules.input.config import BOLTZ_OPTIONS_SCHEMA, RunnerOptions
+from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
@@ -174,6 +176,10 @@ class BoltzRunner(BaseRunner):
     }
     model_name: str | None = "boltz2"
     supports_msa_reuse = True
+    options_schema = BOLTZ_OPTIONS_SCHEMA
+    ligand_preparation_capabilities = LigandPreparationCapabilities(
+        native_smiles=True, conformer_modes=frozenset({"2D", "3D", "sdf"})
+    )
 
     _msa_reuse_option_names = (
         "msa_server_url",
@@ -228,7 +234,16 @@ class BoltzRunner(BaseRunner):
         )
 
     def load_options(self, options_path: Path) -> Command:
-        command = Command(options_path=str(options_path))
+        typed: RunnerOptions = self._load_typed_options(options_path)
+        values = {
+            "cache": str(typed.runtime.cache_path) if typed.runtime.cache_path else None,
+            "diffusion_samples": typed.runtime.diffusion_samples,
+            **dict(typed.runner),
+        }
+        command = Command(
+            options={"options": [{key: value} for key, value in values.items() if value is not None]}
+        )
+        command.typed_options = typed
         self._set_command_option(command, "model", self.model_name)
         return command
 

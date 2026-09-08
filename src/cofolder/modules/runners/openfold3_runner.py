@@ -19,6 +19,8 @@ import pandas as pd
 import yaml
 
 from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.input.config import OPENFOLD3_OPTIONS_SCHEMA, RunnerOptions
+from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerCompanionArtifact,
@@ -108,7 +110,11 @@ def check_openfold3_setup_ready(
 
 @dataclass(slots=True)
 class OpenFold3Options:
-    settings: dict[str, Any]
+    typed: RunnerOptions
+
+    @property
+    def settings(self) -> dict[str, Any]:
+        return dict(self.typed.runner)
 
     def find_value(
         self, key: str | None = None, path: Sequence[str | int] | None = None
@@ -141,6 +147,9 @@ class OpenFold3Options:
                     found.extend(search(child))
             return found
 
+        runtime_value = self.typed.find_value(key=key)
+        if runtime_value is not None:
+            return runtime_value
         matches = search(self.settings)
         if not matches:
             return None
@@ -165,24 +174,17 @@ class OpenFold3Options:
 
     @property
     def executable(self) -> str:
-        value = self.find_value(key="executable")
+        value = self.typed.runtime.executable
         return str(value) if value is not None else "run_openfold"
 
     @property
     def subcommand(self) -> str:
-        value = self.find_value(key="subcommand")
+        value = self.typed.runtime.subcommand
         return str(value) if value is not None else "predict"
 
     @property
     def extra_args(self) -> list[str]:
-        value = self.find_value(key="extra_args")
-        if value is None:
-            return []
-        if not isinstance(value, list):
-            raise ValueError(
-                "OpenFold3 option 'extra_args' must be a list when provided."
-            )
-        return [str(item) for item in value]
+        return list(self.typed.runtime.extra_args)
 
     def to_config_payload(self) -> dict[str, Any]:
         return copy.deepcopy(self.settings)
@@ -258,6 +260,10 @@ class OpenFold3Runner(BaseRunner):
         supports_constraint_force=False,
         pocket_contacts_must_be_polymers=True,
     )
+    options_schema = OPENFOLD3_OPTIONS_SCHEMA
+    ligand_preparation_capabilities = LigandPreparationCapabilities(
+        native_smiles=True, conformer_modes=frozenset()
+    )
 
     def check_availability(self) -> tuple[bool, str | None]:
         return self.check_distribution_available(
@@ -269,12 +275,7 @@ class OpenFold3Runner(BaseRunner):
         )
 
     def load_options(self, options_path: Path) -> OpenFold3Options:
-        settings = read.read_yaml(path=options_path)
-        if not isinstance(settings, dict):
-            raise ValueError(
-                "OpenFold3 options YAML must contain a mapping at the document root."
-            )
-        return OpenFold3Options(settings=settings)
+        return OpenFold3Options(typed=self._load_typed_options(options_path))
 
     def prepare_system(
         self,

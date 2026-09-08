@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from cofolder.modules.input.command import Command
+from cofolder.modules.input import OptionsValidationError
 from cofolder.modules.runners.boltz1_runner import Boltz1Runner
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
@@ -69,16 +70,21 @@ def test_boltz1_runner_accepts_exact_100_package_line():
     assert runner.capabilities == {"confidence_metrics"}
 
 
-def test_boltz1_runner_load_options_removes_model_flag(temp_dir):
+def test_boltz1_runner_rejects_workflow_owned_model_flag(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(
-        yaml.safe_dump({"options": [{"cache": "~/.boltz"}, {"model": "boltz2"}]}),
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "runtime": {"cache_path": "~/.boltz"},
+                "runner": {"model": "boltz2"},
+            }
+        ),
         encoding="utf-8",
     )
 
-    command = Boltz1Runner().load_options(options_path)
-
-    assert command.find_value(key="model") is None
+    with pytest.raises(OptionsValidationError, match="unknown key 'model'"):
+        Boltz1Runner().load_options(options_path)
 
 
 def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payload(

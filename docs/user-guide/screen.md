@@ -1,7 +1,7 @@
 # Screen Command
 
 The `screen` command runs **`validate` once per row** in a CSV file.
-For each row, it adapts one or more fields in `system.yaml`, runs validation,
+For each row, it replaces the chemistry of one selected ligand entity, runs validation,
 and writes a screening summary file.
 
 ## Basic Usage
@@ -12,21 +12,7 @@ cofolder screen \
   -o options.yaml \
   --variable_csv compounds.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles
-```
-
-## Multi-Variable Mapping
-
-Use repeated `--variable` / `--col_variable` pairs in the same order:
-
-```bash
-cofolder screen \
-  -s system.yaml \
-  -o options.yaml \
-  --variable_csv compounds.csv \
-  --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
-  --variable sequences,1,ligand,ccd --col_variable ccd
+  --ligand_chain B --smiles_column smiles
 ```
 
 ## Required Arguments
@@ -35,15 +21,15 @@ cofolder screen \
 - `-o, --options_path`: Path to runner options YAML file
 - `-c, --variable_csv`: Path to CSV file
 - `--col_id`: Column containing row IDs
-- `--variable`: Repeatable YAML path to update (comma-separated)
-- `--col_variable`: Repeatable CSV column mapped to each `--variable`
+- `--ligand_chain`: Existing ligand chain whose chemistry is replaced
+- `--smiles_column`: CSV column containing SMILES
 
 ## Validation Rules
 
-1. At least one `--variable/--col_variable` pair is required.
-2. Number of `--variable` entries must equal number of `--col_variable` entries.
-3. `--col_id` and each `--col_variable` must exist in the CSV.
-4. Empty values in mapped columns fail that row (screening continues).
+1. `--ligand_chain` must resolve to exactly one ligand entity.
+2. `--col_id` and `--smiles_column` must exist in the CSV.
+3. Empty or invalid SMILES fail that row before runner execution.
+4. Protein, nucleic-acid, constraint, metadata, and unrelated-ligand fields remain fixed.
 
 ## Optional Arguments
 
@@ -56,9 +42,7 @@ cofolder screen \
   - robustness options
 - `--ifp_filter_threshold FLOAT`: annotate compounds using inclusive reference
   overlap (`0` to `1`). Omit this option to disable filtering.
-- `--ifp_ligand_chain CHAIN`: ligand chain to evaluate. A single ligand is
-  selected automatically; this option is required when multiple ligand chains
-  are present.
+- `--ligand_chain CHAIN` also selects the ligand evaluated by IFP filtering and clustering.
 - `--cluster_ifps`: cluster evaluable binary distance IFPs after all rows finish.
 - `--ifp_cluster_similarity_threshold FLOAT`: inclusive Jaccard-similarity cut
   for clustering (`0` to `1`, default `0.5`).
@@ -71,7 +55,7 @@ numbers or labels, or a file containing one of those forms:
 cofolder screen \
   -s system.yaml -o options.yaml -c compounds.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   --scoring_functions ifp_distance \
   --pocket_coverage_reference "A25 G48 Y51" \
   --ifp_filter_threshold 0.6
@@ -92,7 +76,7 @@ all-zero “no contacts” pattern:
 cofolder screen \
   -s system.yaml -o options.yaml -c compounds.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   --scoring_functions ifp_distance \
   --cluster_ifps \
   --ifp_cluster_similarity_threshold 0.5
@@ -114,7 +98,7 @@ data paths with datasets appropriate for the target:
 cofolder screen \
   -s system.yaml -o options.yaml -c compounds.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   --repeats 3 \
   --scoring_functions confidence_metrics affinity_metrics affinity_metrics_ext \
     sasa sasa_normalized ifp_distance \
@@ -165,7 +149,7 @@ Summary columns include:
 - `status` (`success` / `failed`)
 - `error_message`
 - `run_dir`
-- mapped `col_variable` values
+- the configured `smiles_column` value
 - optional `merge_data` values
 - filter audit columns: `ifp_filter_pass`, `ifp_filter_status`,
   `ifp_filter_reason`, `ifp_filter_overlap`, `ifp_filter_threshold`, and

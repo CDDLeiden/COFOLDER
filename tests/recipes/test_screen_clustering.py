@@ -9,17 +9,19 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.recipes.screen import Screen
 
 
 def _screen(system_path, options_path, csv_path, work_dir, **kwargs):
+    ligand_chain = kwargs.pop("ligand_chain", "B")
     return Screen(
         wrk_dir=str(work_dir),
         system_path=str(system_path),
         options_path=str(options_path),
-        variable=["sequences,1,ligand,smiles"],
+        ligand_chain=ligand_chain,
         variable_csv=str(csv_path),
-        col_variable=["smiles"],
+        smiles_column="smiles",
         col_id="compound_id",
         **kwargs,
     )
@@ -170,7 +172,7 @@ def test_invalid_cluster_threshold_is_rejected_before_predictions(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+    with pytest.raises(WorkflowExecutionError, match=r"\[0, 1\]"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -178,16 +180,16 @@ def test_invalid_cluster_threshold_is_rejected_before_predictions(
             temp_dir,
             cluster_ifps=True,
             ifp_cluster_similarity_threshold=threshold,
-        )
+        ).run()
 
 
-def test_clustering_requires_distance_ifp_and_unambiguous_ligand(
+def test_clustering_requires_distance_ifp_and_valid_ligand_selector(
     sample_system_yaml,
     sample_options_yaml,
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(ValueError, match="requires distance IFP scoring"):
+    with pytest.raises(WorkflowExecutionError, match="requires distance IFP scoring"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -195,16 +197,17 @@ def test_clustering_requires_distance_ifp_and_unambiguous_ligand(
             temp_dir,
             cluster_ifps=True,
             scoring_functions=["sasa"],
-        )
+        ).run()
 
     system = yaml.safe_load(sample_system_yaml.read_text(encoding="utf-8"))
     system["sequences"].append({"ligand": {"id": "C", "smiles": "CC"}})
     sample_system_yaml.write_text(yaml.safe_dump(system), encoding="utf-8")
-    with pytest.raises(ValueError, match="--ifp_ligand_chain is required"):
+    with pytest.raises(WorkflowExecutionError, match="unknown chain"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
             sample_csv_file,
             temp_dir,
             cluster_ifps=True,
-        )
+            ligand_chain="Z",
+        ).run()

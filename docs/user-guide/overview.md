@@ -134,7 +134,7 @@ COFOLDER provides informative error messages. Common issues:
 
 ### GPU Utilization
 
-- Use `devices: [0, 1]` for multi-GPU systems
+- Use `devices: 2` to request two GPU devices
 - Monitor GPU memory with `nvidia-smi`
 - Reduce `diffusion_samples` if OOM errors occur
 

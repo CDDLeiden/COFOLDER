@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import logging
 import math
@@ -35,8 +34,24 @@ from cofolder.modules.contracts import (
     make_envelope,
     write_public_bundle,
 )
-from cofolder.modules.input import system
-from cofolder.modules.utils import read, write
+from cofolder.modules.input import (
+    InputValidationError,
+    SystemInputValidationError,
+    WorkflowInputRequirements,
+    load_yaml_document,
+    system,
+)
+from cofolder.modules.input.ligand import (
+    LigandSelectionError,
+    LigandSourceIdentity,
+    replace_ligand_smiles,
+    resolve_ligand_target,
+    validate_smiles,
+)
+from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.runners import get_runner
+from cofolder.modules.runners.msa import resolve_declared_msa_paths
+from cofolder.modules.utils import write
 from cofolder.recipes._metrics import (
     collect_qualified_metric_values,
     read_metric_frames,
@@ -156,6 +171,7 @@ class Oracle:
         scoring_function: Callable[[OracleScoreContext], float] | None = None,
         score_gates: Sequence[OracleGate] | None = None,
         gate_policy: OracleGatePolicy | None = None,
+        ligand_chain: str | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -170,6 +186,7 @@ class Oracle:
         self.scoring_function = scoring_function
         self.score_gates = tuple(score_gates or ())
         self.gate_policy = gate_policy
+        self.ligand_chain = str(ligand_chain).strip() if ligand_chain else None
 
         effective_scoring_functions = (
             scoring_functions
@@ -195,10 +212,9 @@ class Oracle:
             "pocket_coverage_reference": pocket_coverage_reference,
             "reproduction_metrics": reproduction_metrics,
         }
-        self.base_system = read.read_yaml(path=self.system_path)
-        self.query_ligand_chain = self._find_query_ligand_chain(self.base_system)
+        self.base_system: dict[str, Any] = {}
+        self.query_ligand_chain = self.ligand_chain
         self.logger = logging.getLogger("cofolder.oracle")
-        self._validate_config()
 
     @staticmethod
     def _normalize_components(
@@ -365,13 +381,15 @@ class Oracle:
             stage = (
                 exc.failures[0].stage
                 if isinstance(exc, WorkflowExecutionError) and exc.failures
+                else FailureStage.INPUT_VALIDATION
+                if isinstance(source_exc, InputValidationError)
                 else FailureStage.ANALYTICS
             )
             failure = failure_from_exception(
                 source_exc,
                 identity=identity,
                 stage=stage,
-                error_code="oracle_score_failed",
+                error_code=getattr(source_exc, "error_code", "oracle_score_failed"),
             )
             bundle = PublicOutputBundle(
                 manifest=PublicManifest(
@@ -388,6 +406,7 @@ class Oracle:
             ) from exc
 
     def _run_impl(self) -> float:
+        self._validate_config()
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         run_dir = self.wrk_dir / "oracle_run"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -395,11 +414,57 @@ class Oracle:
         if not smiles:
             raise ValueError("Failed to resolve valid input SMILES for oracle run.")
 
-        sys_obj = system.System(system=copy.deepcopy(self.base_system))
-        ligand_path = self._find_first_ligand_smiles_path(sys_obj.system)
-        if ligand_path is None:
-            raise ValueError("No ligand SMILES field found in system YAML to update.")
-        sys_obj.update_system(value=smiles, path=ligand_path)
+        document = load_yaml_document(self.system_path)
+        if not isinstance(document.value, dict):
+            raise SystemInputValidationError(
+                "System YAML root must be a mapping.", source_path=self.system_path
+            )
+        base_system_obj = system.System(system=document.value)
+        resolve_declared_msa_paths(base_system_obj, base_dir=self.system_path.parent)
+        runner = get_runner(self.runner)
+        options_obj = runner.load_options(self.options_path)
+        validated = runner.validate_system(
+            base_system_obj,
+            options_obj,
+            check_atom_names=False,
+            source_path=self.system_path,
+            requirements=WorkflowInputRequirements(
+                require_protein=True, require_ligand=True
+            ),
+        )
+        self.base_system = validated.system.system
+        if self.ligand_chain is None:
+            ligand_entries = {
+                chain.sequence_index
+                for chain in iter_system_chains(validated.system)
+                if chain.entity_type == "ligand"
+            }
+            if len(ligand_entries) != 1:
+                raise LigandSelectionError(
+                    "--ligand_chain is required when the system contains multiple ligand entities.",
+                    source_path=self.system_path,
+                )
+            selected = next(
+                chain
+                for chain in iter_system_chains(validated.system)
+                if chain.sequence_index == next(iter(ligand_entries))
+            )
+            self.ligand_chain = selected.chain_id
+        target = resolve_ligand_target(validated.system, self.ligand_chain)
+        self.query_ligand_chain = self.ligand_chain
+        normalized_ligand = validate_smiles(
+            smiles,
+            source=LigandSourceIdentity(
+                entity_id=target.entity_id,
+                chain_ids=target.chain_ids,
+                source_record_id="oracle_input",
+            ),
+            source_path=self.input_mol_file,
+        )
+        sys_obj = replace_ligand_smiles(
+            validated.system, target=target, ligand=normalized_ligand
+        )
+        runner.ensure_available()
         row_system_path = run_dir / "oracle_system.yaml"
         write.write_yaml(sys_obj, path=row_system_path)
         Validate(

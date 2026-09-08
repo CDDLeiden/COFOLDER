@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.recipes.screen import Screen
 
 
@@ -19,13 +20,14 @@ def _screen(
     temp_dir,
     **kwargs,
 ) -> Screen:
+    ligand_chain = kwargs.pop("ligand_chain", "B")
     return Screen(
         wrk_dir=str(temp_dir),
         system_path=str(sample_system_yaml),
         options_path=str(sample_options_yaml),
-        variable=["sequences,1,ligand,smiles"],
+        ligand_chain=ligand_chain,
         variable_csv=str(sample_csv_file),
-        col_variable=["smiles"],
+        smiles_column="smiles",
         col_id="compound_id",
         **kwargs,
     )
@@ -235,7 +237,7 @@ def test_invalid_filter_threshold_is_rejected_before_predictions(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+    with pytest.raises(WorkflowExecutionError, match=r"\[0, 1\]"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -243,7 +245,7 @@ def test_invalid_filter_threshold_is_rejected_before_predictions(
             temp_dir,
             ifp_filter_threshold=threshold,
             pocket_coverage_reference="10",
-        )
+        ).run()
 
 
 def test_filter_requires_distance_ifp_and_reference(
@@ -252,7 +254,7 @@ def test_filter_requires_distance_ifp_and_reference(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(ValueError, match="requires distance IFP scoring"):
+    with pytest.raises(WorkflowExecutionError, match="requires distance IFP scoring"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -261,15 +263,15 @@ def test_filter_requires_distance_ifp_and_reference(
             scoring_functions=["sasa"],
             ifp_filter_threshold=0.5,
             pocket_coverage_reference="10",
-        )
-    with pytest.raises(ValueError, match="requires --pocket_coverage_reference"):
+        ).run()
+    with pytest.raises(WorkflowExecutionError, match="requires --pocket_coverage_reference"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
             sample_csv_file,
             temp_dir,
             ifp_filter_threshold=0.5,
-        )
+        ).run()
 
 
 def test_malformed_and_nonexistent_filter_references_are_rejected(
@@ -278,7 +280,7 @@ def test_malformed_and_nonexistent_filter_references_are_rejected(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(ValueError, match="Invalid --pocket_coverage_reference"):
+    with pytest.raises(WorkflowExecutionError, match="Invalid --pocket_coverage_reference"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -286,8 +288,8 @@ def test_malformed_and_nonexistent_filter_references_are_rejected(
             temp_dir,
             ifp_filter_threshold=0.5,
             pocket_coverage_reference="not-a-reference",
-        )
-    with pytest.raises(ValueError, match="file does not exist"):
+        ).run()
+    with pytest.raises(WorkflowExecutionError, match="file does not exist"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -295,10 +297,10 @@ def test_malformed_and_nonexistent_filter_references_are_rejected(
             temp_dir,
             ifp_filter_threshold=0.5,
             pocket_coverage_reference=str(temp_dir / "missing.ifp"),
-        )
+        ).run()
     empty_reference = temp_dir / "empty.ifp"
     empty_reference.write_text("", encoding="utf-8")
-    with pytest.raises(ValueError, match="file is empty"):
+    with pytest.raises(WorkflowExecutionError, match="file is empty"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -306,10 +308,10 @@ def test_malformed_and_nonexistent_filter_references_are_rejected(
             temp_dir,
             ifp_filter_threshold=0.5,
             pocket_coverage_reference=str(empty_reference),
-        )
+        ).run()
 
 
-def test_multiple_ligands_require_explicit_filter_chain(
+def test_invalid_filter_ligand_selector_is_rejected(
     sample_system_yaml,
     sample_options_yaml,
     sample_csv_file,
@@ -319,7 +321,7 @@ def test_multiple_ligands_require_explicit_filter_chain(
     data["sequences"].append({"ligand": {"id": "C", "smiles": "CC"}})
     sample_system_yaml.write_text(yaml.safe_dump(data), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="--ifp_ligand_chain is required"):
+    with pytest.raises(WorkflowExecutionError, match="unknown chain"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,
@@ -327,7 +329,8 @@ def test_multiple_ligands_require_explicit_filter_chain(
             temp_dir,
             ifp_filter_threshold=0.5,
             pocket_coverage_reference="10",
-        )
+            ligand_chain="Z",
+        ).run()
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
@@ -367,12 +370,11 @@ def test_explicit_filter_chain_selects_one_of_multiple_ligands(
         wrk_dir=str(temp_dir / "screen"),
         system_path=str(system_path),
         options_path=str(sample_options_yaml),
-        variable=["sequences,1,ligand,smiles"],
+        ligand_chain="C",
         variable_csv=str(sample_csv_file),
-        col_variable=["smiles"],
+        smiles_column="smiles",
         col_id="compound_id",
         ifp_filter_threshold=0.5,
-        ifp_ligand_chain="C",
         pocket_coverage_reference="10",
     ).run()
 

@@ -56,9 +56,12 @@ class TestInstallAndRunnerSelection:
             options_resource=shared.options_resource_for_backend("boltz1"),
         )
         options = yaml.safe_load(inputs.options_path.read_text(encoding="utf-8"))
-        option_names = {next(iter(item)) for item in options["options"]}
-
-        assert option_names == {"cache", "diffusion_samples"}
+        assert options["version"] == 1
+        assert options["runtime"] == {
+            "cache_path": "./cache/.boltz",
+            "diffusion_samples": 1,
+        }
+        assert options["runner"] == {}
 
     def test_assert_runner_available_uses_runner_check(self, monkeypatch):
         class FakeRunner:
@@ -219,8 +222,8 @@ class TestCommandBuilders:
         assert command[:2] == ["cofolder", "screen"]
         assert "-c" in command
         assert "--col_id" in command
-        assert "--variable" in command
-        assert "--col_variable" in command
+        assert "--ligand_chain" in command
+        assert "--smiles_column" in command
         assert "--merge_data" in command
         assert command[command.index("--protein_training_data_path") + 1] == str(
             protein_training

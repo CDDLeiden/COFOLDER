@@ -76,7 +76,7 @@ cofolder screen \
   -o examples/options.yaml \
   -c examples/ligand_screen.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   -w ./screen_out
 
 cofolder oracle \

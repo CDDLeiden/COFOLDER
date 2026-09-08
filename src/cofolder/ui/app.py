@@ -328,47 +328,34 @@ def render_screen_ui():
             help='Path to the Boltz options YAML file'
         )
 
-    # Variable configuration
-    st.markdown('#### Variable Configuration')
+    # Ligand replacement configuration
+    st.markdown('#### Ligand Replacement')
     col1, col2 = st.columns(2)
 
     with col1:
-        variable_path = st.text_input(
-            'YAML Path to Variable',
-            value='sequences,1,ligand,smiles',
-            help='Comma-separated path in system YAML to update'
+        ligand_chain = st.text_input(
+            'Ligand Chain',
+            value='B',
+            help='Existing ligand chain whose chemistry will be replaced'
         )
 
     with col2:
-        input_type = st.selectbox(
-            'Input Type',
-            ['CSV', 'SDF'],
-            help='Type of input file for variables'
-        )
+        st.markdown('Input type: **CSV (SMILES)**')
 
     # Input file configuration
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if input_type == 'CSV':
-            variable_csv = st.text_input(
-                'CSV File Path',
-                value='./ligands.csv',
-                help='Path to CSV file with variables'
-            )
-            col_variable = st.text_input(
-                'Variable Column',
-                value='smiles',
-                help='Column name containing variables (SMILES, CCD, etc.)'
-            )
-        else:
-            variable_csv = None
-            col_variable = None
-            variable_sdf = st.text_input(
-                'SDF File Path',
-                value='./ligands.sdf',
-                help='Path to SDF file with variables'
-            )
+        variable_csv = st.text_input(
+            'CSV File Path',
+            value='./ligands.csv',
+            help='Path to the CSV ligand library'
+        )
+        smiles_column = st.text_input(
+            'SMILES Column',
+            value='smiles',
+            help='Column containing ligand SMILES'
+        )
 
     with col2:
         col_id = st.text_input(
@@ -409,11 +396,9 @@ def render_screen_ui():
     # Run button
     if st.button('▶️ Run Screening', use_container_width=True, type='primary'):
         run_screen(
-            wrk_dir, system_path, options_path, variable_path,
-            variable_csv if input_type == 'CSV' else None,
-            col_variable, col_id,
-            variable_sdf if input_type == 'SDF' else None,
-            col_id, generate_conformers, merge_data, debug
+            wrk_dir, system_path, options_path, ligand_chain,
+            variable_csv, smiles_column, col_id,
+            generate_conformers, merge_data, debug
         )
 
 
@@ -571,11 +556,9 @@ def run_validate(wrk_dir: str, system_path: str, options_path: str, debug: bool)
 
         # Save current options
         options_to_save = {
-            'wrapper': [
-                {'run_dir': wrk_dir},
-                {'system': system_path},
-            ],
-            'options': [st.session_state.options]
+            'version': 1,
+            'runtime': {},
+            'runner': dict(st.session_state.options),
         }
         save_config(options_to_save, options_path)
 
@@ -608,14 +591,13 @@ def run_validate(wrk_dir: str, system_path: str, options_path: str, debug: bool)
         st.error(f'Error running validation: {str(e)}')
 
 
-def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
-               variable_csv: Optional[str], col_variable: Optional[str], col_id: str,
-               variable_sdf: Optional[str], property_id: str,
+def run_screen(wrk_dir: str, system_path: str, options_path: str, ligand_chain: str,
+               variable_csv: Optional[str], smiles_column: Optional[str], col_id: str,
                generate_conformers: Optional[str], merge_data: Optional[str], debug: bool):
     """Run the screen workflow."""
     try:
-        if not all([system_path, options_path, variable, col_id]):
-            st.error('System, Options, Variable path, and ID column are required.')
+        if not all([system_path, options_path, ligand_chain, smiles_column, col_id]):
+            st.error('System, options, ligand chain, SMILES column, and ID column are required.')
             return
 
         # Validate input files
@@ -623,12 +605,8 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
             st.error(f'CSV file not found: {variable_csv}')
             return
 
-        if variable_sdf and not os.path.exists(variable_sdf):
-            st.error(f'SDF file not found: {variable_sdf}')
-            return
-
-        if not variable_csv and not variable_sdf:
-            st.error('Either CSV or SDF file is required.')
+        if not variable_csv:
+            st.error('A CSV ligand library is required.')
             return
 
         # Save current options
@@ -648,19 +626,13 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, variable: str,
             'python', '-m', 'cofolder', 'screen',
             '-w', wrk_dir,
             '-s', system_path,
-            '-b', options_path,
-            '-v', variable,
+            '-o', options_path,
+            '--ligand_chain', ligand_chain,
+            '--smiles_column', smiles_column,
         ]
 
         if variable_csv:
             cmd.extend(['-c', variable_csv])
-            if col_variable:
-                cmd.extend(['--col_variable', col_variable])
-
-        if variable_sdf:
-            cmd.extend(['-s', variable_sdf])
-            cmd.extend(['--property_id', property_id])
-
         cmd.extend(['--col_id', col_id])
 
         if generate_conformers:

@@ -320,7 +320,13 @@ def test_boltz2_runner_rejects_boltz1_package_line():
 def test_boltz2_runner_load_options_forces_boltz2_model(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(
-        yaml.safe_dump({"options": [{"cache": "~/.boltz"}, {"diffusion_samples": 1}]}),
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "runtime": {"cache_path": "~/.boltz", "diffusion_samples": 1},
+                "runner": {},
+            }
+        ),
         encoding="utf-8",
     )
 

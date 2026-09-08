@@ -349,3 +349,47 @@ def test_metric_catalog_has_complete_metadata_and_validated_conversions():
     assert convert_metric_value("affinity_pred_value", "IC50_uM", 2.0) == 100.0
     with pytest.raises(ValueError, match="cannot change class"):
         convert_metric_value("affinity_pred_value", "confidence_score", 1.0)
+def test_failure_from_input_validation_uses_structured_code_and_details():
+    from pathlib import Path
+
+    from cofolder.modules.input import SequenceValidationError
+
+    exc = SequenceValidationError(
+        "bad residue",
+        source_path=Path("system.yaml"),
+        field_path=("sequences", 0, "protein", "sequence"),
+        entity_id="entity:0",
+        chain_id="A",
+    )
+    record = failure_from_exception(
+        exc,
+        identity=OutputIdentity(
+            workflow=WorkflowKind.VALIDATE,
+            run_id="run",
+            system_id="system",
+            runner_id="boltz2",
+        ),
+        stage=FailureStage.INPUT_VALIDATION,
+    )
+
+    assert record.error_code == "sequence_validation_failed"
+    assert record.details["source_path"] == "system.yaml"
+    assert record.details["field_path"] == ["sequences", 0, "protein", "sequence"]
+    assert record.details["chain_id"] == "A"
+
+
+def test_input_validation_error_code_cannot_be_replaced_by_generic_code():
+    from cofolder.modules.input import SequenceValidationError
+
+    record = failure_from_exception(
+        SequenceValidationError(
+            "bad residue", character="B", residue_position=3
+        ),
+        identity=_identity(),
+        stage=FailureStage.INPUT_VALIDATION,
+        error_code="generic_input_failure",
+    )
+
+    assert record.error_code == "sequence_validation_failed"
+    assert record.details["character"] == "B"
+    assert record.details["residue_position"] == 3

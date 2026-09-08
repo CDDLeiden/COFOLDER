@@ -547,7 +547,10 @@ def rewrite_openfold3_options_cache_path(options_path: Path, cache_path: Path) -
         raise AssertionError(
             f"Expected a mapping in {options_path}, but found {type(settings)!r}."
         )
-    settings["cache_path"] = str(cache_path)
+    runtime = settings.get("runtime")
+    if not isinstance(runtime, dict):
+        raise AssertionError(f"Expected a runtime mapping in {options_path}.")
+    runtime["cache_path"] = str(cache_path)
     options_path.write_text(
         yaml.safe_dump(settings, sort_keys=False),
         encoding="utf-8",
@@ -620,9 +623,9 @@ def build_screen_command(
         str(variable_csv),
         "--col_id",
         "Name",
-        "--variable",
-        "sequences,1,ligand,smiles",
-        "--col_variable",
+        "--ligand_chain",
+        "B",
+        "--smiles_column",
         "SMILES",
         "--merge_data",
         "pIC50",

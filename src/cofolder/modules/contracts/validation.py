@@ -447,16 +447,30 @@ def failure_from_exception(
     *,
     identity: OutputIdentity,
     stage: FailureStage,
-    error_code: str,
+    error_code: str | None = None,
     retryable: bool = False,
     details: Mapping[str, object] | None = None,
 ) -> WorkflowFailureRecord:
-    safe_details = {str(key): value for key, value in (details or {}).items()}
+    # Input-validation exceptions own their stable public code. Callers may still
+    # add workflow-local details (for example a screening row number), but cannot
+    # accidentally replace the validation contract with a generic code.
+    from cofolder.modules.input.config import InputValidationError
+
+    exception_details = getattr(exc, "details", {})
+    combined_details = {**exception_details, **(details or {})}
+    safe_details = {str(key): value for key, value in combined_details.items()}
+    resolved_error_code = (
+        exc.error_code
+        if isinstance(exc, InputValidationError)
+        else error_code or getattr(exc, "error_code", "workflow_execution_failed")
+    )
     return WorkflowFailureRecord(
-        envelope=make_envelope(RecordKind.FAILURE, identity, stage.value, error_code),
+        envelope=make_envelope(
+            RecordKind.FAILURE, identity, stage.value, resolved_error_code
+        ),
         stage=stage,
         exception_type=type(exc).__name__,
-        error_code=error_code,
+        error_code=resolved_error_code,
         message=str(exc) or type(exc).__name__,
         retryable=retryable,
         details=safe_details,  # type: ignore[arg-type]

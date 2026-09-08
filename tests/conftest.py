@@ -36,6 +36,7 @@ def sample_system_yaml(temp_dir):
             },
             {
                 "ligand": {
+                    "id": "B",
                     "smiles": "CCO",
                     "ccd": "ETH"
                 }
@@ -52,11 +53,9 @@ def sample_system_yaml(temp_dir):
 def sample_options_yaml(temp_dir):
     """Create a sample Boltz options YAML file."""
     options_data = {
-        "options": [
-            {"cache": "~/.boltz"},
-            {"recycling_steps": 3},
-            {"diffusion_samples": 1}
-        ]
+        "version": 1,
+        "runtime": {"cache_path": "~/.boltz", "diffusion_samples": 1},
+        "runner": {"recycling_steps": 3},
     }
     yaml_path = temp_dir / "options.yaml"
     with open(yaml_path, "w") as f:

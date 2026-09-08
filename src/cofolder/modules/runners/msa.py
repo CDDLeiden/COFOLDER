@@ -124,7 +124,7 @@ def inject_cached_msas(
                 f"Reusable MSA artifact is missing: {path}. "
                 "Refusing to recalculate silently."
             )
-        if _read_msa_query(path) != sequence:
+        if read_msa_query(path) != sequence:
             raise ValueError(
                 f"Reusable MSA artifact does not match its protein sequence: {path}. "
                 "Refusing to recalculate silently."
@@ -162,7 +162,7 @@ def capture_generated_msas(
     )
     matched: dict[str, Path] = {}
     for candidate in candidates:
-        query = _read_msa_query(candidate)
+        query = read_msa_query(candidate)
         if query in unresolved and query not in matched:
             matched[query] = candidate
 
@@ -192,15 +192,23 @@ def capture_generated_msas(
     return len(matched)
 
 
-def _read_msa_query(path: Path) -> str | None:
+def read_msa_query(path: Path) -> str | None:
+    """Read and normalize the query sequence from a supported MSA artifact."""
     try:
         if path.suffix.lower() == ".csv":
             with path.open(encoding="utf-8", newline="") as handle:
                 reader = csv.DictReader(handle)
+                if not reader.fieldnames or not {"key", "sequence"}.issubset(
+                    reader.fieldnames
+                ):
+                    return None
                 first = next(reader, None)
-            if not first or "sequence" not in first:
+            if not first or not str(first.get("key", "")).strip():
                 return None
-            return re.sub(r"[^A-Za-z]", "", str(first["sequence"])).upper()
+            raw_sequence = re.sub(r"\s+", "", str(first.get("sequence", "")))
+            if not raw_sequence or re.search(r"[^A-Za-z.\-]", raw_sequence):
+                return None
+            return re.sub(r"[.\-]", "", raw_sequence).upper() or None
 
         with path.open(encoding="utf-8") as handle:
             sequence_parts: list[str] = []
@@ -215,10 +223,14 @@ def _read_msa_query(path: Path) -> str | None:
                     found_header = True
                     continue
                 if found_header:
+                    if re.search(r"[^A-Za-z.\-]", line):
+                        return None
                     sequence_parts.append(line)
             if not sequence_parts:
                 return None
-            return re.sub(r"[^A-Za-z]", "", "".join(sequence_parts)).upper()
+            # Lower-case A3M residues are insertions relative to the query.
+            query = re.sub(r"[a-z]", "", "".join(sequence_parts))
+            return re.sub(r"[.\-]", "", query).upper() or None
     except (OSError, UnicodeError, csv.Error):
         return None
 

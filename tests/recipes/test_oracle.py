@@ -39,7 +39,7 @@ class TestOracleInit:
     def test_requires_exactly_one_input(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="exactly one input"):
+        with pytest.raises(WorkflowExecutionError, match="exactly one input"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -47,12 +47,12 @@ class TestOracleInit:
                 input_smiles=None,
                 input_mol_file=None,
                 output_metric="affinity_pred_value",
-            )
+            ).run()
 
     def test_metric_requires_enabled_scoring_functions(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="requires one of scoring functions"):
+        with pytest.raises(WorkflowExecutionError, match="requires one of scoring functions"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -60,7 +60,7 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ifp_distance",
                 scoring_functions=["confidence_metrics"],
-            )
+            ).run()
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -79,19 +79,19 @@ class TestOracleInit:
     def test_requires_exactly_one_score_source(
         self, kwargs, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="exactly one score source"):
+        with pytest.raises(WorkflowExecutionError, match="exactly one score source"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 **kwargs,
-            )
+            ).run()
 
     def test_gates_require_explicit_policy(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="gate_policy is required"):
+        with pytest.raises(WorkflowExecutionError, match="gate_policy is required"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -99,12 +99,12 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="confidence_score",
                 score_gates=[OracleGate("confidence_score", "ge", 0.5)],
-            )
+            ).run()
 
     def test_custom_pocket_coverage_dependencies_are_checked(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="pocket_coverage_reference"):
+        with pytest.raises(WorkflowExecutionError, match="pocket_coverage_reference"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -112,36 +112,36 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ligand_B__pocket_coverage_custom",
                 scoring_functions=["ifp_distance"],
-            )
+            ).run()
 
     def test_bias_metric_requires_bias_assessment(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="assess_bias=True"):
+        with pytest.raises(WorkflowExecutionError, match="assess_bias=True"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 output_metric="ligand_B__bias_lig_sim_train",
-            )
+            ).run()
 
     def test_reference_structural_metric_requires_reference(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="requires reference_path"):
+        with pytest.raises(WorkflowExecutionError, match="requires reference_path"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 output_metric="ligand_B__ligand_rmsd_ref",
-            )
+            ).run()
 
     def test_vector_ifp_cannot_be_a_scalar_objective(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="vector-valued"):
+        with pytest.raises(WorkflowExecutionError, match="vector-valued"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -149,7 +149,7 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ifp_distance",
                 scoring_functions=["ifp_distance"],
-            )
+            ).run()
 
 
 class TestOracleRun:
@@ -211,7 +211,11 @@ class TestOracleRun:
             run_dir / "chain_metrics.csv", index=False
         )
 
-        oracle.run()
+        with patch(
+            "cofolder.modules.runners.boltz_community_runner.BoltzCommunityRunner.check_availability",
+            return_value=(True, None),
+        ):
+            oracle.run()
 
         assert mock_validate_cls.call_args.kwargs["runner"] == "boltz-community"
         mock_validator.run.assert_called_once()

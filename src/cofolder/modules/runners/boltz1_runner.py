@@ -49,7 +49,7 @@ class Boltz1Runner(BoltzRunner):
         return True, None
 
     def load_options(self, options_path: Path) -> Command:
-        command = Command(options_path=str(options_path))
+        command = super().load_options(options_path)
         self._set_command_option(command, "model", None)
         return command
 
