@@ -6,9 +6,15 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.input.command import Command
-from cofolder.modules.runners.contracts import RunnerExecutionRequest
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
+from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
 
 class _MockSystem:
@@ -64,6 +70,13 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
         options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz-community",
+            "boltz-community",
+            None,
+            BackendVersionStatus.UNAVAILABLE,
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -116,6 +129,10 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics_ext"].state == "computed"
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["backend"]["version"] is None
+    assert manifest["backend"]["version_status"] == "unavailable"
+    assert manifest["backend"]["raw_version"] is None
 
 
 def test_boltz_community_runner_rejects_environment_with_boltz_installed():

@@ -13,6 +13,7 @@ import pandas as pd
 from .metrics import get_metric_definition, resolve_evidence_regime
 from .models import (
     ArtifactReference,
+    BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
     MetricClass,
@@ -22,13 +23,25 @@ from .models import (
     PublicOutputBundle,
     RecordKind,
     RecordStatus,
+    RunnerBackendIdentity,
+    SeedPlan,
     SuccessRecord,
     WorkflowFailureRecord,
 )
 from .validation import make_envelope
 
+EXECUTION_METADATA_COLUMNS = frozenset(
+    {
+        "runner_id",
+        "backend_name",
+        "runner_version",
+        "backend_version_status",
+        "effective_seed",
+    }
+)
 SYSTEM_METADATA_COLUMNS = frozenset(
     {"idx", "cif_file", "model_name", "repeat", "diffusion_sample"}
+    | EXECUTION_METADATA_COLUMNS
 )
 CHAIN_METADATA_COLUMNS = frozenset(
     SYSTEM_METADATA_COLUMNS
@@ -176,6 +189,23 @@ def metric_records_from_frames(
     for _, row in system_df.iterrows():
         identity = replace(
             base_identity,
+            runner_id=str(row["runner_id"])
+            if _present(row.get("runner_id"))
+            else base_identity.runner_id,
+            runner_version=str(row["runner_version"])
+            if _present(row.get("runner_version"))
+            else base_identity.runner_version,
+            backend_name=str(row["backend_name"])
+            if _present(row.get("backend_name"))
+            else base_identity.backend_name,
+            backend_version_status=BackendVersionStatus(
+                str(row["backend_version_status"])
+            )
+            if _present(row.get("backend_version_status"))
+            else base_identity.backend_version_status,
+            effective_seed=int(row["effective_seed"])
+            if _present(row.get("repeat")) and _present(row.get("effective_seed"))
+            else base_identity.effective_seed,
             repeat_id=int(row["repeat"]) if _present(row.get("repeat")) else None,
             model_id=str(row["model_name"])
             if _present(row.get("model_name"))
@@ -218,6 +248,23 @@ def metric_records_from_frames(
         )
         identity = replace(
             base_identity,
+            runner_id=str(row["runner_id"])
+            if _present(row.get("runner_id"))
+            else base_identity.runner_id,
+            runner_version=str(row["runner_version"])
+            if _present(row.get("runner_version"))
+            else base_identity.runner_version,
+            backend_name=str(row["backend_name"])
+            if _present(row.get("backend_name"))
+            else base_identity.backend_name,
+            backend_version_status=BackendVersionStatus(
+                str(row["backend_version_status"])
+            )
+            if _present(row.get("backend_version_status"))
+            else base_identity.backend_version_status,
+            effective_seed=int(row["effective_seed"])
+            if _present(row.get("repeat")) and _present(row.get("effective_seed"))
+            else base_identity.effective_seed,
             repeat_id=int(row["repeat"]) if _present(row.get("repeat")) else None,
             model_id=str(row["model_name"])
             if _present(row.get("model_name"))
@@ -327,6 +374,8 @@ def bundle_from_frames(
     failures: Iterable[WorkflowFailureRecord] = (),
     artifacts: Iterable[ArtifactReference] = (),
     robustness_df: pd.DataFrame | None = None,
+    backend: RunnerBackendIdentity | None = None,
+    seed_plan: SeedPlan | None = None,
 ) -> PublicOutputBundle:
     evidence_tuple = tuple(evidence)
     records = list(
@@ -364,6 +413,8 @@ def bundle_from_frames(
             evidence=evidence_tuple,
             requested_metrics=tuple(sorted(requested_metrics)),
             artifacts=tuple(artifacts),
+            backend=backend,
+            seed_plan=seed_plan,
         ),
         records=tuple(records),
     )
@@ -463,6 +514,7 @@ def read_public_metric_frames(run_dir: str | Path) -> tuple[pd.DataFrame, pd.Dat
                     "model_name": record.get("model_id"),
                     "repeat": record.get("repeat_id"),
                     "diffusion_sample": record.get("sample_id"),
+                    "effective_seed": record.get("effective_seed"),
                 },
             )
             if target is chain_rows:

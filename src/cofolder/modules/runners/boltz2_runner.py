@@ -8,6 +8,8 @@ class Boltz2Runner(BoltzRunner):
     """Runner for the current Boltz-2 package line."""
 
     name = "boltz2"
+    backend_name = "boltz"
+    backend_distribution = "boltz"
     capabilities = {
         "confidence_metrics",
         "affinity_metrics",

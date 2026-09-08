@@ -9,11 +9,14 @@ from datetime import UTC, datetime
 from statistics import mean, stdev
 from uuid import NAMESPACE_URL, uuid5
 
+from packaging.version import InvalidVersion, Version
+
 from .metrics import get_metric_definition, validate_metric_record
 from .models import (
     PUBLIC_SCHEMA_VERSION,
     AmbiguousIdentityError,
     ArtifactReference,
+    BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
     FailureStage,
@@ -27,6 +30,11 @@ from .models import (
     PublicSchemaValidationError,
     RecordKind,
     RecordStatus,
+    RunnerBackendIdentity,
+    RunnerProvenanceError,
+    SeedAdjustment,
+    SeedOrigin,
+    SeedPlan,
     SuccessRecord,
     WorkflowExecutionError,
     WorkflowFailureRecord,
@@ -83,7 +91,16 @@ def validate_identity(
             "Public record identity requires a non-empty system_id."
         )
     if identity.workflow == WorkflowKind.BIAS:
-        if identity.runner_id is not None or identity.runner_version is not None:
+        if any(
+            value is not None
+            for value in (
+                identity.runner_id,
+                identity.runner_version,
+                identity.backend_name,
+                identity.backend_version_status,
+                identity.effective_seed,
+            )
+        ):
             raise PublicSchemaValidationError(
                 "Bias record identity must not declare a runner."
             )
@@ -91,6 +108,41 @@ def validate_identity(
         raise PublicSchemaValidationError(
             f"{identity.workflow.value} record identity requires runner_id."
         )
+    if identity.backend_version_status is not None and not isinstance(
+        identity.backend_version_status, BackendVersionStatus
+    ):
+        raise PublicSchemaValidationError(
+            "identity.backend_version_status must be a BackendVersionStatus."
+        )
+    if identity.backend_version_status == BackendVersionStatus.DETECTED:
+        if not identity.runner_version:
+            raise PublicSchemaValidationError(
+                "Detected backend identity requires runner_version."
+            )
+    elif (
+        identity.backend_version_status
+        in {
+            BackendVersionStatus.UNAVAILABLE,
+            BackendVersionStatus.UNPARSEABLE,
+        }
+        and identity.runner_version is not None
+    ):
+        raise PublicSchemaValidationError(
+            "Unavailable or unparseable backend version must serialize as null."
+        )
+    if identity.effective_seed is not None:
+        if (
+            isinstance(identity.effective_seed, bool)
+            or not isinstance(identity.effective_seed, int)
+            or not (0 <= identity.effective_seed <= 2**32 - 1)
+        ):
+            raise PublicSchemaValidationError(
+                "identity.effective_seed must be an integer between 0 and 4294967295."
+            )
+        if identity.repeat_id is None:
+            raise PublicSchemaValidationError(
+                "identity.effective_seed requires a repeat_id."
+            )
     if (
         enforce_workflow_scope
         and identity.workflow
@@ -300,6 +352,7 @@ def validate_public_bundle(bundle: PublicOutputBundle) -> PublicOutputBundle:
     )
     _validate_evidence(bundle.manifest.evidence)
     _validate_artifacts(bundle.manifest.artifacts)
+    _validate_execution_provenance(bundle)
     seen: set[str] = set()
     counts = defaultdict(int)
     for record in bundle.records:
@@ -328,6 +381,224 @@ def validate_public_bundle(bundle: PublicOutputBundle) -> PublicOutputBundle:
             f"({expected_status!r})."
         )
     return bundle
+
+
+def _validate_backend_identity(backend: RunnerBackendIdentity) -> None:
+    if not backend.runner_name.strip() or not backend.backend_name.strip():
+        raise RunnerProvenanceError(
+            "Backend provenance requires non-empty runner and backend names."
+        )
+    if not isinstance(backend.version_status, BackendVersionStatus):
+        raise RunnerProvenanceError(
+            "Backend provenance version_status must be a BackendVersionStatus."
+        )
+    if backend.version_status == BackendVersionStatus.DETECTED:
+        if not backend.version:
+            raise RunnerProvenanceError(
+                "Detected backend provenance requires a normalized version."
+            )
+        try:
+            normalized_version = str(Version(backend.version))
+        except InvalidVersion as exc:
+            raise RunnerProvenanceError(
+                "Detected backend provenance requires a valid PEP 440 version."
+            ) from exc
+        if normalized_version != backend.version:
+            raise RunnerProvenanceError(
+                "Detected backend provenance version must be normalized."
+            )
+    elif backend.version is not None:
+        raise RunnerProvenanceError(
+            "Unavailable or unparseable backend provenance must have a null version."
+        )
+    if (
+        backend.version_status == BackendVersionStatus.UNAVAILABLE
+        and backend.raw_version is not None
+    ):
+        raise RunnerProvenanceError(
+            "Unavailable backend provenance must not contain a raw version."
+        )
+    if (
+        backend.version_status == BackendVersionStatus.UNPARSEABLE
+        and backend.raw_version is None
+    ):
+        raise RunnerProvenanceError(
+            "Unparseable backend provenance must retain the raw version."
+        )
+
+
+def _validate_seed_plan(seed_plan: SeedPlan) -> dict[int, int]:
+    def valid_seed(value: object) -> bool:
+        return (
+            not isinstance(value, bool)
+            and isinstance(value, int)
+            and 0 <= value <= 2**32 - 1
+        )
+
+    if not isinstance(seed_plan.origin, SeedOrigin):
+        raise RunnerProvenanceError("Seed plan origin must be a SeedOrigin.")
+    if not valid_seed(seed_plan.resolved_base_seed):
+        raise RunnerProvenanceError(
+            "Resolved base seed must be an integer between 0 and 4294967295."
+        )
+    if seed_plan.requested_base_seed is not None and not valid_seed(
+        seed_plan.requested_base_seed
+    ):
+        raise RunnerProvenanceError(
+            "Requested base seed must be null or an integer between 0 and 4294967295."
+        )
+    if seed_plan.requested_base_seed is not None and (
+        seed_plan.requested_base_seed != seed_plan.resolved_base_seed
+    ):
+        raise RunnerProvenanceError(
+            "A requested base seed must equal the resolved base seed."
+        )
+    if (
+        seed_plan.origin == SeedOrigin.USER_SPECIFIED
+        and seed_plan.requested_base_seed is None
+    ):
+        raise RunnerProvenanceError(
+            "User-specified seed provenance requires a requested base seed."
+        )
+    if (
+        seed_plan.origin == SeedOrigin.GENERATED
+        and seed_plan.requested_base_seed is not None
+    ):
+        raise RunnerProvenanceError(
+            "Generated seed provenance must have a null requested base seed."
+        )
+    if not seed_plan.repeats:
+        raise RunnerProvenanceError(
+            "Runner-backed seed plans require at least one repeat."
+        )
+    seeds: dict[int, int] = {}
+    derived_seeds: set[int] = set()
+    effective_seeds: set[int] = set()
+    for item in seed_plan.repeats:
+        if isinstance(item.repeat_id, bool) or not isinstance(item.repeat_id, int):
+            raise RunnerProvenanceError("Seed-plan repeat IDs must be integers.")
+        if not isinstance(item.adjustment, SeedAdjustment):
+            raise RunnerProvenanceError(
+                "Repeat seed adjustment must be a SeedAdjustment."
+            )
+        for label, value in (
+            ("resolved_base_seed", item.resolved_base_seed),
+            ("derived_seed", item.derived_seed),
+            ("effective_seed", item.effective_seed),
+        ):
+            if not valid_seed(value):
+                raise RunnerProvenanceError(
+                    f"Seed provenance {label} must be between 0 and 4294967295."
+                )
+        if item.repeat_id in seeds:
+            raise RunnerProvenanceError(
+                f"Seed plan contains duplicate repeat {item.repeat_id}."
+            )
+        if item.resolved_base_seed != seed_plan.resolved_base_seed:
+            raise RunnerProvenanceError(
+                "Repeat seed provenance does not match the seed-plan base seed."
+            )
+        if (
+            item.requested_base_seed != seed_plan.requested_base_seed
+            or item.origin != seed_plan.origin
+        ):
+            raise RunnerProvenanceError(
+                "Repeat seed provenance does not match the seed-plan origin."
+            )
+        if item.adjustment == SeedAdjustment.UNCHANGED and (
+            item.effective_seed != item.derived_seed
+            or item.adjustment_reason is not None
+        ):
+            raise RunnerProvenanceError(
+                "Unchanged seed provenance must retain the derived seed and omit "
+                "a reason."
+            )
+        if item.adjustment == SeedAdjustment.BACKEND_ADJUSTED and (
+            item.effective_seed == item.derived_seed or not item.adjustment_reason
+        ):
+            raise RunnerProvenanceError(
+                "Backend-adjusted seed provenance requires a changed seed and reason."
+            )
+        seeds[item.repeat_id] = item.effective_seed
+        if (
+            item.derived_seed in derived_seeds
+            or item.effective_seed in effective_seeds
+        ):
+            raise RunnerProvenanceError(
+                "Repeat seed provenance must contain distinct derived and effective "
+                "seeds."
+            )
+        derived_seeds.add(item.derived_seed)
+        effective_seeds.add(item.effective_seed)
+    if sorted(seeds) != list(range(1, len(seeds) + 1)):
+        raise RunnerProvenanceError(
+            "Seed plan repeat IDs must be contiguous and start at one."
+        )
+    return seeds
+
+
+def _validate_execution_provenance(bundle: PublicOutputBundle) -> None:
+    backend = bundle.manifest.backend
+    seed_plan = bundle.manifest.seed_plan
+    declares_execution = any(
+        value is not None
+        for value in (
+            bundle.manifest.identity.runner_version,
+            bundle.manifest.identity.backend_name,
+            bundle.manifest.identity.backend_version_status,
+        )
+    ) or any(
+        record.envelope.identity.effective_seed is not None
+        for record in bundle.records
+    )
+    if declares_execution and backend is None and seed_plan is None:
+        raise RunnerProvenanceError(
+            "Runner-backed execution provenance requires backend and seed_plan."
+        )
+    if (backend is None) != (seed_plan is None):
+        raise RunnerProvenanceError(
+            "Public manifest backend and seed_plan must be declared together."
+        )
+    if backend is None or seed_plan is None:
+        return
+    if not isinstance(backend, RunnerBackendIdentity) or not isinstance(
+        seed_plan, SeedPlan
+    ):
+        raise RunnerProvenanceError(
+            "Public manifest execution provenance must use typed contract values."
+        )
+    _validate_backend_identity(backend)
+    seeds = _validate_seed_plan(seed_plan)
+    manifest_identity = bundle.manifest.identity
+    if manifest_identity.runner_id != backend.runner_name:
+        raise RunnerProvenanceError(
+            "Public manifest runner identity does not match backend provenance."
+        )
+    if (
+        manifest_identity.runner_version != backend.version
+        or manifest_identity.backend_name != backend.backend_name
+        or manifest_identity.backend_version_status != backend.version_status
+    ):
+        raise RunnerProvenanceError(
+            "Public manifest identity does not match backend provenance."
+        )
+    for record in bundle.records:
+        identity = record.envelope.identity
+        if (
+            identity.runner_id != backend.runner_name
+            or identity.runner_version != backend.version
+            or identity.backend_name != backend.backend_name
+            or identity.backend_version_status != backend.version_status
+        ):
+            raise RunnerProvenanceError(
+                "Public record identity does not match backend provenance."
+            )
+        if identity.repeat_id is not None and identity.effective_seed != seeds.get(
+            identity.repeat_id
+        ):
+            raise RunnerProvenanceError(
+                f"Public record seed does not match repeat {identity.repeat_id}."
+            )
 
 
 def aggregate_metric_records(

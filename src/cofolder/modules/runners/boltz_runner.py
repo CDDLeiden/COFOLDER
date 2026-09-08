@@ -24,7 +24,11 @@ from cofolder.modules.runners.contracts import (
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
+    attach_runner_provenance,
+    attach_sample_provenance,
+    backend_manifest_value,
     build_runner_public_records,
+    seed_manifest_value,
 )
 from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.modules.utils import read
@@ -318,6 +322,9 @@ class BoltzRunner(BaseRunner):
             request=request,
             diffusion_samples=diffusion_samples,
         )
+        system_df = attach_runner_provenance(system_df, request)
+        chain_df = attach_runner_provenance(chain_df, request)
+        sample_records = attach_sample_provenance(sample_records, request)
 
         system_metrics_path = normalized_dir / "system_metrics.csv"
         chain_metrics_path = normalized_dir / "chain_metrics.csv"
@@ -335,6 +342,8 @@ class BoltzRunner(BaseRunner):
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
             "runner": self.name,
+            "backend": backend_manifest_value(request.backend_identity),
+            "seed": seed_manifest_value(request.seed_provenance),
             "capabilities": sorted(self.capabilities),
             "repeat": request.repeat,
             "raw_output_dir": str(raw_output_dir),
@@ -369,6 +378,8 @@ class BoltzRunner(BaseRunner):
             metric_outcomes=metric_outcomes,
             chain_identities=request.chain_identities,
             records=build_runner_public_records(system_df, chain_df, request),
+            backend_identity=request.backend_identity,
+            seed_provenance=request.seed_provenance,
         )
 
     def _copy_structures(

@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-from typing import Collection
+from typing import Any, Collection
 
 import pandas as pd
 
+from cofolder.modules.contracts import RunnerProvenanceError
 from cofolder.modules.runners.contracts import (
+    RUNNER_PROVENANCE_COLUMNS,
     RunnerCompanionArtifact,
     RunnerExecutionResult,
     RunnerMetricOutcome,
     RunnerNormalizedBundle,
+    backend_manifest_value,
+    seed_manifest_value,
 )
 
 CANONICAL_SYSTEM_COLUMNS = (
@@ -84,6 +87,7 @@ def validate_runner_bundle(
     system_df = _read_csv(bundle, bundle.system_metrics_path, "system_metrics.csv")
     chain_df = _read_csv(bundle, bundle.chain_metrics_path, "chain_metrics.csv")
     _validate_required_columns(bundle, system_df, chain_df)
+    _validate_execution_provenance(bundle, manifest, system_df, chain_df)
     _validate_chain_identity_mapping(bundle, chain_df)
     _validate_typed_records(bundle)
     structure_files = _validate_structures(bundle)
@@ -173,6 +177,23 @@ def _validate_typed_records(bundle: RunnerNormalizedBundle) -> None:
                     f"Runner '{bundle.runner_name}' emitted a typed record with runner_id "
                     f"{record.envelope.identity.runner_id!r}."
                 )
+            if (
+                bundle.backend_identity is not None
+                and bundle.seed_provenance is not None
+            ):
+                identity = record.envelope.identity
+                if (
+                    identity.runner_version != bundle.backend_identity.version
+                    or identity.backend_name != bundle.backend_identity.backend_name
+                    or identity.backend_version_status
+                    != bundle.backend_identity.version_status
+                    or identity.effective_seed
+                    != bundle.seed_provenance.effective_seed
+                ):
+                    raise RunnerProvenanceError(
+                        f"{_bundle_prefix(bundle)}: typed record provenance does not "
+                        "match the bundle."
+                    )
     except PublicContractError as exc:
         raise RunnerBundleValidationError(
             f"Runner '{bundle.runner_name}' emitted an invalid typed public record: {exc}"
@@ -249,6 +270,73 @@ def _validate_manifest(bundle: RunnerNormalizedBundle) -> dict[str, Any]:
                 f"{sorted(bundle.capabilities)!r}."
             )
     return manifest
+
+
+def _validate_execution_provenance(
+    bundle: RunnerNormalizedBundle,
+    manifest: dict[str, Any],
+    system_df: pd.DataFrame,
+    chain_df: pd.DataFrame,
+) -> None:
+    backend = bundle.backend_identity
+    seed = bundle.seed_provenance
+    if (backend is None) != (seed is None):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: backend and seed provenance must be "
+            "declared together."
+        )
+    if backend is None or seed is None:
+        return
+    if manifest.get("backend") != backend_manifest_value(backend):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: manifest backend provenance does not "
+            "match the bundle."
+        )
+    if manifest.get("seed") != seed_manifest_value(seed):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: manifest seed provenance does not match "
+            "the bundle."
+        )
+
+    expected = {
+        "runner_id": backend.runner_name,
+        "backend_name": backend.backend_name,
+        "runner_version": backend.version,
+        "backend_version_status": backend.version_status.value,
+        "effective_seed": seed.effective_seed,
+    }
+    for label, frame in (
+        ("system_metrics.csv", system_df),
+        ("chain_metrics.csv", chain_df),
+    ):
+        missing = sorted(set(RUNNER_PROVENANCE_COLUMNS) - set(frame.columns))
+        if missing:
+            raise RunnerProvenanceError(
+                f"{_bundle_prefix(bundle)}: {label} is missing provenance columns "
+                f"{missing!r}."
+            )
+        for column, value in expected.items():
+            observed = frame[column]
+            if value is None:
+                matches = observed.isna()
+            elif column == "effective_seed":
+                numeric = pd.to_numeric(observed, errors="coerce")
+                matches = numeric.notna() & (numeric == value) & (numeric % 1 == 0)
+            else:
+                matches = observed.astype(str) == str(value)
+            if not bool(matches.all()):
+                raise RunnerProvenanceError(
+                    f"{_bundle_prefix(bundle)}: {label} {column!r} does not match "
+                    "provenance."
+                )
+
+    for record in bundle.sample_records:
+        for column, value in expected.items():
+            if record.get(column) != value:
+                raise RunnerProvenanceError(
+                    f"{_bundle_prefix(bundle)}: sample record {column!r} does not "
+                    "match provenance."
+                )
 
 
 def _validate_companion_artifacts(

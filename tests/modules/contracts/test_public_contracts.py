@@ -9,6 +9,7 @@ from cofolder.modules.contracts import (
     METRIC_CATALOG,
     PUBLIC_SCHEMA_VERSION,
     AmbiguousIdentityError,
+    BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
     FailureStage,
@@ -21,6 +22,11 @@ from cofolder.modules.contracts import (
     PublicSchemaValidationError,
     RecordKind,
     RecordStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    RunnerProvenanceError,
+    SeedOrigin,
+    SeedPlan,
     UnregisteredMetricError,
     WorkflowKind,
     aggregate_metric_records,
@@ -92,6 +98,86 @@ def test_dataframe_adapter_emits_complete_identity_and_evidence():
     assert chain_metric.envelope.identity.entity_id == "entity:0"
     assert chain_metric.envelope.identity.chain_id == "A"
     assert chain_metric.evidence_regime == EvidenceRegime.REFERENCE_FREE
+
+
+def test_public_bundle_round_trips_backend_and_effective_seed(tmp_path):
+    backend = RunnerBackendIdentity(
+        "boltz2", "boltz", "2.1.0", BackendVersionStatus.DETECTED, "2.1.0"
+    )
+    repeat_seed = RepeatSeedProvenance(
+        1, 42, 42, 2746317213, 2746317213, SeedOrigin.USER_SPECIFIED
+    )
+    seed_plan = SeedPlan(42, 42, SeedOrigin.USER_SPECIFIED, (repeat_seed,))
+    identity = _identity(
+        runner_version="2.1.0",
+        backend_name="boltz",
+        backend_version_status=BackendVersionStatus.DETECTED,
+    )
+    frame = pd.DataFrame(
+        [
+            {
+                "model_name": "model-0",
+                "repeat": 1,
+                "diffusion_sample": 0,
+                "runner_id": "boltz2",
+                "backend_name": "boltz",
+                "runner_version": "2.1.0",
+                "backend_version_status": "detected",
+                "effective_seed": 2746317213,
+                "confidence_score": 0.8,
+            }
+        ]
+    )
+    bundle = bundle_from_frames(
+        frame,
+        pd.DataFrame(),
+        identity=identity,
+        requested_metrics={"confidence_metrics"},
+        backend=backend,
+        seed_plan=seed_plan,
+    )
+
+    output = write_public_bundle(bundle, tmp_path)
+    manifest = json.loads(output.manifest_path.read_text())
+    record = json.loads(output.records_path.read_text().splitlines()[0])
+    assert manifest["backend"]["version"] == "2.1.0"
+    assert manifest["seed_plan"]["repeats"][0]["effective_seed"] == 2746317213
+    assert record["effective_seed"] == 2746317213
+
+
+def test_public_bundle_rejects_seed_mismatch():
+    backend = RunnerBackendIdentity(
+        "boltz2", "boltz", None, BackendVersionStatus.UNAVAILABLE
+    )
+    seed_plan = SeedPlan(
+        1,
+        1,
+        SeedOrigin.USER_SPECIFIED,
+        (RepeatSeedProvenance(1, 1, 1, 1, 1, SeedOrigin.USER_SPECIFIED),),
+    )
+    identity = _identity(
+        backend_name="boltz",
+        backend_version_status=BackendVersionStatus.UNAVAILABLE,
+    )
+    bundle = bundle_from_frames(
+        pd.DataFrame(
+            [
+                {
+                    "model_name": "model-0",
+                    "repeat": 1,
+                    "diffusion_sample": 0,
+                    "effective_seed": 2,
+                    "confidence_score": 0.8,
+                }
+            ]
+        ),
+        pd.DataFrame(),
+        identity=identity,
+        backend=backend,
+        seed_plan=seed_plan,
+    )
+    with pytest.raises(RunnerProvenanceError, match="seed does not match"):
+        validate_public_bundle(bundle)
 
 
 def test_incompatible_reference_metric_is_explicitly_unsupported():

@@ -1,14 +1,67 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Literal
-from typing import Any
-from typing import Mapping
-from typing import Sequence
+from typing import Any, Literal, Mapping, Sequence
 
-from cofolder.modules.contracts.models import OutputIdentity, PublicRecord
+from cofolder.modules.contracts.models import (
+    OutputIdentity,
+    PublicRecord,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    RunnerProvenanceError,
+    SeedResolutionError,
+)
+
+RUNNER_PROVENANCE_COLUMNS = (
+    "runner_id",
+    "backend_name",
+    "runner_version",
+    "backend_version_status",
+    "effective_seed",
+)
+
+
+def runner_provenance_values(
+    request: RunnerExecutionRequest,
+) -> dict[str, str | int | None]:
+    backend = request.backend_identity
+    return {
+        "runner_id": backend.runner_name,
+        "backend_name": backend.backend_name,
+        "runner_version": backend.version,
+        "backend_version_status": backend.version_status.value,
+        "effective_seed": request.seed_provenance.effective_seed,
+    }
+
+
+def attach_runner_provenance(frame: Any, request: RunnerExecutionRequest) -> Any:
+    """Attach canonical execution provenance to every normalized frame row."""
+    frame = frame.copy()
+    for column, value in runner_provenance_values(request).items():
+        frame[column] = value
+    return frame
+
+
+def attach_sample_provenance(
+    records: Sequence[Mapping[str, Any]], request: RunnerExecutionRequest
+) -> list[dict[str, Any]]:
+    values = runner_provenance_values(request)
+    return [{**dict(record), **values} for record in records]
+
+
+def backend_manifest_value(identity: RunnerBackendIdentity) -> dict[str, Any]:
+    value = asdict(identity)
+    value["version_status"] = identity.version_status.value
+    return value
+
+
+def seed_manifest_value(seed: RepeatSeedProvenance) -> dict[str, Any]:
+    value = asdict(seed)
+    value["origin"] = seed.origin.value
+    value["adjustment"] = seed.adjustment.value
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +108,7 @@ def build_runner_chain_identities(system_obj: Any) -> tuple[RunnerChainIdentity,
 def build_runner_public_records(
     system_df: Any,
     chain_df: Any,
-    request: "RunnerExecutionRequest",
+    request: RunnerExecutionRequest,
 ) -> list[PublicRecord]:
     """Convert normalized runner frames to typed, in-memory public records."""
 
@@ -166,6 +219,8 @@ class RunnerNormalizedBundle:
     companion_artifacts: list[RunnerCompanionArtifact] = field(default_factory=list)
     records: list[PublicRecord] = field(default_factory=list)
     chain_identities: tuple[RunnerChainIdentity, ...] = ()
+    backend_identity: RunnerBackendIdentity | None = None
+    seed_provenance: RepeatSeedProvenance | None = None
 
 
 def merge_runner_runtime(*values: RunnerRuntime | None) -> RunnerRuntime:
@@ -267,6 +322,8 @@ class RunnerExecutionRequest:
     options_obj: Any
     repeat: int
     seed: int
+    seed_provenance: RepeatSeedProvenance
+    backend_identity: RunnerBackendIdentity
     repeat_dir: Path
     raw_dir: Path
     logger: logging.Logger | None
@@ -275,6 +332,36 @@ class RunnerExecutionRequest:
     runtime: RunnerRuntime = field(default_factory=RunnerRuntime)
     identity: OutputIdentity | None = None
     chain_identities: tuple[RunnerChainIdentity, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.seed_provenance, RepeatSeedProvenance):
+            raise SeedResolutionError(
+                "Runner request seed_provenance must be RepeatSeedProvenance."
+            )
+        if not isinstance(self.backend_identity, RunnerBackendIdentity):
+            raise RunnerProvenanceError(
+                "Runner request backend_identity must be RunnerBackendIdentity."
+            )
+        if (
+            isinstance(self.seed, bool)
+            or not isinstance(self.seed, int)
+            or not (0 <= self.seed <= 2**32 - 1)
+        ):
+            raise SeedResolutionError(
+                "Runner request seed must be an integer between 0 and 4294967295."
+            )
+        if self.repeat != self.seed_provenance.repeat_id:
+            raise SeedResolutionError(
+                "Runner request repeat does not match seed provenance."
+            )
+        if self.seed != self.seed_provenance.effective_seed:
+            raise SeedResolutionError(
+                "Runner request seed does not match its effective seed."
+            )
+        if self.runner_name != self.backend_identity.runner_name:
+            raise RunnerProvenanceError(
+                "Runner request name does not match backend identity."
+            )
 
 
 @dataclass(slots=True, init=False)
@@ -292,6 +379,8 @@ class RunnerExecutionResult:
     runtime: RunnerRuntime = field(default_factory=RunnerRuntime)
     sample_records: list[dict[str, Any]] = field(default_factory=list)
     records: list[PublicRecord] = field(default_factory=list)
+    backend_identity: RunnerBackendIdentity | None = None
+    seed_provenance: RepeatSeedProvenance | None = None
     normalized_bundle: RunnerNormalizedBundle = field(init=False)
 
     def __init__(
@@ -312,6 +401,8 @@ class RunnerExecutionResult:
         companion_artifacts: Sequence[RunnerCompanionArtifact] | None = None,
         chain_identities: Sequence[RunnerChainIdentity] | None = None,
         records: Sequence[PublicRecord] | None = None,
+        backend_identity: RunnerBackendIdentity | None = None,
+        seed_provenance: RepeatSeedProvenance | None = None,
     ) -> None:
         self.runner_name = runner_name
         self.raw_output_dir = raw_output_dir
@@ -328,6 +419,8 @@ class RunnerExecutionResult:
         )
         self.sample_records = list(sample_records or [])
         self.records = list(records or [])
+        self.backend_identity = backend_identity
+        self.seed_provenance = seed_provenance
         self.normalized_bundle = RunnerNormalizedBundle(
             runner_name=self.runner_name,
             raw_output_dir=self.raw_output_dir,
@@ -344,6 +437,8 @@ class RunnerExecutionResult:
             companion_artifacts=copy_companion_artifacts(companion_artifacts),
             chain_identities=tuple(chain_identities or ()),
             records=list(self.records),
+            backend_identity=self.backend_identity,
+            seed_provenance=self.seed_provenance,
         )
 
     @property

@@ -11,6 +11,8 @@ class Boltz1Runner(BoltzRunner):
     """Runner for the Boltz-1 package line (boltz==1.0.0)."""
 
     name = "boltz1"
+    backend_name = "boltz"
+    backend_distribution = "boltz"
     model_name = "boltz1"
     capabilities = {
         "confidence_metrics",

@@ -8,8 +8,14 @@ import pandas as pd
 import pytest
 import yaml
 
-from cofolder.modules.input.command import Command
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.input import OptionsValidationError
+from cofolder.modules.input.command import Command
 from cofolder.modules.runners.boltz1_runner import Boltz1Runner
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
@@ -102,6 +108,10 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
         options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz1", "boltz", "1.0.0", BackendVersionStatus.DETECTED, "1.0.0"
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -158,6 +168,10 @@ def test_boltz1_runner_rejects_unexpected_affinity_payload(
         options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz1", "boltz", "1.0.0", BackendVersionStatus.DETECTED, "1.0.0"
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,

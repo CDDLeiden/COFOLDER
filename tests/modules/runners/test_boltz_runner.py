@@ -2,21 +2,53 @@
 
 import json
 import pickle
-from pathlib import Path
-from unittest.mock import patch
 from importlib.metadata import PackageNotFoundError
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 import yaml
 from rdkit import Chem
 
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    RunnerProvenanceError,
+    SeedOrigin,
+)
 from cofolder.modules.input.command import Command
 from cofolder.modules.input.system import System
 from cofolder.modules.input.validation import SystemInputValidationError
-from cofolder.modules.runners.contracts import RunnerExecutionRequest
-from cofolder.modules.runners.boltz_runner import _parse_boltz_stage_timings
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+from cofolder.modules.runners.boltz_runner import _parse_boltz_stage_timings
+from cofolder.modules.runners.contracts import RunnerExecutionRequest
+from cofolder.modules.runners.validators import validate_runner_bundle
+
+
+def _request_provenance(
+    *,
+    version: str | None = "2.1.0",
+    status: BackendVersionStatus = BackendVersionStatus.DETECTED,
+    raw_version: str | None = "2.1.0",
+) -> dict:
+    return {
+        "seed_provenance": RepeatSeedProvenance(
+            repeat_id=1,
+            requested_base_seed=123,
+            resolved_base_seed=123,
+            derived_seed=123,
+            effective_seed=123,
+            origin=SeedOrigin.USER_SPECIFIED,
+        ),
+        "backend_identity": RunnerBackendIdentity(
+            runner_name="boltz2",
+            backend_name="boltz",
+            version=version,
+            version_status=status,
+            raw_version=raw_version,
+        ),
+    }
 
 
 def _prepared_constrained_system(atom_name: str) -> System:
@@ -179,6 +211,7 @@ def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
         options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
         repeat=1,
         seed=123,
+        **_request_provenance(),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -228,6 +261,23 @@ def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics_ext"].state == "computed"
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["backend"] == {
+        "runner_name": "boltz2",
+        "backend_name": "boltz",
+        "version": "2.1.0",
+        "version_status": "detected",
+        "raw_version": "2.1.0",
+        "detail": None,
+    }
+    assert manifest["seed"]["effective_seed"] == 123
+    assert system_df.loc[0, "effective_seed"] == 123
+    assert result.sample_records[0]["backend_name"] == "boltz"
+
+    manifest["seed"]["effective_seed"] = 124
+    result.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(RunnerProvenanceError, match="manifest seed provenance"):
+        validate_runner_bundle(result, requested_metric_groups={"confidence_metrics"})
 
 
 def test_boltz_runner_reports_mixed_metric_outcomes_without_affinity_payload(monkeypatch, temp_dir):
@@ -242,6 +292,11 @@ def test_boltz_runner_reports_mixed_metric_outcomes_without_affinity_payload(mon
         options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
         repeat=1,
         seed=123,
+        **_request_provenance(
+            version=None,
+            status=BackendVersionStatus.UNPARSEABLE,
+            raw_version="not-a-version",
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -282,6 +337,10 @@ def test_boltz_runner_reports_mixed_metric_outcomes_without_affinity_payload(mon
         "chain_metrics.IC50_M",
         "chain_metrics.pIC50_kcal_per_mol",
     )
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["backend"]["version"] is None
+    assert manifest["backend"]["version_status"] == "unparseable"
+    assert manifest["backend"]["raw_version"] == "not-a-version"
 
 
 def test_boltz2_runner_rejects_environment_with_boltz_community_installed():

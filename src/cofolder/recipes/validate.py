@@ -13,12 +13,20 @@ from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.contracts import (
     PUBLIC_SCHEMA_VERSION,
     ArtifactReference,
+    BackendVersionStatus,
     EvidenceSource,
     FailureStage,
     OutputIdentity,
     PublicManifest,
     PublicOutputBundle,
     PublicSerializationError,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    RunnerProvenanceError,
+    SeedAdjustment,
+    SeedOrigin,
+    SeedPlan,
+    SeedResolutionError,
     WorkflowExecutionError,
     WorkflowKind,
     bundle_from_frames,
@@ -104,6 +112,9 @@ class Validate:
         self.run_id = str(uuid4())
         self.repeats = repeats
         self.seed = seed
+        self.requested_seed = seed
+        self.seed_plan: SeedPlan | None = None
+        self.backend_identity: RunnerBackendIdentity | None = None
         self.assess_robustness = assess_robustness
         self.assess_bias = assess_bias
         self.protein_training_data_path = (
@@ -222,6 +233,63 @@ class Validate:
             return FailureStage.SERIALIZATION
         return FailureStage.INPUT_VALIDATION
 
+    def _manifest_provenance(self) -> dict[str, object]:
+        if self.backend_identity is None or self.seed_plan is None:
+            return {}
+        return {
+            "backend": self.backend_identity,
+            "seed_plan": self.seed_plan,
+        }
+
+    @staticmethod
+    def _validate_effective_seed(
+        original: RepeatSeedProvenance,
+        adjusted: RepeatSeedProvenance,
+    ) -> RepeatSeedProvenance:
+        if not isinstance(adjusted, RepeatSeedProvenance):
+            raise SeedResolutionError(
+                "Runner seed adjustment must return RepeatSeedProvenance."
+            )
+        immutable_fields = (
+            "repeat_id",
+            "requested_base_seed",
+            "resolved_base_seed",
+            "derived_seed",
+            "origin",
+        )
+        if any(
+            getattr(original, field) != getattr(adjusted, field)
+            for field in immutable_fields
+        ):
+            raise SeedResolutionError(
+                "Runner seed adjustment changed immutable seed provenance."
+            )
+        effective = adjusted.effective_seed
+        if (
+            isinstance(effective, bool)
+            or not isinstance(effective, int)
+            or not (0 <= effective <= 2**32 - 1)
+        ):
+            raise SeedResolutionError(
+                "Runner effective seed must be an integer between 0 and 4294967295."
+            )
+        changed = effective != original.derived_seed
+        if changed and (
+            adjusted.adjustment != SeedAdjustment.BACKEND_ADJUSTED
+            or not adjusted.adjustment_reason
+        ):
+            raise SeedResolutionError(
+                "A backend-adjusted seed requires an explicit adjustment status and reason."
+            )
+        if not changed and (
+            adjusted.adjustment != SeedAdjustment.UNCHANGED
+            or adjusted.adjustment_reason is not None
+        ):
+            raise SeedResolutionError(
+                "An unchanged seed must use adjustment='unchanged' without a reason."
+            )
+        return adjusted
+
     def run(self):
         try:
             return self._run_impl()
@@ -247,6 +315,7 @@ class Validate:
                         schema_version=PUBLIC_SCHEMA_VERSION,
                         identity=self.output_identity,
                         status="failed",
+                        **self._manifest_provenance(),
                     ),
                     records=(failure,),
                 ),
@@ -282,6 +351,27 @@ class Validate:
                     repeats=self.repeats,
                     seed=self.seed,
                     logger=self.logger,
+                )
+                origin = (
+                    SeedOrigin.GENERATED
+                    if self.requested_seed is None
+                    else SeedOrigin.USER_SPECIFIED
+                )
+                self.seed_plan = SeedPlan(
+                    requested_base_seed=self.requested_seed,
+                    resolved_base_seed=self.seed,
+                    origin=origin,
+                    repeats=tuple(
+                        RepeatSeedProvenance(
+                            repeat_id=index,
+                            requested_base_seed=self.requested_seed,
+                            resolved_base_seed=self.seed,
+                            derived_seed=run_seed,
+                            effective_seed=run_seed,
+                            origin=origin,
+                        )
+                        for index, run_seed in enumerate(self.run_seeds, 1)
+                    ),
                 )
 
             with self._debug_timer("runner.options.load"):
@@ -347,6 +437,46 @@ class Validate:
                 )
             with self._debug_timer("runner.prepare.availability"):
                 self.runner.ensure_available()
+                detect_backend = getattr(self.runner, "detect_backend_identity", None)
+                self.backend_identity = (
+                    detect_backend()
+                    if callable(detect_backend)
+                    else RunnerBackendIdentity(
+                        runner_name=self.runner_name,
+                        backend_name=self.runner_name,
+                        version=None,
+                        version_status=BackendVersionStatus.UNAVAILABLE,
+                        detail="Runner does not implement backend version detection.",
+                    )
+                )
+                if self.backend_identity.version_status.value != "detected":
+                    self.logger.warning(
+                        "Could not detect a usable version for backend '%s': %s",
+                        self.backend_identity.backend_name,
+                        self.backend_identity.detail
+                        or self.backend_identity.version_status.value,
+                    )
+                self.output_identity = replace(
+                    self.output_identity,
+                    runner_version=self.backend_identity.version,
+                    backend_name=self.backend_identity.backend_name,
+                    backend_version_status=self.backend_identity.version_status,
+                )
+                assert self.seed_plan is not None
+                resolve_effective_seed = getattr(
+                    self.runner, "resolve_effective_seed", None
+                )
+                adjusted_seeds = tuple(
+                    self._validate_effective_seed(
+                        original,
+                        resolve_effective_seed(original)
+                        if callable(resolve_effective_seed)
+                        else original,
+                    )
+                    for original in self.seed_plan.repeats
+                )
+                self.seed_plan = replace(self.seed_plan, repeats=adjusted_seeds)
+                self.run_seeds = [item.effective_seed for item in adjusted_seeds]
             with self._debug_timer("runner.prepare_system"):
                 preparation = self.runner.prepare_system(
                     # keep backend-specific prep behind the runner boundary
@@ -378,7 +508,11 @@ class Validate:
 
             runner_results = []
             workflow_failures = []
-            for i, seed in enumerate(self.run_seeds, 1):
+            assert self.seed_plan is not None
+            assert self.backend_identity is not None
+            for seed_provenance in self.seed_plan.repeats:
+                i = seed_provenance.repeat_id
+                seed = seed_provenance.effective_seed
                 self.logger.info(
                     "Running repeat %d/%d with seed %d using runner '%s'",
                     i,
@@ -395,13 +529,19 @@ class Validate:
                     options_obj=runner_options,
                     repeat=i,
                     seed=seed,
+                    seed_provenance=seed_provenance,
+                    backend_identity=self.backend_identity,
                     repeat_dir=self.raw_dir / f"repeat_{i}",
                     raw_dir=self.raw_dir,
                     logger=self.logger,
                     timings=self.timings,
                     label_prefix=f"repeat_{i}",
                     runtime=preparation_runtime,
-                    identity=replace(self.output_identity, repeat_id=i),
+                    identity=replace(
+                        self.output_identity,
+                        repeat_id=i,
+                        effective_seed=seed,
+                    ),
                     chain_identities=chain_identities,
                 )
                 unresolved_before_run = []
@@ -434,7 +574,11 @@ class Validate:
                     workflow_failures.append(
                         failure_from_exception(
                             exc,
-                            identity=replace(self.output_identity, repeat_id=i),
+                            identity=replace(
+                                self.output_identity,
+                                repeat_id=i,
+                                effective_seed=seed,
+                            ),
                             stage=FailureStage.BACKEND_EXECUTION,
                             error_code="runner_backend_execution_failed",
                             details={"seed": seed},
@@ -473,7 +617,7 @@ class Validate:
                                 "on a later repeat or ligand."
                             )
                 if result is not None:
-                    runner_results.append((i, result))
+                    runner_results.append((i, seed_provenance, result))
 
             selected_runner_metric_groups = (
                 self.scoring_functions & RUNNER_METRIC_GROUPS
@@ -486,8 +630,20 @@ class Validate:
             valid_runner_results = []
             valid_repeat_ids = []
             with self._debug_timer("runner.bundle_validation"):
-                for repeat, result in runner_results:
+                for repeat, seed_provenance, result in runner_results:
                     try:
+                        if result.backend_identity is not None and (
+                            result.backend_identity != self.backend_identity
+                        ):
+                            raise RunnerProvenanceError(
+                                "Runner result backend identity does not match its request."
+                            )
+                        if result.seed_provenance is not None and (
+                            result.seed_provenance != seed_provenance
+                        ):
+                            raise RunnerProvenanceError(
+                                "Runner result seed provenance does not match its request."
+                            )
                         bundle = validate_runner_bundle(
                             result,
                             requested_metric_groups=requested_runner_metric_groups,
@@ -497,7 +653,9 @@ class Validate:
                             failure_from_exception(
                                 exc,
                                 identity=replace(
-                                    self.output_identity, repeat_id=repeat
+                                    self.output_identity,
+                                    repeat_id=repeat,
+                                    effective_seed=seed_provenance.effective_seed,
                                 ),
                                 stage=FailureStage.OUTPUT_VALIDATION,
                                 error_code="runner_output_validation_failed",
@@ -541,6 +699,7 @@ class Validate:
                             schema_version=PUBLIC_SCHEMA_VERSION,
                             identity=self.output_identity,
                             status="failed",
+                            **self._manifest_provenance(),
                         ),
                         records=tuple(workflow_failures),
                     ),
@@ -574,6 +733,8 @@ class Validate:
                 system_df, chain_df, _manifests = gather.merge_runner_results(
                     **merge_kwargs
                 )
+                system_df = self._attach_gathered_provenance(system_df)
+                chain_df = self._attach_gathered_provenance(chain_df)
 
             if not chain_df.empty:
                 with self._debug_timer("results.add_chain_info"):
@@ -727,6 +888,27 @@ class Validate:
             error_code=error_code,
         )
 
+    def _attach_gathered_provenance(self, frame):
+        """Restore recipe-owned provenance on gathered rows without manifest lookups."""
+        if frame.empty or self.backend_identity is None or self.seed_plan is None:
+            return frame
+        frame = frame.copy()
+        frame["runner_id"] = self.backend_identity.runner_name
+        frame["backend_name"] = self.backend_identity.backend_name
+        frame["runner_version"] = self.backend_identity.version
+        frame["backend_version_status"] = self.backend_identity.version_status.value
+        seeds = {item.repeat_id: item.effective_seed for item in self.seed_plan.repeats}
+        mapped = frame["repeat"].map(lambda value: seeds.get(int(value)))
+        if mapped.isna().any():
+            missing = sorted(
+                {int(value) for value in frame.loc[mapped.isna(), "repeat"].tolist()}
+            )
+            raise RunnerProvenanceError(
+                f"Gathered rows reference repeats absent from the seed plan: {missing}."
+            )
+        frame["effective_seed"] = mapped.astype("UInt64")
+        return frame
+
     def _write_public_results(
         self,
         *,
@@ -783,6 +965,8 @@ class Validate:
             failures=failures,
             artifacts=artifact_refs,
             robustness_df=robustness_df,
+            backend=self.backend_identity,
+            seed_plan=self.seed_plan,
         )
         write_public_bundle(bundle, self.wrk_dir / "results")
 

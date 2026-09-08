@@ -25,6 +25,7 @@ dependencies = [
     "gemmi",
     "prolif",
     "pdb2pqr",
+    "packaging",
 ]
 
 [project.optional-dependencies]

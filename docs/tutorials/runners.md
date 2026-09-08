@@ -115,6 +115,8 @@ class RunnerExecutionRequest:
     options_obj: Any
     repeat: int
     seed: int
+    seed_provenance: RepeatSeedProvenance
+    backend_identity: RunnerBackendIdentity
     repeat_dir: Path
     raw_dir: Path
     logger: logging.Logger
@@ -129,7 +131,9 @@ Important fields:
 
 - `system_path`: the YAML path COFOLDER wrote after shared input handling and runner preparation
 - `repeat_dir`: runner-owned directory for one repeat, typically `raw/repeat_<n>/`
-- `seed`: per-repeat seed resolved by COFOLDER
+- `seed`: effective backend-facing seed, equal to `seed_provenance.effective_seed`
+- `seed_provenance`: requested, resolved, derived, and effective seed metadata
+- `backend_identity`: selected runner plus detected backend package/version status
 - `timings`: optional timing collector used by the shared debug summary
 - `label_prefix`: per-repeat label for timing metrics
 - `identity`: the public invocation/repeat identity supplied by the recipe
@@ -168,7 +172,16 @@ class RunnerExecutionResult:
     sample_records: list[dict[str, Any]] = field(default_factory=list)
     chain_identities: tuple[RunnerChainIdentity, ...] = ()
     records: list[PublicRecord] = field(default_factory=list)
+    backend_identity: RunnerBackendIdentity | None = None
+    seed_provenance: RepeatSeedProvenance | None = None
 ```
+
+Built-in runners declare `backend_name` and `backend_distribution`. The inherited
+`detect_backend_identity()` uses installed distribution metadata and returns one of
+`detected`, `unavailable`, or `unparseable`; unavailable version metadata does not
+abort an otherwise usable run. Override `resolve_effective_seed()` only when a
+backend must transform COFOLDER's derived seed, and return an explicit
+`backend_adjusted` status and reason when doing so.
 
 ## Metric Outcome States
 
@@ -409,6 +422,8 @@ class MyRunner(BaseRunner):
             }
         ])
 
+        system_df = attach_runner_provenance(system_df, request)
+        chain_df = attach_runner_provenance(chain_df, request)
         system_metrics_path = normalized_dir / "system_metrics.csv"
         chain_metrics_path = normalized_dir / "chain_metrics.csv"
         system_df.to_csv(system_metrics_path, index=False)
@@ -421,10 +436,13 @@ class MyRunner(BaseRunner):
                 "cif_file": structure_name,
             }
         ]
+        sample_records = attach_sample_provenance(sample_records, request)
 
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
             "runner": self.name,
+            "backend": backend_manifest_value(request.backend_identity),
+            "seed": seed_manifest_value(request.seed_provenance),
             "capabilities": sorted(self.capabilities),
             "repeat": request.repeat,
             "raw_output_dir": str(raw_output_dir),
@@ -453,6 +471,8 @@ class MyRunner(BaseRunner):
             sample_records=sample_records,
             chain_identities=request.chain_identities,
             records=build_runner_public_records(system_df, chain_df, request),
+            backend_identity=request.backend_identity,
+            seed_provenance=request.seed_provenance,
             metric_outcomes={
                 "confidence_metrics": RunnerMetricOutcome(
                     state="computed",

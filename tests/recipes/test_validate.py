@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -9,7 +10,14 @@ import pandas as pd
 import pytest
 import yaml
 
-from cofolder.modules.contracts import WorkflowExecutionError, read_public_metric_frames
+from cofolder.modules.contracts import (
+    RepeatSeedProvenance,
+    SeedAdjustment,
+    SeedOrigin,
+    SeedResolutionError,
+    WorkflowExecutionError,
+    read_public_metric_frames,
+)
 from cofolder.modules.runners.boltz1_runner import Boltz1Runner
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
@@ -21,6 +29,25 @@ from cofolder.modules.runners.contracts import (
 )
 from cofolder.recipes.screen import Screen
 from cofolder.recipes.validate import Validate
+
+
+def test_backend_seed_adjustment_requires_explicit_reason():
+    original = RepeatSeedProvenance(
+        1, 42, 42, 100, 100, SeedOrigin.USER_SPECIFIED
+    )
+    adjusted = replace(
+        original,
+        effective_seed=99,
+        adjustment=SeedAdjustment.BACKEND_ADJUSTED,
+        adjustment_reason="Backend reserves seed 100.",
+    )
+    assert Validate._validate_effective_seed(original, adjusted) == adjusted
+
+    with pytest.raises(SeedResolutionError, match="requires an explicit"):
+        Validate._validate_effective_seed(
+            original,
+            replace(original, effective_seed=99),
+        )
 
 
 def _make_runner_results(system_name: str = "system"):
@@ -294,6 +321,11 @@ class _NoMetricsRunner(_FakeRunner):
                 "affinity_metrics_ext": RunnerMetricOutcome(state="unsupported"),
             },
         )
+
+
+class _FailingRunner(_FakeRunner):
+    def run(self, request):
+        raise RuntimeError("backend exploded")
 
 
 class _CapturingRunner(_FakeRunner):
@@ -892,6 +924,38 @@ class TestValidateInit:
 
         assert validator.pocket_coverage_reference == "A2 S8 T10"
         assert validator.reproduction_metrics == {"pocket_coverage"}
+
+
+def test_failed_backend_attempt_persists_version_and_seed_provenance(
+    monkeypatch,
+    sample_system_yaml,
+    sample_options_yaml,
+    temp_dir,
+):
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.helpers.get_seeds",
+        lambda repeats, seed, logger: (42, [42]),
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.get_runner", lambda name: _FailingRunner()
+    )
+    validator = Validate(
+        wrk_dir=str(temp_dir),
+        system_path=str(sample_system_yaml),
+        options_path=str(sample_options_yaml),
+        seed=42,
+        scoring_functions=[],
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="No runner repeat produced"):
+        validator.run()
+
+    manifest = json.loads((Path(temp_dir) / "results" / "manifest.json").read_text())
+    failures = pd.read_csv(Path(temp_dir) / "results" / "failures.csv")
+    assert manifest["backend"]["version_status"] == "unavailable"
+    assert manifest["seed_plan"]["repeats"][0]["effective_seed"] == 42
+    assert failures.loc[0, "effective_seed"] == 42
+    assert failures.loc[0, "backend_version_status"] == "unavailable"
 
 
 class TestValidateRun:
@@ -1502,6 +1566,24 @@ class TestValidateRun:
         assert (Path(temp_dir) / "results" / "metrics.csv").exists()
         assert not (Path(temp_dir) / "results" / "system_metrics.csv").exists()
         assert not (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
+        public_manifest = json.loads(
+            (Path(temp_dir) / "results" / "manifest.json").read_text()
+        )
+        assert public_manifest["backend"]["runner_name"] == "boltz2"
+        assert public_manifest["backend"]["version_status"] == "unavailable"
+        assert public_manifest["seed_plan"]["requested_base_seed"] is None
+        assert public_manifest["seed_plan"]["repeats"][0]["effective_seed"] == 123
+        public_records = [
+            json.loads(line)
+            for line in (Path(temp_dir) / "results" / "records.jsonl")
+            .read_text()
+            .splitlines()
+        ]
+        repeat_records = [
+            record for record in public_records if record["repeat_id"] == 1
+        ]
+        assert repeat_records
+        assert all(record["effective_seed"] == 123 for record in repeat_records)
 
     def test_reference_runner_validate_uses_real_boltz2_path(
         self,

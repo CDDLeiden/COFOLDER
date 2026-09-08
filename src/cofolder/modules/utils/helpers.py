@@ -1,10 +1,17 @@
 # Script containing general functions
-import os
-import pandas as pd
-import random
-from typing import Optional, List
-
 import logging
+import os
+import random
+from typing import List, Optional
+
+import pandas as pd
+
+from cofolder.modules.contracts import (
+    RepeatSeedProvenance,
+    SeedOrigin,
+    SeedPlan,
+    SeedResolutionError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +128,93 @@ def parse_list_as_str(
 
     return typed_items
 
+_MAX_SEED = 2**32 - 1
+
+
+def _validate_seed(value: object, *, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SeedResolutionError(f"{label} must be an integer, got {value!r}.")
+    if not 0 <= value <= _MAX_SEED:
+        raise SeedResolutionError(
+            f"{label} must be between 0 and {_MAX_SEED}, got {value}."
+        )
+    return value
+
+
+def resolve_seed_plan(
+    repeats: int,
+    requested_base_seed: int | None = None,
+    logger: logging.Logger | None = None,
+) -> SeedPlan:
+    """Resolve one validated base seed and deterministic, distinct repeat seeds."""
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < 1:
+        raise SeedResolutionError(
+            f"repeats must be a positive integer, got {repeats!r}."
+        )
+    if repeats > _MAX_SEED + 1:
+        raise SeedResolutionError(
+            f"repeats cannot exceed the {_MAX_SEED + 1} distinct seed values."
+        )
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    if requested_base_seed is None:
+        resolved_base_seed = random.randint(0, _MAX_SEED)
+        origin = SeedOrigin.GENERATED
+        logger.info(
+            "No global seed provided. Generated random global seed: %d",
+            resolved_base_seed,
+        )
+    else:
+        resolved_base_seed = _validate_seed(
+            requested_base_seed, label="requested_base_seed"
+        )
+        origin = SeedOrigin.USER_SPECIFIED
+        logger.info("Using provided global seed: %d", resolved_base_seed)
+
+    if repeats == 1:
+        derived = [resolved_base_seed]
+    else:
+        rng = random.Random(resolved_base_seed)
+        derived = []
+        observed: set[int] = set()
+        while len(derived) < repeats:
+            for _ in range(1024):
+                candidate = rng.randint(0, _MAX_SEED)
+                if candidate not in observed:
+                    observed.add(candidate)
+                    derived.append(candidate)
+                    break
+            else:
+                raise SeedResolutionError(
+                    "Could not derive a distinct repeat seed after 1024 attempts."
+                )
+
+    repeat_provenance = tuple(
+        RepeatSeedProvenance(
+            repeat_id=index,
+            requested_base_seed=requested_base_seed,
+            resolved_base_seed=resolved_base_seed,
+            derived_seed=seed,
+            effective_seed=seed,
+            origin=origin,
+        )
+        for index, seed in enumerate(derived, 1)
+    )
+    logger.info("Run seeds to be used for this workflow: %s", derived)
+    return SeedPlan(
+        requested_base_seed=requested_base_seed,
+        resolved_base_seed=resolved_base_seed,
+        origin=origin,
+        repeats=repeat_provenance,
+    )
+
+
 def get_seeds(
     repeats: int,
     seed: Optional[int] = None,
     logger: Optional[logging.Logger] = None
-) -> (int, List[int]):
+) -> tuple[int, List[int]]:
     """
     Generate a global seed and run seeds for repeated workflow runs.
 
@@ -150,32 +239,12 @@ def get_seeds(
     - If repeats == 1, the run seed list contains only the global seed.
     - If repeats > 1, run seeds are generated deterministically from the global seed.
     """
-    if logger is None:
-        logger = logging.getLogger(__name__)
-
-    # Generate global seed if not provided
-    if seed is None:
-        global_seed = generate_seeds(num_seeds=1, seed=None)[0]
-        logger.info("No global seed provided. Generated random global seed: %d", global_seed)
-    else:
-        global_seed = seed
-        logger.info("Using provided global seed: %d", global_seed)
-
-    # Generate run seeds based on repeats
-    if repeats == 1:
-        run_seeds = [global_seed]
-        logger.debug("Single repeat: using global seed as run seed: %s", run_seeds)
-    else:
-        run_seeds = generate_seeds(num_seeds=repeats, seed=global_seed)
-        logger.debug(
-            "Multiple repeats: %d run seeds generated from global seed %d: %s",
-            repeats,
-            global_seed,
-            run_seeds
-        )
-
-    logger.info("Run seeds to be used for this workflow: %s", run_seeds)
-    return global_seed, run_seeds
+    plan = resolve_seed_plan(
+        repeats=repeats,
+        requested_base_seed=seed,
+        logger=logger,
+    )
+    return plan.resolved_base_seed, [item.effective_seed for item in plan.repeats]
 
 def generate_seeds(num_seeds: int, seed: Optional[int] = None) -> List[int]:
     """

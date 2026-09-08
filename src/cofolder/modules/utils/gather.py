@@ -98,12 +98,16 @@ def merge_runner_results(
                 manifests.append(manifest)
 
         if system_metrics_path.exists():
-            system_frames.append(pd.read_csv(system_metrics_path))
+            system_frames.append(
+                pd.read_csv(system_metrics_path, dtype={"effective_seed": "UInt64"})
+            )
         else:
             logger.warning("Missing normalized system metrics: %s", system_metrics_path)
 
         if chain_metrics_path.exists():
-            chain_frames.append(pd.read_csv(chain_metrics_path))
+            chain_frames.append(
+                pd.read_csv(chain_metrics_path, dtype={"effective_seed": "UInt64"})
+            )
         else:
             logger.warning("Missing normalized chain metrics: %s", chain_metrics_path)
 

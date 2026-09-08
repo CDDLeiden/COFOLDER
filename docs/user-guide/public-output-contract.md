@@ -5,7 +5,8 @@ The authoritative output is `records.jsonl`; each line is one independently
 validatable success, metric, or failure record. The files `successes.csv`,
 `metrics.csv`, and `failures.csv` are flattened views of the same records.
 `manifest.json` identifies the invocation, evidence inputs, requested metrics,
-artifacts, completion status, and record counts.
+artifacts, completion status, record counts, detected backend identity, and the
+requested/resolved/derived/effective seed plan.
 
 The former wide public files (`system_metrics.csv`, `chain_metrics.csv`,
 `robustness_metrics.csv`, `screen_results.csv`,
@@ -16,7 +17,10 @@ private backend/debugging artifacts and are not a supported public interface.
 ## Identity
 
 Every record contains `workflow`, `run_id`, and `system_id`. Runner-backed
-workflows also contain `runner_id`. Screen records carry the exact source
+workflows also contain `runner_id`, `runner_version`, `backend_name`, and
+`backend_version_status`. The version status is `detected`, `unavailable`, or
+`unparseable`; the normalized version is null for the latter two states.
+Repeat-scoped records carry the exact effective integer seed. Screen records carry the exact source
 compound identifier. Repeat/model records carry `repeat_id`, `model_id`, and
 `sample_id`, while chain records additionally carry `entity_id`, `entity_type`,
 and `chain_id`. Pair metrics use `related_entity_id` and `related_chain_id`
@@ -63,4 +67,3 @@ error code, actionable message, retryability, and sanitized details.
 The contract types, validators, catalog, DataFrame adapters, aggregation helper,
 and serializer are importable from `cofolder.modules.contracts`. Recipe
 constructor signatures and Oracle's scalar return value are unchanged.
-

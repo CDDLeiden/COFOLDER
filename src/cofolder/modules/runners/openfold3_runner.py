@@ -30,7 +30,11 @@ from cofolder.modules.runners.contracts import (
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
+    attach_runner_provenance,
+    attach_sample_provenance,
+    backend_manifest_value,
     build_runner_public_records,
+    seed_manifest_value,
 )
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
@@ -252,6 +256,8 @@ def run_openfold3(
 
 class OpenFold3Runner(BaseRunner):
     name = "openfold3"
+    backend_name = "openfold3"
+    backend_distribution = "openfold3"
     capabilities = {"confidence_metrics"}
     input_capabilities = RunnerInputCapabilities(
         entity_types=frozenset({"protein", "ligand", "dna", "rna"}),
@@ -356,6 +362,9 @@ class OpenFold3Runner(BaseRunner):
             normalized_dir=normalized_dir,
             confidence_payloads=confidence_payloads,
         )
+        system_df = attach_runner_provenance(system_df, request)
+        chain_df = attach_runner_provenance(chain_df, request)
+        sample_records = attach_sample_provenance(sample_records, request)
 
         system_metrics_path = normalized_dir / "system_metrics.csv"
         chain_metrics_path = normalized_dir / "chain_metrics.csv"
@@ -379,6 +388,8 @@ class OpenFold3Runner(BaseRunner):
             json.dumps(
                 {
                     "runner": self.name,
+                    "backend": backend_manifest_value(request.backend_identity),
+                    "seed": seed_manifest_value(request.seed_provenance),
                     "capabilities": sorted(self.capabilities),
                     "repeat": request.repeat,
                     "raw_output_dir": str(raw_output_dir),
@@ -427,6 +438,8 @@ class OpenFold3Runner(BaseRunner):
             companion_artifacts=companion_artifacts,
             chain_identities=request.chain_identities,
             records=build_runner_public_records(system_df, chain_df, request),
+            backend_identity=request.backend_identity,
+            seed_provenance=request.seed_provenance,
         )
 
     def _build_query_payload(self, system_name: str, system_obj: Any) -> dict[str, Any]:

@@ -1,13 +1,35 @@
 """Tests for cofolder.modules.utils.gather alignment orchestration."""
 
-from pathlib import Path
 import warnings
+from pathlib import Path
 
 import pandas as pd
 
-from cofolder.modules.utils import gather
 from cofolder.modules.input.system import System
 from cofolder.modules.runners import build_runner_chain_identities
+from cofolder.modules.utils import gather
+
+
+def test_merge_runner_results_preserves_uint32_seed_exactly(temp_dir):
+    normalized = temp_dir / "repeat_1" / "normalized"
+    normalized.mkdir(parents=True)
+    row = {
+        "cif_file": "1_system_model_0.cif",
+        "model_name": "system",
+        "repeat": 1,
+        "diffusion_sample": 0,
+        "effective_seed": 2**32 - 1,
+    }
+    pd.DataFrame([row]).to_csv(normalized / "system_metrics.csv", index=False)
+    pd.DataFrame([{**row, "conf_chain_id": 0}]).to_csv(
+        normalized / "chain_metrics.csv", index=False
+    )
+
+    system_df, chain_df, _ = gather.merge_runner_results(temp_dir, repeats=1)
+
+    assert str(system_df["effective_seed"].dtype) == "UInt64"
+    assert int(system_df.loc[0, "effective_seed"]) == 2**32 - 1
+    assert int(chain_df.loc[0, "effective_seed"]) == 2**32 - 1
 
 
 def test_bitstring_similarity_with_one_pair_has_no_runtime_warning(temp_dir):

@@ -69,6 +69,52 @@ class OptimizationDirection(StrEnum):
     NEUTRAL = "neutral"
 
 
+class BackendVersionStatus(StrEnum):
+    DETECTED = "detected"
+    UNAVAILABLE = "unavailable"
+    UNPARSEABLE = "unparseable"
+
+
+class SeedOrigin(StrEnum):
+    USER_SPECIFIED = "user_specified"
+    GENERATED = "generated"
+
+
+class SeedAdjustment(StrEnum):
+    UNCHANGED = "unchanged"
+    BACKEND_ADJUSTED = "backend_adjusted"
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerBackendIdentity:
+    runner_name: str
+    backend_name: str
+    version: str | None
+    version_status: BackendVersionStatus
+    raw_version: str | None = None
+    detail: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RepeatSeedProvenance:
+    repeat_id: int
+    requested_base_seed: int | None
+    resolved_base_seed: int
+    derived_seed: int
+    effective_seed: int
+    origin: SeedOrigin
+    adjustment: SeedAdjustment = SeedAdjustment.UNCHANGED
+    adjustment_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SeedPlan:
+    requested_base_seed: int | None
+    resolved_base_seed: int
+    origin: SeedOrigin
+    repeats: tuple[RepeatSeedProvenance, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class OutputIdentity:
     workflow: WorkflowKind
@@ -77,6 +123,9 @@ class OutputIdentity:
     compound_id: str | None = None
     runner_id: str | None = None
     runner_version: str | None = None
+    backend_name: str | None = None
+    backend_version_status: BackendVersionStatus | None = None
+    effective_seed: int | None = None
     repeat_id: int | None = None
     model_id: str | None = None
     sample_id: int | None = None
@@ -160,6 +209,8 @@ class PublicManifest:
     requested_metrics: tuple[str, ...] = ()
     artifacts: tuple[ArtifactReference, ...] = ()
     record_counts: Mapping[str, int] = field(default_factory=dict)
+    backend: RunnerBackendIdentity | None = None
+    seed_plan: SeedPlan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +255,14 @@ class EvidenceCompatibilityError(PublicSchemaValidationError):
 
 class PublicSerializationError(RuntimeError):
     """Raised when a validated public bundle cannot be serialized atomically."""
+
+
+class SeedResolutionError(ValueError):
+    """Raised when seed resolution or backend adjustment is invalid."""
+
+
+class RunnerProvenanceError(ValueError):
+    """Raised when execution provenance is contradictory or malformed."""
 
 
 class WorkflowExecutionError(RuntimeError):

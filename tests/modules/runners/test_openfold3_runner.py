@@ -12,11 +12,19 @@ import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.input.system import System
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
-from cofolder.modules.runners.openfold3_runner import OpenFold3Runner
-from cofolder.modules.runners.openfold3_runner import check_openfold3_setup_ready
-from cofolder.modules.runners.openfold3_runner import run_openfold3
+from cofolder.modules.runners.openfold3_runner import (
+    OpenFold3Runner,
+    check_openfold3_setup_ready,
+    run_openfold3,
+)
 from cofolder.modules.runners.validators import validate_runner_bundle
 
 
@@ -124,6 +132,21 @@ def _make_request(temp_dir: Path, *, system_obj: System, samples_per_seed: int =
         options_obj=options_obj,
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(
+            repeat_id=1,
+            requested_base_seed=123,
+            resolved_base_seed=123,
+            derived_seed=123,
+            effective_seed=123,
+            origin=SeedOrigin.USER_SPECIFIED,
+        ),
+        backend_identity=RunnerBackendIdentity(
+            runner_name="openfold3",
+            backend_name="openfold3",
+            version="0.3.0",
+            version_status=BackendVersionStatus.DETECTED,
+            raw_version="0.3.0",
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -339,6 +362,9 @@ def test_openfold3_runner_prefers_ccd_over_smiles_in_query_json(monkeypatch, tem
     assert (result.normalized_dir / "artifacts" / "pae" / "system_seed_123_sample_2_pae.json").exists()
     assert bundle.metric_outcomes["confidence_metrics"].state == "computed"
     assert manifest["runtime_context"]["timing_path"].endswith("/seed_123/timing.json")
+    assert manifest["backend"]["version"] == "0.3.0"
+    assert manifest["seed"]["effective_seed"] == 123
+    assert manifest["seed"]["origin"] == "user_specified"
     assert "companion_artifacts" in manifest
     assert all(entry["label"] != "timing" for entry in manifest["companion_artifacts"])
 

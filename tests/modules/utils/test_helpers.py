@@ -1,10 +1,65 @@
 """Tests for cofolder.modules.utils.helpers module."""
 
-import pytest
 import pandas as pd
+import pytest
 from rdkit import Chem
 
+from cofolder.modules.contracts import SeedOrigin, SeedResolutionError
 from cofolder.modules.utils import helpers
+
+
+class TestSeedPlan:
+    def test_requested_seed_is_deterministic_and_distinct(self):
+        first = helpers.resolve_seed_plan(4, requested_base_seed=42)
+        second = helpers.resolve_seed_plan(4, requested_base_seed=42)
+
+        assert first == second
+        assert first.origin == SeedOrigin.USER_SPECIFIED
+        assert len({item.effective_seed for item in first.repeats}) == 4
+
+    def test_generated_seed_preserves_missing_request(self, monkeypatch):
+        monkeypatch.setattr(
+            "cofolder.modules.utils.helpers.random.randint", lambda a, b: 99
+        )
+
+        plan = helpers.resolve_seed_plan(1)
+
+        assert plan.requested_base_seed is None
+        assert plan.resolved_base_seed == 99
+        assert plan.origin == SeedOrigin.GENERATED
+        assert plan.repeats[0].effective_seed == 99
+
+    @pytest.mark.parametrize("seed", [True, -1, 2**32, 1.5, "42"])
+    def test_invalid_requested_seed_is_rejected(self, seed):
+        with pytest.raises(SeedResolutionError):
+            helpers.resolve_seed_plan(1, requested_base_seed=seed)
+
+    @pytest.mark.parametrize("seed", [0, 2**32 - 1])
+    def test_seed_boundaries_are_preserved_exactly(self, seed):
+        plan = helpers.resolve_seed_plan(1, requested_base_seed=seed)
+        assert plan.repeats[0].effective_seed == seed
+
+    def test_compatibility_wrapper_retains_tuple_shape(self):
+        base_seed, repeat_seeds = helpers.get_seeds(2, seed=7)
+        assert base_seed == 7
+        assert repeat_seeds == [
+            item.effective_seed
+            for item in helpers.resolve_seed_plan(2, requested_base_seed=7).repeats
+        ]
+
+    def test_duplicate_resolution_exhaustion_is_explicit(self, monkeypatch):
+        class DuplicateRandom:
+            def __init__(self, seed):
+                pass
+
+            def randint(self, lower, upper):
+                return 1
+
+        monkeypatch.setattr(
+            "cofolder.modules.utils.helpers.random.Random", DuplicateRandom
+        )
+        with pytest.raises(SeedResolutionError, match="distinct repeat seed"):
+            helpers.resolve_seed_plan(2, requested_base_seed=7)
 
 
 class TestCreateDir:

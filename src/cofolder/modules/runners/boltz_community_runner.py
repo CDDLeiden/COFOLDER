@@ -8,6 +8,8 @@ class BoltzCommunityRunner(BoltzRunner):
     """Runner for the community-maintained Boltz fork."""
 
     name = "boltz-community"
+    backend_name = "boltz-community"
+    backend_distribution = "boltz-community"
     capabilities = {
         "confidence_metrics",
         "affinity_metrics",
