@@ -340,35 +340,47 @@ def render_screen_ui():
         )
 
     with col2:
-        st.markdown('Input type: **CSV (SMILES)**')
+        library_format = st.selectbox(
+            'Library Format',
+            ['csv', 'sdf', 'mol'],
+            help='CSV uses SMILES columns; SDF/MOL use structure records.'
+        )
 
     # Input file configuration
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        variable_csv = st.text_input(
-            'CSV File Path',
+        library = st.text_input(
+            'Library File Path',
             value='./ligands.csv',
-            help='Path to the CSV ligand library'
+            help='Path to the CSV, SDF, or MOL ligand library'
         )
-        smiles_column = st.text_input(
-            'SMILES Column',
-            value='smiles',
-            help='Column containing ligand SMILES'
+        smiles_column = (
+            st.text_input(
+                'SMILES Column',
+                value='smiles',
+                help='Column containing ligand SMILES'
+            )
+            if library_format == 'csv'
+            else None
         )
 
     with col2:
-        col_id = st.text_input(
-            'ID Column' if input_type == 'CSV' else 'ID Property',
-            value='id',
-            help='Column/property name for compound IDs'
+        id_field = st.text_input(
+            'ID Column' if library_format == 'csv' else 'ID Property',
+            value='id' if library_format == 'csv' else '_Name',
+            help='Column/property name used for original compound IDs'
+        )
+        duplicate_id_policy = st.selectbox(
+            'Duplicate ID Policy',
+            ['reject', 'suffix', 'source_index'],
         )
 
     with col3:
         generate_conformers = st.selectbox(
             'Generate Conformers',
-            [None, '2D', '3D'],
-            help='Generate 2D or 3D conformers from SMILES'
+            [None, '2D', '3D', 'sdf'],
+            help='Use source coordinates or generate conformers'
         )
 
     # Additional columns to merge
@@ -397,8 +409,8 @@ def render_screen_ui():
     if st.button('▶️ Run Screening', use_container_width=True, type='primary'):
         run_screen(
             wrk_dir, system_path, options_path, ligand_chain,
-            variable_csv, smiles_column, col_id,
-            generate_conformers, merge_data, debug
+            library, library_format, smiles_column, id_field,
+            duplicate_id_policy, generate_conformers, merge_data, debug
         )
 
 
@@ -592,21 +604,26 @@ def run_validate(wrk_dir: str, system_path: str, options_path: str, debug: bool)
 
 
 def run_screen(wrk_dir: str, system_path: str, options_path: str, ligand_chain: str,
-               variable_csv: Optional[str], smiles_column: Optional[str], col_id: str,
-               generate_conformers: Optional[str], merge_data: Optional[str], debug: bool):
+               library: Optional[str], library_format: str,
+               smiles_column: Optional[str], id_field: str,
+               duplicate_id_policy: str, generate_conformers: Optional[str],
+               merge_data: Optional[str], debug: bool):
     """Run the screen workflow."""
     try:
-        if not all([system_path, options_path, ligand_chain, smiles_column, col_id]):
-            st.error('System, options, ligand chain, SMILES column, and ID column are required.')
+        if not all([system_path, options_path, ligand_chain, library, id_field]):
+            st.error('System, options, ligand chain, library, and ID field are required.')
+            return
+        if library_format == 'csv' and not smiles_column:
+            st.error('A SMILES column is required for CSV libraries.')
             return
 
         # Validate input files
-        if variable_csv and not os.path.exists(variable_csv):
-            st.error(f'CSV file not found: {variable_csv}')
+        if library and not os.path.exists(library):
+            st.error(f'Library file not found: {library}')
             return
 
-        if not variable_csv:
-            st.error('A CSV ligand library is required.')
+        if not library:
+            st.error('A compound library is required.')
             return
 
         # Save current options
@@ -628,15 +645,18 @@ def run_screen(wrk_dir: str, system_path: str, options_path: str, ligand_chain: 
             '-s', system_path,
             '-o', options_path,
             '--ligand_chain', ligand_chain,
-            '--smiles_column', smiles_column,
+            '--library_format', library_format,
+            '--duplicate_id_policy', duplicate_id_policy,
+            '-c', library,
         ]
 
-        if variable_csv:
-            cmd.extend(['-c', variable_csv])
-        cmd.extend(['--col_id', col_id])
+        if library_format == 'csv':
+            cmd.extend(['--smiles_column', smiles_column, '--col_id', id_field])
+        else:
+            cmd.extend(['--id_property', id_field])
 
         if generate_conformers:
-            cmd.extend(['--generate_conformers', generate_conformers])
+            cmd.extend(['--conformers', generate_conformers])
 
         if merge_data:
             cmd.extend(['--merge_data', merge_data])

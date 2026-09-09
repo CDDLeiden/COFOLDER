@@ -1797,7 +1797,7 @@ class TestValidateRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
         )

@@ -26,7 +26,7 @@ def _screen(
         system_path=str(sample_system_yaml),
         options_path=str(sample_options_yaml),
         ligand_chain=ligand_chain,
-        variable_csv=str(sample_csv_file),
+        library=str(sample_csv_file),
         smiles_column="smiles",
         col_id="compound_id",
         **kwargs,
@@ -64,7 +64,11 @@ def test_filter_accepts_rejects_returns_and_preserves_all_rows(
     temp_dir,
 ):
     def write_metrics(validator):
-        ifp = [1, 1, 0] if validator.wrk_dir.name.startswith("1_") else [0, 0, 1]
+        ifp = (
+            [1, 1, 0]
+            if validator.wrk_dir.name == "compound_000001"
+            else [0, 0, 1]
+        )
         _write_chain_metrics(validator, json.dumps(ifp))
 
     mock_validate_run.side_effect = write_metrics
@@ -371,7 +375,7 @@ def test_explicit_filter_chain_selects_one_of_multiple_ligands(
         system_path=str(system_path),
         options_path=str(sample_options_yaml),
         ligand_chain="C",
-        variable_csv=str(sample_csv_file),
+        library=str(sample_csv_file),
         smiles_column="smiles",
         col_id="compound_id",
         ifp_filter_threshold=0.5,

@@ -363,7 +363,7 @@ def _(
         wrk_dir=screen_dir,
         system_path=fixtures.system_screen_path,
         options_path=fixtures.options_path,
-        variable_csv=fixtures.ligand_csv_path,
+        library=fixtures.ligand_csv_path,
         scoring_functions=scoring,
     )
     screen_output = stream_cli_in_notebook(screen_command, workspace, env=env)

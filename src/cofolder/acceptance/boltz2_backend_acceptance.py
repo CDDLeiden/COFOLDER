@@ -273,7 +273,7 @@ def _(
         wrk_dir=screen_dir,
         system_path=fixtures.system_screen_path,
         options_path=fixtures.options_path,
-        variable_csv=fixtures.ligand_csv_path,
+        library=fixtures.ligand_csv_path,
         scoring_functions=scoring,
         protein_training_data_path=fixtures.protein_training_data_path,
         ligand_training_data_path=fixtures.ligand_training_data_path,

@@ -20,7 +20,7 @@ def _screen(system_path, options_path, csv_path, work_dir, **kwargs):
         system_path=str(system_path),
         options_path=str(options_path),
         ligand_chain=ligand_chain,
-        variable_csv=str(csv_path),
+        library=str(csv_path),
         smiles_column="smiles",
         col_id="compound_id",
         **kwargs,
@@ -53,17 +53,16 @@ def test_screen_clusters_valid_ifps_and_excludes_invalid_or_incompatible_rows(
         }
     ).to_csv(csv_path, index=False)
     values = {
-        "1_": "[1, 1, 0, 0]",
-        "2_": "[1, 0, 0, 0]",
-        "3_": "[0, 0, 1, 1]",
-        "4_": "[0, 0, 0, 0]",
-        "5_": "not-json",
-        "6_": "[1, 0, 0]",
+        "compound_000001": "[1, 1, 0, 0]",
+        "compound_000002": "[1, 0, 0, 0]",
+        "compound_000003": "[0, 0, 1, 1]",
+        "compound_000004": "[0, 0, 0, 0]",
+        "compound_000005": "not-json",
+        "compound_000006": "[1, 0, 0]",
     }
 
     def write_metrics(validator):
-        prefix = next(key for key in values if validator.wrk_dir.name.startswith(key))
-        _write_ifp(validator, values[prefix])
+        _write_ifp(validator, values[validator.wrk_dir.name])
 
     mock_validate_run.side_effect = write_metrics
     results = _screen(
@@ -116,7 +115,7 @@ def test_acceptance_screen_combines_filtering_clustering_and_returned_dataframe(
     values = ["[1, 1, 0]", "[1, 0, 0]", "[0, 0, 1]"]
 
     def write_metrics(validator):
-        position = int(validator.wrk_dir.name.split("_", 1)[0]) - 1
+        position = int(validator.wrk_dir.name.removeprefix("compound_")) - 1
         _write_ifp(validator, values[position])
 
     mock_validate_run.side_effect = write_metrics

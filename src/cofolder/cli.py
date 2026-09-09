@@ -141,8 +141,7 @@ class BaseRecipe:
             default=None,
             help=(
                 'Generate 2D or 3D conformers for CCD input, or use conformers '
-                'from an existing SDF file. '
-                'Only valid for SMILES-based inputs.'
+                'from an existing SDF file or the current Screen structure record.'
             )
         )
 
@@ -152,7 +151,7 @@ class BaseRecipe:
             default=None,
             help=(
                 'Path to an SDF file containing conformers to use. '
-                'Required if --conformers is set to "sdf".'
+                'Required for --conformers "sdf" except with Screen SDF/MOL libraries.'
             )
         )
 
@@ -371,7 +370,16 @@ class BaseRecipe:
             BaseRecipe._validate_existing_file_arg(args.sdf_file, '--sdf_file')
 
         # ---- conformer/sdf validation ----
-        if args.conformers == 'sdf' and args.sdf_file is None:
+        screen_library = getattr(args, 'library', None)
+        screen_library_format = getattr(args, 'library_format', None)
+        is_structure_library = bool(screen_library) and (
+            screen_library_format in {'sdf', 'mol'}
+            or (
+                screen_library_format is None
+                and Path(screen_library).suffix.lower() in {'.sdf', '.sd', '.mol'}
+            )
+        )
+        if args.conformers == 'sdf' and args.sdf_file is None and not is_structure_library:
             raise ValueError(
                 '--sdf_file must be provided when --conformers is "sdf"'
             )
@@ -510,10 +518,20 @@ class ScreenRecipe(BaseRecipe):
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
 
-        parser.add_argument('-c', '--variable_csv', type=str, required=True)
+        parser.add_argument('-c', '--library', type=str, required=True)
+        parser.add_argument(
+            '--library_format', choices=['csv', 'sdf', 'mol'], default=None,
+            help='Library format; inferred from the file extension when omitted.'
+        )
         parser.add_argument('--ligand_chain', type=str, required=True)
-        parser.add_argument('--smiles_column', type=str, required=True)
-        parser.add_argument('--col_id', type=str, required=True)
+        parser.add_argument('--smiles_column', type=str, default=None)
+        parser.add_argument('--col_id', type=str, default=None)
+        parser.add_argument('--id_property', type=str, default='_Name')
+        parser.add_argument(
+            '--duplicate_id_policy',
+            choices=['reject', 'suffix', 'source_index'],
+            default='reject',
+        )
 
         parser.add_argument(
             '--merge_data',
@@ -554,10 +572,13 @@ class ScreenRecipe(BaseRecipe):
 
         screen_cls = _load_recipe_class("cofolder.recipes.screen", "Screen")
         screener = screen_cls(
-            variable_csv=args.variable_csv,
+            library=args.library,
+            library_format=args.library_format,
             ligand_chain=args.ligand_chain,
             smiles_column=args.smiles_column,
             col_id=args.col_id,
+            id_property=args.id_property,
+            duplicate_id_policy=args.duplicate_id_policy,
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
             cluster_ifps=args.cluster_ifps,

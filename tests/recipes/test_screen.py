@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 import yaml
+from rdkit import Chem
 
 from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.modules.input.system import System
@@ -163,7 +164,7 @@ class TestScreenInit:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
         )
@@ -180,21 +181,21 @@ class TestScreenInit:
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
-                variable_csv=str(sample_csv_file),
+                library=str(sample_csv_file),
                 smiles_column="smiles",
                 col_id="compound_id",
             ).run()
 
-    def test_missing_variable_csv_raises(
+    def test_missing_library_raises(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(WorkflowExecutionError, match="--variable_csv is required"):
+        with pytest.raises(WorkflowExecutionError, match="--library is required"):
             Screen(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 ligand_chain="B",
-                variable_csv=None,
+                library=None,
                 smiles_column="smiles",
                 col_id="compound_id",
             ).run()
@@ -208,7 +209,7 @@ class TestScreenInit:
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 ligand_chain="B",
-                variable_csv=str(sample_csv_file),
+                library=str(sample_csv_file),
                 smiles_column="smiles",
                 col_id=None,
             ).run()
@@ -243,7 +244,7 @@ class TestScreenRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
             repeats=2,
@@ -259,7 +260,7 @@ class TestScreenRun:
                 (
                     temp_dir
                     / "screen"
-                    / f"{row_index}_{compound_id}"
+                    / f"compound_{row_index:06d}"
                     / "screen_system.yaml"
                 ).read_text(encoding="utf-8")
             )
@@ -304,7 +305,7 @@ class TestScreenRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
             scoring_functions=["confidence_metrics"],
@@ -313,7 +314,7 @@ class TestScreenRun:
 
         assert runner.msa_missing_at_run == [False, False]
         row_system = yaml.safe_load(
-            (temp_dir / "screen" / "1_CMPD001" / "screen_system.yaml").read_text(
+            (temp_dir / "screen" / "compound_000001" / "screen_system.yaml").read_text(
                 encoding="utf-8"
             )
         )
@@ -350,7 +351,7 @@ class TestScreenRun:
                 system_path=str(system_path),
                 options_path=str(sample_options_yaml),
                 ligand_chain="B",
-                variable_csv=str(sample_csv_file),
+                library=str(sample_csv_file),
                 smiles_column="smiles",
                 col_id="compound_id",
                 scoring_functions=["confidence_metrics"],
@@ -393,13 +394,13 @@ class TestScreenRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             ligand_chain="L",
-            variable_csv=str(csv_path),
+            library=str(csv_path),
             smiles_column="smiles",
             col_id="id",
         ).run()
 
         row_system = yaml.safe_load(
-            (temp_dir / "screen" / "1_one" / "screen_system.yaml").read_text(
+            (temp_dir / "screen" / "compound_000001" / "screen_system.yaml").read_text(
                 encoding="utf-8"
             )
         )
@@ -443,7 +444,7 @@ class TestScreenRun:
                 system_path=str(system_path),
                 options_path=str(sample_options_yaml),
                 ligand_chain="L",
-                variable_csv=str(csv_path),
+                library=str(csv_path),
                 smiles_column="smiles",
                 col_id="id",
             ).run()
@@ -468,7 +469,7 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
         )
@@ -505,7 +506,7 @@ class TestScreenRun:
                 options_path=str(sample_options_yaml),
                 runner="boltz-community",
                 ligand_chain="B",
-                variable_csv=str(sample_csv_file),
+                library=str(sample_csv_file),
                 smiles_column="smiles",
                 col_id="compound_id",
             )
@@ -534,7 +535,7 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(csv_path),
+            library=str(csv_path),
             smiles_column="smiles",
             col_id="compound_id",
         )
@@ -559,7 +560,7 @@ class TestScreenRun:
     ):
         input_df = pd.read_csv(sample_csv_file)
         for i, (_, in_row) in enumerate(input_df.iterrows(), 1):
-            run_dir = temp_dir / f"{i}_{in_row['compound_id']}"
+            run_dir = temp_dir / f"compound_{i:06d}"
             results_dir = run_dir / "results"
             results_dir.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(
@@ -612,7 +613,7 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
             merge_data="mw",
@@ -658,7 +659,7 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
             merge_data="mw",
@@ -708,14 +709,14 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(csv_path),
+            library=str(csv_path),
             smiles_column="smiles",
             col_id="compound_id",
         )
 
         screener.run()
 
-        run_system_yaml = temp_dir / "1_CMPD001" / "screen_system.yaml"
+        run_system_yaml = temp_dir / "compound_000001" / "screen_system.yaml"
         assert run_system_yaml.exists()
         data = yaml.safe_load(run_system_yaml.read_text(encoding="utf-8"))
         lig = data["sequences"][1]["ligand"]
@@ -742,7 +743,7 @@ class TestScreenRun:
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
             ligand_chain="B",
-            variable_csv=str(sample_csv_file),
+            library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
         )
@@ -757,3 +758,43 @@ class TestScreenRun:
         assert len(merged_df) == 2
         assert "failed" in set(merged_df["status"].tolist())
         assert "success" in set(merged_df["status"].tolist())
+
+    @patch("cofolder.recipes.screen.Validate.run")
+    def test_mixed_sdf_preserves_failures_and_source_mapping(
+        self,
+        mock_validate_run,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        sdf_path = temp_dir / "mixed.sdf"
+        molecule = Chem.MolFromSmiles("CCO")
+        molecule.SetProp("_Name", "valid")
+        sdf_path.write_text(
+            Chem.MolToMolBlock(molecule)
+            + "\n$$$$\n"
+            + "malformed record\n$$$$\n",
+            encoding="utf-8",
+        )
+
+        results = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            ligand_chain="B",
+            library=str(sdf_path),
+        ).run()
+
+        assert mock_validate_run.call_count == 1
+        assert results["status"].tolist() == ["success", "failed"]
+        assert results["execution_id"].tolist() == ["valid", "malformed record"]
+        assert (temp_dir / "screen" / "compound_000001" / "source_ligand.sdf").is_file()
+        members = pd.read_csv(temp_dir / "screen" / "results" / "compound_members.csv")
+        assert members["source_record_id"].tolist() == [
+            "record_000001",
+            "record_000002",
+        ]
+        assert members["status"].tolist() == ["success", "failed"]
+        failures = pd.read_csv(temp_dir / "screen" / "results" / "failures.csv")
+        assert failures["error_code"].tolist() == ["molblock_record_parse_failed"]
+        assert '"source_record_id": "record_000002"' in failures.loc[0, "details"]

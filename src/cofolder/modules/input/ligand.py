@@ -58,27 +58,60 @@ def validate_smiles(
     field_path: tuple[str | int, ...] = (),
 ) -> NormalizedLigand:
     text = str(smiles).strip() if smiles is not None else ""
-    chain_id = source.chain_ids[0] if source.chain_ids else None
     try:
         # Disable RDKit's implicit sanitization so parsing and sanitization each
         # happen exactly once at this shared boundary.
         mol = Chem.MolFromSmiles(text, sanitize=False) if text else None
         if mol is None:
             raise ValueError("RDKit could not parse the SMILES string")
-        Chem.SanitizeMol(mol)
     except Exception as exc:
         raise LigandValidationError(
             f"Invalid SMILES for ligand {source.entity_id}: {exc}",
             source_path=source_path,
             field_path=field_path,
             entity_id=source.entity_id,
-            chain_id=chain_id,
+            chain_id=source.chain_ids[0] if source.chain_ids else None,
+            source_record_id=source.source_record_id,
+        ) from exc
+    return validate_molecule(
+        mol,
+        source=source,
+        source_path=source_path,
+        field_path=field_path,
+        source_smiles=text,
+    )
+
+
+def validate_molecule(
+    molecule: Chem.Mol,
+    *,
+    source: LigandSourceIdentity,
+    source_path: Path | None = None,
+    field_path: tuple[str | int, ...] = (),
+    line: int | None = None,
+    source_smiles: str | None = None,
+) -> NormalizedLigand:
+    """Sanitize and normalize an already-parsed molecule at the shared boundary."""
+    mol = Chem.Mol(molecule)
+    try:
+        Chem.SanitizeMol(mol)
+        canonical_smiles = Chem.MolToSmiles(
+            mol, canonical=True, isomericSmiles=True
+        )
+    except Exception as exc:
+        raise LigandValidationError(
+            f"Invalid molecule for ligand {source.entity_id}: {exc}",
+            source_path=source_path,
+            field_path=field_path,
+            line=line,
+            entity_id=source.entity_id,
+            chain_id=source.chain_ids[0] if source.chain_ids else None,
             source_record_id=source.source_record_id,
         ) from exc
     return NormalizedLigand(
         source=source,
-        source_smiles=text,
-        canonical_smiles=Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True),
+        source_smiles=source_smiles if source_smiles is not None else canonical_smiles,
+        canonical_smiles=canonical_smiles,
         molecule=mol,
     )
 

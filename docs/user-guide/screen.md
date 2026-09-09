@@ -1,8 +1,8 @@
 # Screen Command
 
-The `screen` command runs **`validate` once per row** in a CSV file.
-For each row, it replaces the chemistry of one selected ligand entity, runs validation,
-and writes a screening summary file.
+The `screen` command runs **`validate` once per valid source record** in a CSV,
+SDF, or MOL library. Malformed structure records are retained as failures while
+valid records continue.
 
 ## Basic Usage
 
@@ -10,7 +10,7 @@ and writes a screening summary file.
 cofolder screen \
   -s system.yaml \
   -o options.yaml \
-  --variable_csv compounds.csv \
+  --library compounds.csv \
   --col_id compound_id \
   --ligand_chain B --smiles_column smiles
 ```
@@ -19,22 +19,27 @@ cofolder screen \
 
 - `-s, --system_path`: Path to system YAML file
 - `-o, --options_path`: Path to runner options YAML file
-- `-c, --variable_csv`: Path to CSV file
-- `--col_id`: Column containing row IDs
+- `-c, --library`: Path to a CSV, SDF, or MOL library
 - `--ligand_chain`: Existing ligand chain whose chemistry is replaced
-- `--smiles_column`: CSV column containing SMILES
+
+CSV libraries additionally require `--col_id` and `--smiles_column`. SDF/MOL
+libraries use `--id_property` (default `_Name`).
 
 ## Validation Rules
 
 1. `--ligand_chain` must resolve to exactly one ligand entity.
-2. `--col_id` and `--smiles_column` must exist in the CSV.
-3. Empty or invalid SMILES fail that row before runner execution.
+2. Every source record receives a stable one-based `record_NNNNNN` identity.
+3. Empty/invalid SMILES and malformed/unsanitizable molblocks fail only their record.
 4. Protein, nucleic-acid, constraint, metadata, and unrelated-ligand fields remain fixed.
 
 ## Optional Arguments
 
 - `-w, --wrk_dir`: Working directory
 - `--merge_data`: Comma-separated metadata columns copied into summary
+- `--library_format {csv,sdf,mol}`: Override extension-based format inference
+- `--duplicate_id_policy {reject,suffix,source_index}`: Resolve duplicate IDs
+  (`reject` by default)
+- `--id_property`: SDF/MOL identifier property (`_Name` by default)
 - All common validate options are supported and forwarded, including:
   - scoring functions
   - bias options (`--assess_bias`, `--bias_*`)
@@ -136,7 +141,8 @@ or settings-incompatible cached artifact is not silently injected.
 
 `screen` writes:
 
-- Per-row validate outputs under `<wrk_dir>/<index>_<id>/...`
+- Per-record validate outputs under `<wrk_dir>/compound_NNNNNN/...`
+- Source/execution provenance under `<wrk_dir>/results/compound_members.csv`
 - Canonical records: `<wrk_dir>/results/records.jsonl`
 - Long-form views: `<wrk_dir>/results/{successes,metrics,failures}.csv`
 - Manifest: `<wrk_dir>/results/manifest.json`

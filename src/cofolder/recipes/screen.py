@@ -1,4 +1,4 @@
-"""Screening workflow implemented as a Validate wrapper over CSV inputs."""
+"""Screening workflow over canonical CSV, SDF, and MOL library members."""
 
 from __future__ import annotations
 
@@ -44,11 +44,16 @@ from cofolder.modules.input import (
     load_yaml_document,
     system,
 )
+from cofolder.modules.input.compound_library import (
+    CompoundLibraryFormat,
+    CompoundMember,
+    CompoundMemberFailure,
+    DuplicateIdPolicy,
+    load_compound_library,
+)
 from cofolder.modules.input.ligand import (
-    LigandSourceIdentity,
     replace_ligand_smiles,
     resolve_ligand_target,
-    validate_smiles,
 )
 from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import get_runner
@@ -66,7 +71,7 @@ LIGAND_SCREEN_METRICS = SCREEN_METRIC_PROFILES["ligand"]
 
 
 class Screen:
-    """Run Validate for each CSV row and consolidate optional IFP analyses.
+    """Run Validate for each canonical library member and consolidate analyses.
 
     ``cluster_ifps`` applies deterministic average-linkage clustering to compatible
     binary distance IFPs after prediction. ``ifp_cluster_similarity_threshold`` is
@@ -81,10 +86,13 @@ class Screen:
         system_path: str,
         options_path: str,
         runner: str = "boltz2",
-        variable_csv: str | None = None,
+        library: str | None = None,
+        library_format: str | None = None,
         ligand_chain: str | None = None,
         smiles_column: str | None = None,
         col_id: str | None = None,
+        id_property: str = "_Name",
+        duplicate_id_policy: str = "reject",
         merge_data: str | None = None,
         repeats: int = 1,
         seed: int | None = None,
@@ -114,9 +122,16 @@ class Screen:
         self.run_id = str(uuid4())
 
         self.ligand_chain = str(ligand_chain).strip() if ligand_chain else ""
-        self.smiles_column = str(smiles_column).strip() if smiles_column else ""
-        self.col_id = col_id
-        self.variable_csv = Path(variable_csv) if variable_csv else None
+        self._smiles_column_configured = smiles_column is not None
+        self._col_id_configured = col_id is not None
+        self.smiles_column = str(smiles_column).strip() if smiles_column else "smiles"
+        self.col_id = str(col_id).strip() if col_id else "execution_id"
+        self.library = Path(library) if library else None
+        self.library_format = (
+            CompoundLibraryFormat(library_format) if library_format else None
+        )
+        self.id_property = str(id_property)
+        self.duplicate_id_policy = DuplicateIdPolicy(duplicate_id_policy)
         self.merge_data = self._parse_list(merge_data)
         self.ifp_filter_threshold = ifp_filter_threshold
         self.pocket_coverage_reference = pocket_coverage_reference
@@ -159,18 +174,37 @@ class Screen:
 
 
     def _validate_config(self) -> None:
-        if self.variable_csv is None:
-            raise ValueError("--variable_csv is required.")
-        if not self.variable_csv.exists():
-            raise ValueError(f"--variable_csv does not exist: {self.variable_csv}")
-        if not self.variable_csv.is_file():
-            raise ValueError(f"--variable_csv is not a file: {self.variable_csv}")
-        if self.col_id is None or not str(self.col_id).strip():
-            raise ValueError("--col_id is required.")
+        if self.library is None:
+            raise ValueError("--library is required.")
+        if not self.library.exists():
+            raise ValueError(f"--library does not exist: {self.library}")
+        if not self.library.is_file():
+            raise ValueError(f"--library is not a file: {self.library}")
         if not self.ligand_chain:
             raise ValueError("--ligand_chain is required.")
-        if not self.smiles_column:
-            raise ValueError("--smiles_column is required.")
+
+        inferred = self.library_format
+        if inferred is None:
+            inferred = {
+                ".csv": CompoundLibraryFormat.CSV,
+                ".sdf": CompoundLibraryFormat.SDF,
+                ".sd": CompoundLibraryFormat.SDF,
+                ".mol": CompoundLibraryFormat.MOL,
+            }.get(self.library.suffix.lower())
+        if inferred is CompoundLibraryFormat.CSV:
+            if not self._col_id_configured or not self.col_id:
+                raise ValueError("--col_id is required for CSV libraries.")
+            if not self._smiles_column_configured or not self.smiles_column:
+                raise ValueError("--smiles_column is required for CSV libraries.")
+        elif inferred in {CompoundLibraryFormat.SDF, CompoundLibraryFormat.MOL}:
+            if self._col_id_configured or self._smiles_column_configured:
+                raise ValueError(
+                    "--col_id and --smiles_column are only valid for CSV libraries."
+                )
+            if self.validate_kwargs.get("sdf_file") is not None:
+                raise ValueError(
+                    "--sdf_file cannot be combined with an SDF/MOL screening library."
+                )
 
         try:
             self.ifp_cluster_similarity_threshold = float(
@@ -311,42 +345,33 @@ class Screen:
         )
         if self.reusable_msa_dir is not None:
             self.msa_reuse_settings = self.runner_impl.msa_reuse_settings(options_obj)
-        df = pd.read_csv(self.variable_csv)
-        if df.empty:
-            raise ValueError("Screen input CSV must contain at least one compound row.")
-
-        required_cols = [self.col_id, self.smiles_column, *self.merge_data]
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            raise ValueError(f"CSV missing required columns: {', '.join(missing)}")
-        compound_ids = df[self.col_id].astype(str)
-        duplicates = sorted(compound_ids[compound_ids.duplicated()].unique())
-        if duplicates:
-            raise ValueError(
-                f"CSV column '{self.col_id}' contains duplicate compound IDs: "
-                f"{', '.join(duplicates)}"
-            )
-
         assert self.ligand_target is not None
-        normalized_ligands: dict[int, Any] = {}
-        ligand_errors: dict[int, Exception] = {}
-        for ordinal, (_, row) in enumerate(df.iterrows(), 1):
-            compound_id = str(row[self.col_id])
-            try:
-                normalized_ligands[ordinal] = validate_smiles(
-                    row[self.smiles_column],
-                    source=LigandSourceIdentity(
-                        entity_id=self.ligand_target.entity_id,
-                        chain_ids=self.ligand_target.chain_ids,
-                        source_record_id=compound_id,
-                    ),
-                    source_path=self.variable_csv,
-                    field_path=(ordinal, self.smiles_column),
+        assert self.library is not None
+        compound_library = load_compound_library(
+            self.library,
+            target=self.ligand_target,
+            source_format=self.library_format,
+            smiles_column=self.smiles_column,
+            id_column=self.col_id if self.col_id != "execution_id" else None,
+            id_property=self.id_property,
+            metadata_fields=self.merge_data,
+            duplicate_policy=self.duplicate_id_policy,
+        )
+        valid_members = [
+            outcome
+            for outcome in compound_library.outcomes
+            if isinstance(outcome, CompoundMember)
+        ]
+        if self.validate_kwargs.get("conformers") == "sdf":
+            if compound_library.source_format is CompoundLibraryFormat.CSV:
+                raise ValueError("--conformers sdf requires an SDF/MOL screening library.")
+            capabilities = self.runner_impl.ligand_preparation_capabilities
+            if "sdf" not in capabilities.conformer_modes:
+                raise ValueError(
+                    f"Runner '{self.runner}' does not support SDF ligand conformers."
                 )
-            except Exception as exc:
-                ligand_errors[ordinal] = exc
 
-        if normalized_ligands:
+        if valid_members:
             self._failure_stage = FailureStage.PREPARATION
             self.runner_impl.ensure_available()
             self._failure_stage = FailureStage.INPUT_VALIDATION
@@ -354,41 +379,59 @@ class Screen:
         records: list[dict[str, Any]] = []
         records_with_scores: list[dict[str, Any]] = []
         public_failures = []
-        total = len(df)
-        for i, (_, row) in enumerate(df.iterrows(), 1):
-            compound_id = str(row[self.col_id])
-            safe_id = self._safe_name(compound_id)
-            run_dir = self.wrk_dir / f"{i}_{safe_id}"
+        member_manifest: list[dict[str, Any]] = []
+        total = len(compound_library.outcomes)
+        for outcome in compound_library.outcomes:
+            source = outcome.source
+            i = source.source_record_index
+            compound_id = outcome.execution_id
+            run_dir = self.wrk_dir / outcome.execution_directory
             run_dir.mkdir(parents=True, exist_ok=True)
             row_system_path = run_dir / "screen_system.yaml"
 
             summary = {
                 "index": i,
                 self.col_id: compound_id,
+                "source_format": source.source_format.value,
+                "source_path": str(source.source_path),
+                "source_record_index": i,
+                "source_record_id": source.source_record_id,
+                "original_id": source.original_id,
+                "execution_id": compound_id,
+                "execution_directory": outcome.execution_directory,
                 "status": "success",
                 "error_message": "",
                 "run_dir": str(run_dir),
             }
             filter_result = self._default_filter_result()
             summary.update(filter_result)
-            detailed: dict[str, Any] = {k: row.get(k) for k in df.columns}
+            detailed: dict[str, Any] = dict(source.metadata)
             detailed.update(summary)
             self._ensure_screen_metric_schema(detailed)
             detailed.update(self._default_cluster_result())
             summary.update(self._default_cluster_result())
-            summary[self.smiles_column] = row.get(self.smiles_column)
+            summary[self.smiles_column] = (
+                outcome.ligand.source_smiles
+                if isinstance(outcome, CompoundMember)
+                else source.metadata.get(self.smiles_column)
+            )
             for col in self.merge_data:
-                summary[col] = row.get(col)
+                summary[col] = source.metadata.get(col)
 
             self.logger.info("(%d/%d) screening %s", i, total, compound_id)
 
             sys_obj: system.System | None = None
             row_stage = FailureStage.INPUT_VALIDATION
+            coordinate_mode = (
+                outcome.coordinate_mode
+                if isinstance(outcome, CompoundMember)
+                else None
+            )
             try:
                 assert self.ligand_target is not None
-                if i in ligand_errors:
-                    raise ligand_errors[i]
-                normalized_ligand = normalized_ligands[i]
+                if isinstance(outcome, CompoundMemberFailure):
+                    raise outcome.exception
+                normalized_ligand = outcome.ligand
                 sys_obj = replace_ligand_smiles(
                     self.base_system_obj,
                     target=self.ligand_target,
@@ -411,6 +454,28 @@ class Screen:
                 write.write_yaml(sys_obj, path=row_system_path)
 
                 row_validate_kwargs = dict(self.validate_kwargs)
+                if outcome.conformer_molblock is not None:
+                    source_sdf = run_dir / "source_ligand.sdf"
+                    source_sdf.write_text(
+                        outcome.conformer_molblock.rstrip() + "\n$$$$\n",
+                        encoding="utf-8",
+                    )
+                    requested_mode = row_validate_kwargs.get("conformers")
+                    supports_source = (
+                        "sdf"
+                        in self.runner_impl.ligand_preparation_capabilities.conformer_modes
+                    )
+                    if requested_mode in {"2D", "3D"}:
+                        coordinate_mode = "generated"
+                        row_validate_kwargs["sdf_file"] = None
+                    elif supports_source:
+                        coordinate_mode = "source"
+                        row_validate_kwargs["conformers"] = "sdf"
+                        row_validate_kwargs["sdf_file"] = str(source_sdf)
+                    else:
+                        coordinate_mode = "native_smiles"
+                        row_validate_kwargs["conformers"] = None
+                        row_validate_kwargs["sdf_file"] = None
                 if row_validate_kwargs.get("assess_bias") and row_validate_kwargs.get(
                     "build_bias_training_data"
                 ):
@@ -472,7 +537,7 @@ class Screen:
                     summary.update(filter_result)
                     detailed.update(filter_result)
                 self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
-                source_exc = exc.__cause__ or exc
+                source_exc = exc if isinstance(outcome, CompoundMemberFailure) else exc.__cause__ or exc
                 if isinstance(exc, WorkflowExecutionError) and exc.failures:
                     row_stage = exc.failures[0].stage
                 public_failures.append(
@@ -489,12 +554,42 @@ class Screen:
                         error_code=getattr(
                             source_exc, "error_code", "screen_compound_failed"
                         ),
-                        details={"row_index": i},
+                        details={
+                            "row_index": i,
+                            "source_format": source.source_format.value,
+                            "source_path": str(source.source_path),
+                            "source_record_index": i,
+                            "source_record_id": source.source_record_id,
+                            "original_id": source.original_id,
+                            "execution_id": compound_id,
+                            "execution_directory": outcome.execution_directory,
+                        },
                     )
                 )
 
+            detailed["coordinate_mode"] = coordinate_mode
+            summary["coordinate_mode"] = coordinate_mode
             records.append(summary)
             records_with_scores.append(detailed)
+            member_manifest.append(
+                {
+                    "source_format": source.source_format.value,
+                    "source_path": str(source.source_path),
+                    "source_record_index": i,
+                    "source_record_id": source.source_record_id,
+                    "original_id": source.original_id,
+                    "execution_id": compound_id,
+                    "execution_directory": outcome.execution_directory,
+                    "coordinate_mode": coordinate_mode,
+                    "status": summary["status"],
+                    "error_code": (
+                        public_failures[-1].error_code
+                        if summary["status"] == "failed"
+                        else ""
+                    ),
+                    "error_message": summary["error_message"],
+                }
+            )
 
         summary_df = pd.DataFrame(records)
         results_df = pd.DataFrame(records_with_scores)
@@ -502,6 +597,15 @@ class Screen:
 
         self._set_filter_dtypes(summary_df)
         self._set_filter_dtypes(results_df)
+        results_dir = self.wrk_dir / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        members_path = results_dir / "compound_members.csv"
+        temporary_members_path = results_dir / f".{members_path.name}.{uuid4().hex}.tmp"
+        try:
+            pd.DataFrame(member_manifest).to_csv(temporary_members_path, index=False)
+            temporary_members_path.replace(members_path)
+        finally:
+            temporary_members_path.unlink(missing_ok=True)
         has_success = self._write_public_results(results_df, public_failures)
 
         failures = sum(1 for r in records if r["status"] == "failed")
@@ -626,13 +730,23 @@ class Screen:
                 requested_metrics=tuple(sorted(requested)),
                 artifacts=(
                     ArtifactReference(
-                        "ifp_cluster_summary",
-                        "ifp_cluster_summary.csv",
+                        "compound_members",
+                        "compound_members.csv",
                         "table",
+                        "Stable source-record to execution-member mapping.",
                     ),
-                )
-                if self.cluster_ifps
-                else (),
+                    *(
+                        (
+                            ArtifactReference(
+                                "ifp_cluster_summary",
+                                "ifp_cluster_summary.csv",
+                                "table",
+                            ),
+                        )
+                        if self.cluster_ifps
+                        else ()
+                    ),
+                ),
             ),
             records=tuple(public_records),
         )

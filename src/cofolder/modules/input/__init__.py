@@ -3,8 +3,8 @@ from cofolder.modules.input.config import (
     LigandSelectionError,
     LigandValidationError,
     MsaValidationError,
-    OptionsValidationError,
     OptionField,
+    OptionsValidationError,
     RunnerOptions,
     RunnerOptionsSchema,
     RunnerRuntimeOptions,
@@ -24,6 +24,7 @@ from cofolder.modules.input.ligand import (
     prepare_ligand,
     replace_ligand_smiles,
     resolve_ligand_target,
+    validate_molecule,
     validate_smiles,
 )
 from cofolder.modules.input.validation import (
@@ -35,19 +36,19 @@ from cofolder.modules.input.validation import (
 
 __all__ = [
     "InputValidationError",
-    "LigandSelectionError",
     "LigandPreparationCapabilities",
+    "LigandSelectionError",
     "LigandSourceIdentity",
     "LigandTarget",
     "LigandValidationError",
     "MsaValidationError",
-    "OptionsValidationError",
     "NormalizedLigand",
     "OptionField",
+    "OptionsValidationError",
+    "PreparedLigand",
     "RunnerOptions",
     "RunnerOptionsSchema",
     "RunnerRuntimeOptions",
-    "PreparedLigand",
     "SequenceValidationError",
     "SystemInputValidationError",
     "ValidatedEntity",
@@ -60,6 +61,7 @@ __all__ = [
     "prepare_ligand",
     "replace_ligand_smiles",
     "resolve_ligand_target",
+    "validate_molecule",
     "validate_smiles",
     "validate_system_input",
 ]

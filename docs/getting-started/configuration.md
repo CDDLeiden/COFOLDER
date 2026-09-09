@@ -179,13 +179,19 @@ Generate conformers for SMILES input:
 - `3D`: Generate 3D conformers using ETKDG + UFF
 - `sdf`: Reuse conformers from an input SDF file (requires `--sdf_file`)
 
+For `screen`, SDF/MOL libraries provide per-record source conformers directly;
+`--sdf_file` is therefore not used with structure libraries.
+
 ### Screen-Specific Options
 
 ```bash
--c, --variable_csv compounds.csv
+-c, --library compounds.csv
+--library_format {csv,sdf,mol} # Optional; inferred by extension
 --ligand_chain B
 --smiles_column smiles
 --col_id compound_id
+--id_property _Name            # SDF/MOL identifier property
+--duplicate_id_policy reject   # reject, suffix, or source_index
 ```
 
 ### Validate-Specific Options

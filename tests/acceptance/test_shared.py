@@ -212,7 +212,7 @@ class TestCommandBuilders:
             wrk_dir=temp_dir / "screen",
             system_path=temp_dir / "system_screen.yaml",
             options_path=temp_dir / "options.yaml",
-            variable_csv=temp_dir / "ligands.csv",
+            library=temp_dir / "ligands.csv",
             scoring_functions=["confidence_metrics"],
             protein_training_data_path=protein_training,
             ligand_training_data_path=ligand_training,

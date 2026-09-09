@@ -4,26 +4,29 @@ This module provides utilities for processing molecular structures, generating
 conformers, and managing the Chemical Component Dictionary (CCD) cache used
 by Boltz for ligand predictions.
 """
+import fcntl
+import hashlib
+import json
+import logging
 import os
 import pickle
-import logging
-import json
-import hashlib
-import fcntl
 from collections import Counter
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union, List
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
 from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
 
-from cofolder.modules.input import command
 from cofolder.modules.entities import ligand
+from cofolder.modules.input import command
 from cofolder.modules.utils import read, write
 
-import logging
+if TYPE_CHECKING:
+    from cofolder.modules.input.ligand import LigandSourceIdentity, NormalizedLigand
 
 logger = logging.getLogger(__name__)
 
@@ -387,28 +390,129 @@ def generate_3d_conformers(sdf_in: str, sdf_out: Optional[str] = None):
     write.write_sdf(mols_3d, sdf_out)
     logger.info(f"Generated 3D conformers in {sdf_out}")
 
+@dataclass(frozen=True, slots=True)
+class RawMolblockRecord:
+    index: int
+    source_record_id: str
+    molblock: str
+    title: str | None
+    properties: Mapping[str, str]
+    first_line: int
+
+
+def _raw_molblock_record(text: str, *, index: int, first_line: int) -> RawMolblockRecord:
+    import re
+
+    lines = text.splitlines()
+    title = lines[0].strip() if lines and lines[0].strip() else None
+    properties: dict[str, str] = {}
+    property_header = re.compile(r"^>\s*<([^>]+)>")
+    position = 0
+    while position < len(lines):
+        match = property_header.match(lines[position].strip())
+        if match:
+            position += 1
+            values: list[str] = []
+            while position < len(lines) and lines[position].strip():
+                values.append(lines[position])
+                position += 1
+            properties[match.group(1)] = "\n".join(values).strip()
+        position += 1
+    return RawMolblockRecord(
+        index=index,
+        source_record_id=f"record_{index:06d}",
+        molblock=text.rstrip("\r\n"),
+        title=title,
+        properties=properties,
+        first_line=first_line,
+    )
+
+
+def iter_sdf_records(path: str | Path) -> Iterator[RawMolblockRecord]:
+    """Yield every delimiter-defined SDF record without asking RDKit to filter it."""
+    lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    buffered: list[str] = []
+    first_line = 1
+    index = 0
+    for line_number, line in enumerate(lines, 1):
+        if line.strip() == "$$$$":
+            index += 1
+            yield _raw_molblock_record(
+                "".join(buffered), index=index, first_line=first_line
+            )
+            buffered = []
+            first_line = line_number + 1
+        else:
+            buffered.append(line)
+    if "".join(buffered).strip():
+        index += 1
+        yield _raw_molblock_record(
+            "".join(buffered), index=index, first_line=first_line
+        )
+
+
+def read_molblock_record(path: str | Path) -> RawMolblockRecord:
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    return _raw_molblock_record(text, index=1, first_line=1)
+
+
+def parse_molblock(
+    record: RawMolblockRecord,
+    *,
+    source: "LigandSourceIdentity",
+    source_path: str | Path,
+) -> "NormalizedLigand":
+    """Parse one raw molblock, preserving parse and sanitization as separate failures."""
+    from cofolder.modules.input.compound_library import MolblockRecordParseError
+    from cofolder.modules.input.ligand import validate_molecule
+
+    structure_lines: list[str] = []
+    for line in record.molblock.splitlines():
+        structure_lines.append(line)
+        if line.startswith("M  END"):
+            break
+    structure = "\n".join(structure_lines)
+    try:
+        mol = Chem.MolFromMolBlock(
+            structure, sanitize=False, removeHs=False, strictParsing=True
+        )
+    except Exception as exc:
+        mol = None
+        parse_exc = exc
+    else:
+        parse_exc = None
+    if mol is None:
+        raise MolblockRecordParseError(
+            f"RDKit could not parse molblock record {record.source_record_id}.",
+            source_path=source_path,
+            field_path=(record.index,),
+            line=record.first_line,
+            entity_id=source.entity_id,
+            chain_id=source.chain_ids[0] if source.chain_ids else None,
+            source_record_id=source.source_record_id,
+        ) from parse_exc
+    return validate_molecule(
+        mol,
+        source=source,
+        source_path=Path(source_path),
+        field_path=(record.index,),
+        line=record.first_line,
+    )
+
+
 def iterate_sdf_records(sdf_path: str, id_property: str):
-    """
-    Yield (index, id, molblock) for each valid molecule in the SDF file.
-
-    Parameters
-    ----------
-    sdf_path : str
-        Path to the SDF file.
-    id_property : str
-        Property name to use as molecule ID.
-
-    Yields
-    ------
-    tuple
-        (index, id, molblock) for each valid molecule.
-    """
-    suppl = read.read_sdf(sdf_path)
-    for i, mol in enumerate(suppl, 1):
-        if mol is None:
-            continue
-        mol_id = mol.GetProp(id_property) if mol.HasProp(id_property) else f"mol_{i}"
-        yield i, mol_id, Chem.MolToMolBlock(mol)
+    """Compatibility iterator that now retains record indexes while yielding valid molblocks."""
+    for record in iter_sdf_records(sdf_path):
+        source_id = record.title if id_property == "_Name" else record.properties.get(id_property)
+        mol_id = source_id or f"mol_{record.index}"
+        try:
+            mol = Chem.MolFromMolBlock(record.molblock, removeHs=False)
+        except Exception:
+            mol = None
+        if mol is not None:
+            yield record.index, mol_id, Chem.MolToMolBlock(mol)
 
 def smiles_to_sdf(
     data: Union[str, List[str]],
