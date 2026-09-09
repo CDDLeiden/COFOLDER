@@ -1,26 +1,37 @@
 # Standard library
+import importlib
 import json
 import logging
-from pathlib import Path
-import pickle
 import re
-import importlib
+from pathlib import Path
+
+import gemmi
 
 # Third-party libraries
 import numpy as np
 import pandas as pd
-import gemmi
-from rdkit import Chem
-from rdkit.Chem import AllChem
 
 # Project-specific / external tools
 from Bio.PDB import MMCIFParser
 from Bio.PDB.SASA import ShrakeRupley
-import MDAnalysis as mda
-import prolif as plf
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+from cofolder.modules.analytics.reference_ifp import (
+    IFPExtractionConfig,
+    IFPTaxonomy,
+    LigandSelector,
+    ReferenceIFPError,
+    extract_interaction_fingerprint,
+)
 
 # Logger
 logger = logging.getLogger(__name__)
+
+
+def _load_prolif_dependencies():
+    """Load ProLIF helpers only for explicitly requested legacy operations."""
+    return importlib.import_module("MDAnalysis"), importlib.import_module("prolif")
 
 
 def _run_pdb2pqr(args: list[str]) -> None:
@@ -225,6 +236,7 @@ class Structure:
         self,
         cutoff: float = 5.0,
         column_name: str = "ifp_distance",
+        feature_column_name: str = "ifp_distance_features",
     ) -> pd.DataFrame:
         """
         Add distance-based interaction fingerprints to chain_df.
@@ -238,10 +250,13 @@ class Structure:
                 "Skipping interaction fingerprints: invalid receptor definition."
             )
             self.chain_df[column_name] = None
+            self.chain_df[feature_column_name] = None
             return self.chain_df
 
         if column_name not in self.chain_df.columns:
             self.chain_df[column_name] = None
+        if feature_column_name not in self.chain_df.columns:
+            self.chain_df[feature_column_name] = None
 
         for idx, row in self.chain_df.iterrows():
             if row[self.entity_type_col] != "ligand":
@@ -260,12 +275,26 @@ class Structure:
             )
 
             self.chain_df.at[idx, column_name] = fingerprint
+            try:
+                normalized = extract_interaction_fingerprint(
+                    cif_path,
+                    ligand=LigandSelector(chain_id=str(row[self.chain_id_col])),
+                    receptor_chains=(self.receptor_chain_id,),
+                    config=IFPExtractionConfig(distance_cutoff_angstrom=cutoff),
+                )
+                self.chain_df.at[idx, feature_column_name] = json.dumps(
+                    normalized.serialized_interactions()
+                )
+            except (ReferenceIFPError, OSError, RuntimeError, KeyError, IndexError) as exc:
+                logger.warning("Normalized distance IFP extraction failed for %s: %s", cif_path, exc)
+                self.chain_df.at[idx, feature_column_name] = json.dumps([])
 
         return self.chain_df
 
     def add_ifp_prolif(
         self,
         column_name: str = "ifp_prolif",
+        feature_column_name: str = "ifp_prolif_features",
         save_folder: Path = Path("results/ifp/prolif"),
     ) -> pd.DataFrame:
         """
@@ -277,7 +306,8 @@ class Structure:
         """
         save_folder = self.wrk_dir / save_folder
         save_folder.mkdir(parents=True, exist_ok=True)
-
+        if feature_column_name not in self.chain_df.columns:
+            self.chain_df[feature_column_name] = None
         for idx, row in self.chain_df.iterrows():
             if row[self.entity_type_col] != "ligand":
                 continue
@@ -287,71 +317,21 @@ class Structure:
                 logger.warning("Missing CIF file: %s", cif_path)
                 continue
 
-            # Deterministic pickle name
-            pickle_name = f"{cif_path.stem}_ligand_chain_{row[self.chain_id_col]}_ifp.pkl"
-            pickle_path = save_folder / pickle_name
-
-            # ---- EARLY EXIT UNLESS OVERWRITE ----
-            if pickle_path.exists():
-                logger.info("IFP exists, skipping (overwrite=False): %s", pickle_path)
-                self.chain_df.at[idx, column_name] = pickle_name
-                continue
-
-            # Step 1: CIF -> PDB
-            pdb_file = self.cif_to_pdb(
-                cif_file=cif_path,
-                output_folder=self.wrk_dir / "results/structures/pdb"
+            fingerprint = extract_interaction_fingerprint(
+                cif_path,
+                ligand=LigandSelector(chain_id=str(row[self.chain_id_col])),
+                receptor_chains=(self.receptor_chain_id,),
+                config=IFPExtractionConfig(taxonomy=IFPTaxonomy.PROLIF),
             )
-
-            # Step 2: Split PDB
-            split_files = self.split_pdb(
-                pdb_file=pdb_file,
-                chain_id=row[self.chain_id_col],
-                output_folder=self.wrk_dir / "results/structures/pdb"
+            serialized = fingerprint.serialized_interactions()
+            artifact_name = (
+                f"{cif_path.stem}_ligand_chain_{row[self.chain_id_col]}_ifp.json"
             )
-
-            protein_file = Path(split_files.get("protein"))
-            ligand_file = Path(split_files.get("ligand"))
-
-            # ---- Load protein ----
-            u_protein = mda.Universe(str(protein_file))
-            u_protein = self._sanitize_protein(u_protein)
-            protein_mol = plf.Molecule.from_mda(u_protein)
-
-            logger.info(
-                "Protein loaded: %s | residues=%d | atoms=%d",
-                protein_file,
-                protein_mol.n_residues,
-                protein_mol.GetNumAtoms(),
+            (save_folder / artifact_name).write_text(
+                json.dumps(serialized, indent=2) + "\n", encoding="utf-8"
             )
-
-            # ---- Load ligand ----
-            u_ligand = mda.Universe(str(ligand_file))
-            ligand_mol = plf.Molecule.from_mda(u_ligand)
-
-            logger.info(
-                "Ligand loaded: %s | residues=%d | atoms=%d",
-                ligand_file,
-                ligand_mol.n_residues,
-                ligand_mol.GetNumAtoms(),
-            )
-
-            # ---- Generate ProLIF fingerprints ----
-            fp = plf.Fingerprint()
-            ifp = fp.generate(ligand_mol, protein_mol, metadata=True)
-            df = plf.to_dataframe({0: ifp}, fp.interactions)
-            logger.info("ProLIF fingerprint matrix:\n%s", df.T)
-
-            # ---- Save IFP pickle ----
-            pickle_name = ligand_file.stem + "_ifp.pkl"
-            pickle_path = save_folder / pickle_name
-
-            with open(pickle_path, "wb") as f:
-                pickle.dump(ifp, f)
-
-            logger.info("IFP saved to %s", pickle_path)
-
-            self.chain_df.at[idx, column_name] = pickle_name
+            self.chain_df.at[idx, column_name] = artifact_name
+            self.chain_df.at[idx, feature_column_name] = json.dumps(serialized)
 
         return self.chain_df
         
@@ -397,43 +377,25 @@ class Structure:
         str
             JSON-serialized list of 0/1 values (CSV-safe).
         """
-        structure = gemmi.read_structure(str(cif_path))
-        model = structure[0]
-
         try:
-            chain_rec = model[receptor_chain]
-            chain_lig = model[ligand_chain]
-        except KeyError:
-            logger.warning(
-                "Missing receptor (%s) or ligand (%s) chain in CIF: %s",
-                receptor_chain,
-                ligand_chain,
+            fingerprint = extract_interaction_fingerprint(
                 cif_path,
+                ligand=LigandSelector(chain_id=ligand_chain),
+                receptor_chains=(receptor_chain,),
+                config=IFPExtractionConfig(distance_cutoff_angstrom=cutoff),
             )
+            active = {
+                (item.receptor.residue_number, item.receptor.insertion_code)
+                for item in fingerprint.interactions
+            }
+            model = gemmi.read_structure(str(cif_path))[0]
+            return json.dumps([
+                int((int(res.seqid.num), str(res.seqid.icode).strip()) in active)
+                for res in model[receptor_chain]
+            ])
+        except (ReferenceIFPError, OSError, RuntimeError, KeyError, IndexError) as exc:
+            logger.warning("Distance IFP extraction failed for %s: %s", cif_path, exc)
             return json.dumps([])
-
-        rec_residues = list(chain_rec)
-        lig_atoms = [
-            atom
-            for res in chain_lig
-            for atom in res
-            if atom.element.name != "H"
-        ]
-
-        bitvector = np.zeros(len(rec_residues), dtype=int)
-
-        for i, res in enumerate(rec_residues):
-            rec_atoms = [atom for atom in res if atom.element.name != "H"]
-
-            for ra in rec_atoms:
-                for la in lig_atoms:
-                    if ra.pos.dist(la.pos) <= cutoff:
-                        bitvector[i] = 1
-                        break
-                if bitvector[i]:
-                    break
-
-        return json.dumps(bitvector.tolist())
 
     def cif_to_pdb(self, cif_file: Path, output_folder: Path) -> Path | None:
         """
@@ -478,6 +440,7 @@ class Structure:
         Returns:
             dict with keys 'protein' and 'ligand' and their PDB paths.
         """
+        mda, _ = _load_prolif_dependencies()
         output_folder.mkdir(parents=True, exist_ok=True)
         universe = mda.Universe(str(pdb_file))
 
@@ -565,6 +528,7 @@ class Structure:
         No additional RDKit/plf calls are made inside the loop.
         Atom indices remain stable by using a persistent mask.
         """
+        mda, plf = _load_prolif_dependencies()
         n_atoms = len(u_protein.atoms)
         keep_mask = np.ones(n_atoms, dtype=bool)
 
@@ -635,9 +599,7 @@ class Structure:
                     target_ag = u_protein.atoms[target_atom.index : target_atom.index + 1]
 
                     attached_hs = u_protein.select_atoms(
-                        "resid {} and name H* and around 1.2 group target_ag".format(
-                            target_atom.resid
-                        ),
+                        f"resid {target_atom.resid} and name H* and around 1.2 group target_ag",
                         target_ag=target_ag,
                     )
 

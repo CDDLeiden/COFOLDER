@@ -11,6 +11,8 @@ import pandas as pd
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import cdist, pdist
 
+from .reference_ifp import InteractionFingerprint, InteractionKey
+
 
 @dataclass(frozen=True)
 class IFPClusteringResult:
@@ -18,6 +20,14 @@ class IFPClusteringResult:
 
     cluster_ids: list[str]
     summary: pd.DataFrame
+
+
+@dataclass(frozen=True)
+class IFPVectorizationResult:
+    """Binary matrix and stable feature order used for structured IFP clustering."""
+
+    vectors: list[list[int]]
+    features: tuple[InteractionKey, ...]
 
 
 SUMMARY_COLUMNS = (
@@ -102,6 +112,50 @@ def cluster_binary_ifps(
     return IFPClusteringResult(
         cluster_ids=cluster_ids,
         summary=pd.DataFrame(rows, columns=SUMMARY_COLUMNS),
+    )
+
+
+def vectorize_interaction_fingerprints(
+    fingerprints: Sequence[InteractionFingerprint],
+    *,
+    feature_universe: Sequence[InteractionKey] | None = None,
+) -> IFPVectorizationResult:
+    """Vectorize compatible typed fingerprints using canonical feature ordering."""
+
+    if not fingerprints:
+        return IFPVectorizationResult([], tuple(sorted(feature_universe or ())))
+    taxonomies = {item.taxonomy for item in fingerprints}
+    if len(taxonomies) != 1:
+        raise ValueError("fingerprints must use one interaction taxonomy")
+    features = tuple(sorted(
+        set(feature_universe or ())
+        | {feature for fingerprint in fingerprints for feature in fingerprint.interactions}
+    ))
+    if not features:
+        # Preserve a meaningful all-zero dimension for no-contact fingerprints.
+        sentinel = InteractionKey.parse("_:0:no_interactions")
+        features = (sentinel,)
+    vectors = [
+        [int(feature in fingerprint.interactions) for feature in features]
+        for fingerprint in fingerprints
+    ]
+    return IFPVectorizationResult(vectors, features)
+
+
+def cluster_interaction_fingerprints(
+    fingerprints: Sequence[InteractionFingerprint],
+    member_ids: Sequence[str],
+    *,
+    similarity_threshold: float,
+    feature_universe: Sequence[InteractionKey] | None = None,
+) -> IFPClusteringResult:
+    """Cluster typed fingerprints through their deterministic binary matrix."""
+
+    vectorized = vectorize_interaction_fingerprints(
+        fingerprints, feature_universe=feature_universe
+    )
+    return cluster_binary_ifps(
+        vectorized.vectors, member_ids, similarity_threshold=similarity_threshold
     )
 
 

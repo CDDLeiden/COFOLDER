@@ -548,6 +548,47 @@ class ScreenRecipe(BaseRecipe):
             ),
         )
         parser.add_argument(
+            "--ifp_filter_source",
+            choices=["auto", "reference_complex", "custom_pocket"],
+            default="auto",
+            help="Source for IFP filtering (default: infer custom pocket first, then reference complex).",
+        )
+        parser.add_argument(
+            "--ifp_taxonomy",
+            choices=["distance", "prolif"],
+            default="distance",
+            help="Interaction taxonomy for filtering and clustering; ProLIF is opt-in and isolated.",
+        )
+        parser.add_argument(
+            "--ifp_similarity_metric",
+            choices=["jaccard", "reference_coverage"],
+            default=None,
+        )
+        parser.add_argument(
+            "--ifp_filter_policy",
+            choices=["similarity", "required"],
+            default="similarity",
+        )
+        parser.add_argument(
+            "--ifp_required_interaction",
+            dest="ifp_required_interactions",
+            action="append",
+            default=None,
+            metavar="CHAIN:RESNUM[ICODE]:TYPE",
+        )
+        parser.add_argument(
+            "--ifp_reference_ligand",
+            default=None,
+            metavar="CHAIN[:RESNUM[ICODE]]",
+        )
+        parser.add_argument(
+            "--ifp_reference_receptor_chain",
+            dest="ifp_reference_receptor_chains",
+            action="append",
+            default=None,
+            metavar="CHAIN",
+        )
+        parser.add_argument(
             "--cluster_ifps",
             action="store_true",
             default=False,
@@ -581,6 +622,13 @@ class ScreenRecipe(BaseRecipe):
             duplicate_id_policy=args.duplicate_id_policy,
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
+            ifp_filter_source=args.ifp_filter_source,
+            ifp_taxonomy=args.ifp_taxonomy,
+            ifp_similarity_metric=args.ifp_similarity_metric,
+            ifp_filter_policy=args.ifp_filter_policy,
+            ifp_required_interactions=args.ifp_required_interactions,
+            ifp_reference_ligand=args.ifp_reference_ligand,
+            ifp_reference_receptor_chains=args.ifp_reference_receptor_chains,
             cluster_ifps=args.cluster_ifps,
             ifp_cluster_similarity_threshold=args.ifp_cluster_similarity_threshold,
             **BaseRecipe.common_kwargs(args),

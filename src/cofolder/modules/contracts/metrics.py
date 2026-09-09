@@ -216,7 +216,21 @@ _DEFINITIONS = [
         scopes=("chain",),
     ),
     _metric(
+        "ifp_distance_features",
+        "structure_metrics",
+        MetricClass.STRUCTURAL,
+        value_type="json",
+        scopes=("chain",),
+    ),
+    _metric(
         "ifp_prolif",
+        "structure_metrics",
+        MetricClass.STRUCTURAL,
+        value_type="json",
+        scopes=("chain",),
+    ),
+    _metric(
+        "ifp_prolif_features",
         "structure_metrics",
         MetricClass.STRUCTURAL,
         value_type="json",
@@ -309,9 +323,13 @@ for name in ("bias_lig_sim_train", "bias_lig_sim_train_max"):
             evidence=RF,
         )
     )
+IFP_FILTER_EVIDENCE = frozenset(
+    {EvidenceRegime.REFERENCE_STRUCTURE, EvidenceRegime.CUSTOM_POCKET}
+)
 for name, value_type in (
     ("ifp_filter_pass", "boolean"),
     ("ifp_filter_overlap", "float"),
+    ("ifp_filter_similarity", "float"),
     ("ifp_filter_threshold", "float"),
 ):
     _DEFINITIONS.append(
@@ -320,18 +338,26 @@ for name, value_type in (
             "screen_metrics",
             MetricClass.FILTER,
             value_type=value_type,
-            direction=OptimizationDirection.NEUTRAL,
+            direction=(
+                OptimizationDirection.MAXIMIZE
+                if name in {"ifp_filter_overlap", "ifp_filter_similarity"}
+                else OptimizationDirection.NEUTRAL
+            ),
             valid_range=UNIT_INTERVAL
             if "overlap" in name or "threshold" in name
             else None,
             scopes=("compound",),
-            evidence=POCKET,
+            evidence=IFP_FILTER_EVIDENCE,
         )
     )
 for name in (
     "ifp_filter_status",
     "ifp_filter_reason",
     "ifp_filter_reference",
+    "ifp_filter_similarity_metric",
+    "ifp_filter_policy",
+    "ifp_filter_taxonomy",
+    "ifp_filter_mapping_status",
 ):
     _DEFINITIONS.append(
         _metric(
@@ -340,7 +366,22 @@ for name in (
             MetricClass.FILTER,
             value_type="string",
             scopes=("compound",),
-            evidence=POCKET,
+            evidence=IFP_FILTER_EVIDENCE,
+        )
+    )
+for name in (
+    "ifp_filter_required_interactions",
+    "ifp_filter_missing_interactions",
+    "ifp_filter_mapping_failures",
+):
+    _DEFINITIONS.append(
+        _metric(
+            name,
+            "screen_metrics",
+            MetricClass.FILTER,
+            value_type="json",
+            scopes=("compound",),
+            evidence=IFP_FILTER_EVIDENCE,
         )
     )
 for name in ("ifp_cluster_id", "ifp_cluster_status"):
@@ -409,7 +450,9 @@ SCREEN_METRIC_PROFILES = MappingProxyType(
             "sasa",
             "sasa_norm_heavy",
             "ifp_distance",
+            "ifp_distance_features",
             "ifp_prolif",
+            "ifp_prolif_features",
             "bias_lig_sim_train",
             "pocket_coverage_ref",
             "pocket_coverage_custom",

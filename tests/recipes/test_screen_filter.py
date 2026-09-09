@@ -258,17 +258,17 @@ def test_filter_requires_distance_ifp_and_reference(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(WorkflowExecutionError, match="requires distance IFP scoring"):
-        _screen(
-            sample_system_yaml,
-            sample_options_yaml,
-            sample_csv_file,
-            temp_dir,
-            scoring_functions=["sasa"],
-            ifp_filter_threshold=0.5,
-            pocket_coverage_reference="10",
-        ).run()
-    with pytest.raises(WorkflowExecutionError, match="requires --pocket_coverage_reference"):
+    # Filtering owns extraction and no longer requires a duplicate scoring entry.
+    _screen(
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+        scoring_functions=["sasa"],
+        ifp_filter_threshold=0.5,
+        pocket_coverage_reference="10",
+    )._validate_config()
+    with pytest.raises(WorkflowExecutionError, match="reference complex or custom pocket"):
         _screen(
             sample_system_yaml,
             sample_options_yaml,

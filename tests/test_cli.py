@@ -246,6 +246,11 @@ class TestScreenRecipe:
             "--ligand_chain", "B",
             "--smiles_column", "smiles",
             "--ifp_filter_threshold", "0.75",
+            "--ifp_filter_source", "reference_complex",
+            "--ifp_taxonomy", "prolif",
+            "--ifp_similarity_metric", "jaccard",
+            "--ifp_reference_ligand", "L:401",
+            "--ifp_reference_receptor_chain", "A",
             "--cluster_ifps",
             "--ifp_cluster_similarity_threshold", "0.8",
         ])
@@ -254,6 +259,11 @@ class TestScreenRecipe:
         assert args.ligand_chain == "B"
         assert args.smiles_column == "smiles"
         assert args.ifp_filter_threshold == 0.75
+        assert args.ifp_filter_source == "reference_complex"
+        assert args.ifp_taxonomy == "prolif"
+        assert args.ifp_similarity_metric == "jaccard"
+        assert args.ifp_reference_ligand == "L:401"
+        assert args.ifp_reference_receptor_chains == ["A"]
         assert args.cluster_ifps is True
         assert args.ifp_cluster_similarity_threshold == 0.8
         assert args.scoring_functions is None

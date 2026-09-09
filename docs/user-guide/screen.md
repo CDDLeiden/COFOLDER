@@ -47,14 +47,26 @@ libraries use `--id_property` (default `_Name`).
   - robustness options
 - `--ifp_filter_threshold FLOAT`: annotate compounds using inclusive reference
   overlap (`0` to `1`). Omit this option to disable filtering.
+- `--ifp_filter_source {auto,reference_complex,custom_pocket}`: choose reference
+  evidence; `auto` preserves custom-pocket precedence and otherwise uses
+  `--reference_path`.
+- `--ifp_taxonomy {distance,prolif}`: use normalized distance contacts or
+  explicitly opt into subprocess-isolated ProLIF contacts.
+- `--ifp_similarity_metric {jaccard,reference_coverage}`: choose the threshold
+  score. Reference complexes default to Jaccard and custom pockets to coverage.
+- `--ifp_filter_policy {similarity,required}` with repeatable
+  `--ifp_required_interaction CHAIN:RESNUM[ICODE]:TYPE`: select threshold or
+  required-contact behavior.
+- `--ifp_reference_ligand CHAIN[:RESNUM[ICODE]]` and repeatable
+  `--ifp_reference_receptor_chain CHAIN`: disambiguate reference entities.
 - `--ligand_chain CHAIN` also selects the ligand evaluated by IFP filtering and clustering.
 - `--cluster_ifps`: cluster evaluable binary distance IFPs after all rows finish.
 - `--ifp_cluster_similarity_threshold FLOAT`: inclusive Jaccard-similarity cut
   for clustering (`0` to `1`, default `0.5`).
 
-Reference-overlap filtering requires `ifp_distance` scoring and
-`--pocket_coverage_reference`. The reference can be a binary bitstring, residue
-numbers or labels, or a file containing one of those forms:
+Custom-pocket filtering requires `--pocket_coverage_reference`; fingerprint
+extraction is requested automatically. The reference can be a binary bitstring,
+residue numbers or labels, or a file containing one of those forms:
 
 ```bash
 cofolder screen \
@@ -70,6 +82,22 @@ Overlap is the fraction of active reference-pocket bits also present in the
 predicted distance IFP. A row passes when overlap is greater than or equal to
 the threshold. Filtering only annotates results; it never deletes rejected
 rows or their prediction artifacts.
+
+To derive the filter directly from a reference complex:
+
+```bash
+cofolder screen \
+  -s system.yaml -o options.yaml -c compounds.csv \
+  --col_id compound_id --ligand_chain B --smiles_column smiles \
+  --reference_path reference_complex.cif \
+  --ifp_filter_source reference_complex \
+  --ifp_reference_ligand L:401 \
+  --ifp_filter_threshold 0.6 \
+  --ifp_similarity_metric jaccard
+```
+
+Unmappable structures remain in consolidated output with `not_evaluable`
+status and machine-readable mapping diagnostics.
 
 ## IFP Clustering Without a Reference
 
@@ -159,7 +187,8 @@ Summary columns include:
 - optional `merge_data` values
 - filter audit columns: `ifp_filter_pass`, `ifp_filter_status`,
   `ifp_filter_reason`, `ifp_filter_overlap`, `ifp_filter_threshold`, and
-  `ifp_filter_reference`
+  `ifp_filter_reference`, plus similarity, taxonomy, required-contact,
+  missing-interaction, and mapping diagnostics
 - clustering columns: `ifp_cluster_id` and `ifp_cluster_status`
 
 Metric records include:

@@ -15,7 +15,27 @@ import pandas as pd
 from cofolder.modules.analytics.ifp_clustering import (
     SUMMARY_COLUMNS as IFP_CLUSTER_SUMMARY_COLUMNS,
 )
-from cofolder.modules.analytics.ifp_clustering import cluster_binary_ifps
+from cofolder.modules.analytics.ifp_clustering import cluster_interaction_fingerprints
+from cofolder.modules.analytics.ifp_filtering import (
+    IFPFilterMode,
+    ReferenceIFPFilterPolicy,
+    evaluate_reference_ifp_filter,
+)
+from cofolder.modules.analytics.reference_ifp import (
+    IFPExtractionConfig,
+    IFPSimilarityMetric,
+    IFPTaxonomy,
+    InteractionFingerprint,
+    InteractionKey,
+    LigandIdentity,
+    LigandSelector,
+    ReferenceEntitySelectionError,
+    ReferenceIFPError,
+    ResidueIdentity,
+    compare_interaction_fingerprints,
+    extract_interaction_fingerprint,
+    map_reference_identities,
+)
 from cofolder.modules.analytics.reproduction import (
     _build_reference_ifp_from_custom,
     _parse_custom_pocket_reference,
@@ -25,6 +45,7 @@ from cofolder.modules.contracts import (
     PUBLIC_SCHEMA_VERSION,
     SCREEN_METRIC_PROFILES,
     ArtifactReference,
+    EvidenceRegime,
     EvidenceSource,
     FailureStage,
     OutputIdentity,
@@ -112,6 +133,13 @@ class Screen:
         pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
         ifp_filter_threshold: float | None = None,
+        ifp_filter_source: str = "auto",
+        ifp_taxonomy: str = "distance",
+        ifp_similarity_metric: str | None = None,
+        ifp_filter_policy: str = "similarity",
+        ifp_required_interactions: list[str] | None = None,
+        ifp_reference_ligand: str | None = None,
+        ifp_reference_receptor_chains: list[str] | None = None,
         cluster_ifps: bool = False,
         ifp_cluster_similarity_threshold: float = 0.5,
     ):
@@ -134,10 +162,28 @@ class Screen:
         self.duplicate_id_policy = DuplicateIdPolicy(duplicate_id_policy)
         self.merge_data = self._parse_list(merge_data)
         self.ifp_filter_threshold = ifp_filter_threshold
+        self.ifp_filter_source = str(ifp_filter_source)
+        self.ifp_taxonomy = IFPTaxonomy(ifp_taxonomy)
+        self.ifp_similarity_metric = (
+            IFPSimilarityMetric(ifp_similarity_metric)
+            if ifp_similarity_metric is not None else None
+        )
+        self.ifp_filter_mode = IFPFilterMode(ifp_filter_policy)
+        self.ifp_required_interaction_values = tuple(ifp_required_interactions or ())
+        self.ifp_reference_ligand_value = ifp_reference_ligand
+        self.ifp_reference_receptor_chains = tuple(ifp_reference_receptor_chains or ())
         self.pocket_coverage_reference = pocket_coverage_reference
         self.cluster_ifps = bool(cluster_ifps)
         self.ifp_cluster_similarity_threshold = ifp_cluster_similarity_threshold
         self._ifp_filter_reference_spec: dict[str, Any] | None = None
+        self._reference_ifp: InteractionFingerprint | None = None
+        self._reference_ifp_failure: str | None = None
+        self._resolved_ifp_filter_source: str | None = None
+        self._reference_ligand_selector: LigandSelector | None = None
+        self._ifp_filter_policy_config: ReferenceIFPFilterPolicy | None = None
+        self._prediction_ifp_cache: dict[
+            Path, tuple[InteractionFingerprint | None, str]
+        ] = {}
 
         self.validate_kwargs: dict[str, Any] = {
             "repeats": repeats,
@@ -220,42 +266,65 @@ class Screen:
         ):
             raise ValueError("--ifp_cluster_similarity_threshold must be in [0, 1].")
 
-        scoring_functions = self.validate_kwargs.get("scoring_functions")
-        if (
-            self.cluster_ifps
-            and scoring_functions is not None
-            and "ifp_distance" not in scoring_functions
-        ):
-            raise ValueError(
-                "--cluster_ifps requires distance IFP scoring; include "
-                "'ifp_distance' in --scoring_functions."
-            )
-
-        if self.ifp_filter_threshold is None:
+        filter_enabled = (
+            self.ifp_filter_threshold is not None
+            or self.ifp_filter_mode is IFPFilterMode.REQUIRED
+            or bool(self.ifp_required_interaction_values)
+        )
+        if not filter_enabled:
             return
-
-        try:
-            self.ifp_filter_threshold = float(self.ifp_filter_threshold)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "--ifp_filter_threshold must be a number in [0, 1]."
-            ) from exc
-        if (
-            not math.isfinite(self.ifp_filter_threshold)
-            or not 0 <= self.ifp_filter_threshold <= 1
-        ):
-            raise ValueError("--ifp_filter_threshold must be in [0, 1].")
-
-        if scoring_functions is not None and "ifp_distance" not in scoring_functions:
-            raise ValueError(
-                "--ifp_filter_threshold requires distance IFP scoring; include "
-                "'ifp_distance' in --scoring_functions."
-            )
-
+        if self.ifp_filter_mode is IFPFilterMode.SIMILARITY:
+            try:
+                self.ifp_filter_threshold = float(self.ifp_filter_threshold)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Similarity IFP filtering requires --ifp_filter_threshold in [0, 1]."
+                ) from exc
+            if not math.isfinite(self.ifp_filter_threshold) or not 0 <= self.ifp_filter_threshold <= 1:
+                raise ValueError("--ifp_filter_threshold must be in [0, 1].")
+        elif self.ifp_filter_threshold is not None:
+            raise ValueError("Required-interaction filtering does not accept --ifp_filter_threshold.")
         self._validate_filter_reference()
 
     def _validate_filter_reference(self) -> None:
         """Parse the filter reference before any prediction work starts."""
+        if self.ifp_filter_source not in {"auto", "reference_complex", "custom_pocket"}:
+            raise ValueError("--ifp_filter_source must be auto, reference_complex, or custom_pocket.")
+        reference_path = self.validate_kwargs.get("reference_path")
+        self._resolved_ifp_filter_source = (
+            "custom_pocket" if self.ifp_filter_source == "auto" and self.pocket_coverage_reference
+            else "reference_complex" if self.ifp_filter_source == "auto" and reference_path
+            else self.ifp_filter_source
+        )
+        if self._resolved_ifp_filter_source == "auto":
+            raise ValueError("IFP filtering requires a reference complex or custom pocket.")
+
+        metric = self.ifp_similarity_metric or (
+            IFPSimilarityMetric.REFERENCE_COVERAGE
+            if self._resolved_ifp_filter_source == "custom_pocket"
+            else IFPSimilarityMetric.JACCARD
+        )
+        required = frozenset(
+            InteractionKey.parse(item) for item in self.ifp_required_interaction_values
+        ) or None
+        self._ifp_filter_policy_config = ReferenceIFPFilterPolicy(
+            mode=self.ifp_filter_mode,
+            similarity_metric=metric,
+            threshold=self.ifp_filter_threshold,
+            required_interactions=required,
+        )
+
+        if self._resolved_ifp_filter_source == "reference_complex":
+            if reference_path is None:
+                raise ValueError("Reference-complex IFP filtering requires --reference_path.")
+            self._reference_ligand_selector = self._parse_ligand_selector(
+                self.ifp_reference_ligand_value
+            )
+            return
+        if self.ifp_taxonomy is IFPTaxonomy.PROLIF:
+            raise ValueError("ProLIF filtering requires --ifp_filter_source reference_complex.")
+        if self.ifp_filter_mode is IFPFilterMode.REQUIRED:
+            raise ValueError("Required-interaction filtering requires a reference complex.")
         value = self.pocket_coverage_reference
         if value is None or not str(value).strip():
             raise ValueError(
@@ -279,6 +348,23 @@ class Screen:
             raise ValueError(f"Invalid --pocket_coverage_reference: {exc}") from exc
         if self._ifp_filter_reference_spec is None:
             raise ValueError("--pocket_coverage_reference must not be empty.")
+
+    @staticmethod
+    def _parse_ligand_selector(value: str | None) -> LigandSelector | None:
+        if value is None or not str(value).strip():
+            return None
+        tokens = str(value).strip().split(":")
+        if len(tokens) == 1:
+            return LigandSelector(chain_id=tokens[0])
+        if len(tokens) != 2 or not tokens[0] or not tokens[1]:
+            raise ValueError("--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE].")
+        residue = tokens[1]
+        index = 1 if residue.startswith("-") else 0
+        while index < len(residue) and residue[index].isdigit():
+            index += 1
+        if not residue[:index] or len(residue[index:]) > 1:
+            raise ValueError("--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE].")
+        return LigandSelector(tokens[0], int(residue[:index]), residue[index:])
 
     def run(self) -> pd.DataFrame:
         try:
@@ -314,6 +400,43 @@ class Screen:
                 str(exc), failures=(failure,), output_dir=output_dir
             ) from exc
 
+    def _ifp_filter_enabled(self) -> bool:
+        return self._ifp_filter_policy_config is not None
+
+    def _prepare_reference_ifp(self) -> None:
+        if not self._ifp_filter_enabled() or self._resolved_ifp_filter_source != "reference_complex":
+            return
+        reference_path = Path(self.validate_kwargs["reference_path"])
+        try:
+            self._reference_ifp = extract_interaction_fingerprint(
+                reference_path,
+                ligand=self._reference_ligand_selector,
+                receptor_chains=self.ifp_reference_receptor_chains or None,
+                config=IFPExtractionConfig(taxonomy=self.ifp_taxonomy),
+            )
+        except ReferenceEntitySelectionError as exc:
+            self._reference_ifp_failure = str(exc)
+            return
+        except ReferenceIFPError as exc:
+            if self.ifp_taxonomy is not IFPTaxonomy.PROLIF:
+                raise
+            message = str(exc)
+            self._reference_ifp_failure = (
+                "prolif_worker_timeout" if "timeout" in message else "prolif_worker_crashed"
+            )
+            return
+        try:
+            policy = self._ifp_filter_policy_config
+            if policy is not None and policy.required_interactions:
+                unknown = policy.required_interactions - self._reference_ifp.interactions
+                if unknown:
+                    raise ValueError(
+                        "Required interactions are absent from the reference fingerprint: "
+                        + ", ".join(str(item) for item in sorted(unknown))
+                    )
+        except AttributeError as exc:
+            raise ValueError("Reference IFP was not prepared.") from exc
+
     def _run_impl(self) -> pd.DataFrame:
         """Run the screen, publish contract records, and return the merged results."""
 
@@ -343,6 +466,7 @@ class Screen:
         self.ligand_target = resolve_ligand_target(
             self.base_system_obj, self.ligand_chain
         )
+        self._prepare_reference_ifp()
         if self.reusable_msa_dir is not None:
             self.msa_reuse_settings = self.runner_impl.msa_reuse_settings(options_obj)
         assert self.ligand_target is not None
@@ -532,7 +656,7 @@ class Screen:
                 summary["error_message"] = str(exc)
                 detailed["status"] = "failed"
                 detailed["error_message"] = str(exc)
-                if self.ifp_filter_threshold is not None:
+                if self._ifp_filter_enabled():
                     filter_result = self._not_evaluable_filter_result("row_failed")
                     summary.update(filter_result)
                     detailed.update(filter_result)
@@ -650,7 +774,7 @@ class Screen:
             requested.add("reproduction_metrics")
         if self.validate_kwargs.get("assess_bias"):
             requested.add("bias_metrics")
-        if self.ifp_filter_threshold is not None:
+        if self._ifp_filter_enabled():
             requested.add("screen_metrics")
         if self.cluster_ifps:
             requested.add("screen_metrics")
@@ -702,6 +826,15 @@ class Screen:
                     base_identity=identity,
                     evidence=evidence,
                     requested_metrics=requested or None,
+                    evidence_regime_overrides={
+                        name: (
+                            EvidenceRegime.REFERENCE_STRUCTURE
+                            if self._resolved_ifp_filter_source == "reference_complex"
+                            else EvidenceRegime.CUSTOM_POCKET
+                        )
+                        for name in METRIC_CATALOG
+                        if name.startswith("ifp_filter_")
+                    } if self._ifp_filter_enabled() else None,
                 )
             )
         public_records.extend(failures)
@@ -776,22 +909,41 @@ class Screen:
             )
             return
 
-        parsed_rows: list[tuple[int, list[int], str]] = []
-        expected_width: int | None = None
+        parsed_rows: list[tuple[int, InteractionFingerprint, str]] = []
+        legacy_width: int | None = None
         for position, row in summary_df.iterrows():
             if row.get("status") != "success":
                 continue
-            fingerprint, _ = self._load_selected_ligand_ifp(Path(row["run_dir"]))
+            fingerprint, _ = self._load_selected_interaction_fingerprint(
+                Path(row["run_dir"])
+            )
+            if fingerprint is None and self.ifp_taxonomy is IFPTaxonomy.DISTANCE:
+                vector, _ = self._load_selected_ligand_ifp(Path(row["run_dir"]))
+                if vector is not None:
+                    if legacy_width is None:
+                        legacy_width = len(vector)
+                    if len(vector) != legacy_width:
+                        continue
+                    fingerprint = InteractionFingerprint(
+                        taxonomy=IFPTaxonomy.DISTANCE,
+                        ligand=LigandIdentity(self.ligand_chain, 0),
+                        receptor_chains=("_legacy",),
+                        interactions=frozenset(
+                            InteractionKey(
+                                ResidueIdentity("_legacy", index + 1),
+                                "distance_contact",
+                            )
+                            for index, active in enumerate(vector)
+                            if active
+                        ),
+                        source_path=Path(row["run_dir"]),
+                    )
             if fingerprint is None:
-                continue
-            if expected_width is None:
-                expected_width = len(fingerprint)
-            if len(fingerprint) != expected_width:
                 continue
             parsed_rows.append((position, fingerprint, str(row[self.col_id])))
 
         if parsed_rows:
-            clustered = cluster_binary_ifps(
+            clustered = cluster_interaction_fingerprints(
                 [row[1] for row in parsed_rows],
                 [row[2] for row in parsed_rows],
                 similarity_threshold=self.ifp_cluster_similarity_threshold,
@@ -800,7 +952,37 @@ class Screen:
                 for frame in (summary_df, results_df):
                     frame.at[position, "ifp_cluster_id"] = cluster_id
                     frame.at[position, "ifp_cluster_status"] = "clustered"
-            cluster_summary = clustered.summary
+            cluster_summary = clustered.summary.copy()
+            cluster_summary["ifp_taxonomy"] = self.ifp_taxonomy.value
+            if self._ifp_filter_enabled():
+                annotations = []
+                for cluster_id in cluster_summary["ifp_cluster_id"]:
+                    members = summary_df[summary_df["ifp_cluster_id"] == cluster_id]
+                    similarities = pd.to_numeric(
+                        members.get("ifp_filter_similarity", pd.Series(dtype=float)),
+                        errors="coerce",
+                    ).dropna()
+                    accepted = members[
+                        members.get("ifp_filter_status", pd.Series(index=members.index, dtype=object))
+                        == "accepted"
+                    ]
+                    annotations.append({
+                        "ifp_cluster_id": cluster_id,
+                        "reference_evaluable_count": int(similarities.size),
+                        "reference_accepted_count": len(accepted),
+                        "reference_accepted_member_ids": json.dumps(
+                            accepted[self.col_id].astype(str).tolist()
+                        ),
+                        "mean_reference_similarity": (
+                            float(similarities.mean()) if not similarities.empty else None
+                        ),
+                        "max_reference_similarity": (
+                            float(similarities.max()) if not similarities.empty else None
+                        ),
+                    })
+                cluster_summary = cluster_summary.merge(
+                    pd.DataFrame(annotations), on="ifp_cluster_id", how="left"
+                )
         else:
             cluster_summary = pd.DataFrame(columns=IFP_CLUSTER_SUMMARY_COLUMNS)
 
@@ -809,6 +991,45 @@ class Screen:
         cluster_summary.to_csv(
             public_results_dir / "ifp_cluster_summary.csv", index=False
         )
+
+    def _load_selected_interaction_fingerprint(
+        self, run_dir: Path
+    ) -> tuple[InteractionFingerprint | None, str]:
+        run_dir = Path(run_dir)
+        if run_dir in self._prediction_ifp_cache:
+            return self._prediction_ifp_cache[run_dir]
+        _, chain_df = read_metric_frames(run_dir)
+        if chain_df.empty or not {"CHAIN_ID", "ENTITY_TYPE", "cif_file"}.issubset(chain_df.columns):
+            result = (None, "missing_chain_metrics")
+            self._prediction_ifp_cache[run_dir] = result
+            return result
+        selected = self._select_chain_metrics_rows(chain_df)
+        ligand_rows = selected[
+            (selected["ENTITY_TYPE"].astype(str).str.lower() == "ligand")
+            & (selected["CHAIN_ID"].astype(str) == self.ligand_chain)
+        ]
+        if ligand_rows.empty:
+            result = (None, "ligand_chain_not_found")
+            self._prediction_ifp_cache[run_dir] = result
+            return result
+        cif_name = ligand_rows.iloc[0].get("cif_file")
+        path = run_dir / "results" / "structures" / str(cif_name)
+        receptor_chains = tuple(
+            selected.loc[
+                selected["ENTITY_TYPE"].astype(str).str.lower() == "protein", "CHAIN_ID"
+            ].dropna().astype(str).unique()
+        )
+        try:
+            result = (extract_interaction_fingerprint(
+                path,
+                ligand=LigandSelector(chain_id=self.ligand_chain),
+                receptor_chains=receptor_chains or None,
+                config=IFPExtractionConfig(taxonomy=self.ifp_taxonomy),
+            ), "")
+        except ReferenceIFPError as exc:
+            result = (None, str(exc))
+        self._prediction_ifp_cache[run_dir] = result
+        return result
 
     def _load_selected_ligand_ifp(self, run_dir: Path) -> tuple[list[int] | None, str]:
         _, chain_df = read_metric_frames(run_dir)
@@ -832,15 +1053,23 @@ class Screen:
         return self._parse_binary_ifp(ligand_rows.iloc[0].get("ifp_distance"))
 
     def _default_filter_result(self) -> dict[str, Any]:
-        if self.ifp_filter_threshold is not None:
+        if self._ifp_filter_enabled():
             return self._not_evaluable_filter_result("missing_ifp")
         return {
             "ifp_filter_pass": pd.NA,
             "ifp_filter_status": "not_applied",
             "ifp_filter_reason": "filtering_disabled",
             "ifp_filter_overlap": None,
+            "ifp_filter_similarity": None,
             "ifp_filter_threshold": None,
             "ifp_filter_reference": None,
+            "ifp_filter_similarity_metric": None,
+            "ifp_filter_policy": None,
+            "ifp_filter_taxonomy": None,
+            "ifp_filter_required_interactions": None,
+            "ifp_filter_missing_interactions": None,
+            "ifp_filter_mapping_status": None,
+            "ifp_filter_mapping_failures": None,
         }
 
     def _not_evaluable_filter_result(self, reason: str) -> dict[str, Any]:
@@ -849,14 +1078,38 @@ class Screen:
             "ifp_filter_status": "not_evaluable",
             "ifp_filter_reason": reason,
             "ifp_filter_overlap": None,
+            "ifp_filter_similarity": None,
             "ifp_filter_threshold": self.ifp_filter_threshold,
-            "ifp_filter_reference": self.pocket_coverage_reference,
+            "ifp_filter_reference": (
+                str(self.validate_kwargs.get("reference_path"))
+                if self._resolved_ifp_filter_source == "reference_complex"
+                else self.pocket_coverage_reference
+            ),
+            "ifp_filter_similarity_metric": (
+                self._ifp_filter_policy_config.similarity_metric.value
+                if self._ifp_filter_policy_config else None
+            ),
+            "ifp_filter_policy": (
+                self._ifp_filter_policy_config.mode.value
+                if self._ifp_filter_policy_config else None
+            ),
+            "ifp_filter_taxonomy": self.ifp_taxonomy.value,
+            "ifp_filter_required_interactions": json.dumps(
+                [str(item) for item in sorted(
+                    self._ifp_filter_policy_config.required_interactions or ()
+                )]
+            ) if self._ifp_filter_policy_config else None,
+            "ifp_filter_missing_interactions": json.dumps([]),
+            "ifp_filter_mapping_status": "unmappable",
+            "ifp_filter_mapping_failures": json.dumps([reason]),
         }
 
     def _evaluate_ifp_filter(self, run_dir: Path) -> dict[str, Any]:
         """Evaluate strict reference overlap for one completed screen row."""
-        if self.ifp_filter_threshold is None:
+        if not self._ifp_filter_enabled():
             return self._default_filter_result()
+        if self._resolved_ifp_filter_source == "reference_complex":
+            return self._evaluate_reference_complex_filter(run_dir)
 
         _, chain_df = read_metric_frames(run_dir)
         if chain_df.empty:
@@ -895,15 +1148,101 @@ class Screen:
         if not any(ref_ifp):
             return self._not_evaluable_filter_result("empty_reference")
 
-        overlap = sum(p and r for p, r in zip(pred_ifp, ref_ifp)) / sum(ref_ifp)
-        passed = overlap >= self.ifp_filter_threshold
+        intersection = sum(p and r for p, r in zip(pred_ifp, ref_ifp))
+        overlap = intersection / sum(ref_ifp)
+        union = sum(bool(p or r) for p, r in zip(pred_ifp, ref_ifp))
+        jaccard = intersection / union if union else 0.0
+        assert self._ifp_filter_policy_config is not None
+        score = (
+            jaccard
+            if self._ifp_filter_policy_config.similarity_metric is IFPSimilarityMetric.JACCARD
+            else overlap
+        )
+        passed = score >= float(self.ifp_filter_threshold)
         return {
             "ifp_filter_pass": bool(passed),
             "ifp_filter_status": "accepted" if passed else "rejected",
             "ifp_filter_reason": "threshold_met" if passed else "below_threshold",
             "ifp_filter_overlap": float(overlap),
+            "ifp_filter_similarity": float(score),
             "ifp_filter_threshold": self.ifp_filter_threshold,
             "ifp_filter_reference": self.pocket_coverage_reference,
+            "ifp_filter_similarity_metric": self._ifp_filter_policy_config.similarity_metric.value,
+            "ifp_filter_policy": self._ifp_filter_policy_config.mode.value,
+            "ifp_filter_taxonomy": self.ifp_taxonomy.value,
+            "ifp_filter_required_interactions": json.dumps([]),
+            "ifp_filter_missing_interactions": json.dumps([]),
+            "ifp_filter_mapping_status": "not_applicable",
+            "ifp_filter_mapping_failures": json.dumps([]),
+        }
+
+    def _evaluate_reference_complex_filter(self, run_dir: Path) -> dict[str, Any]:
+        if self._reference_ifp_failure:
+            return self._not_evaluable_filter_result(self._reference_ifp_failure)
+        if self._reference_ifp is None or self._ifp_filter_policy_config is None:
+            return self._not_evaluable_filter_result("reference_ifp_extraction_failed")
+        try:
+            prediction, extraction_reason = self._load_selected_interaction_fingerprint(
+                run_dir
+            )
+            if prediction is None:
+                reason = (
+                    "prolif_worker_timeout" if "timeout" in extraction_reason
+                    else "prolif_worker_crashed" if "crashed" in extraction_reason
+                    else extraction_reason or "prediction_ifp_extraction_failed"
+                )
+                return self._not_evaluable_filter_result(reason)
+            predicted_path = prediction.source_path
+            mapping = map_reference_identities(
+                self._reference_ifp,
+                prediction,
+                reference_structure_path=Path(self.validate_kwargs["reference_path"]),
+                predicted_structure_path=predicted_path,
+            )
+            comparison = compare_interaction_fingerprints(
+                self._reference_ifp, prediction, mapping
+            )
+            outcome = evaluate_reference_ifp_filter(
+                self._reference_ifp, comparison, self._ifp_filter_policy_config
+            )
+        except ReferenceIFPError as exc:
+            message = str(exc)
+            reason = (
+                "prolif_worker_timeout" if "prolif_worker_timeout" in message
+                else "prolif_worker_crashed" if "prolif_worker_crashed" in message
+                else "prediction_ifp_extraction_failed"
+            )
+            return self._not_evaluable_filter_result(reason)
+
+        selected_score = comparison.similarities.get(
+            self._ifp_filter_policy_config.similarity_metric
+        )
+        return {
+            "ifp_filter_pass": outcome.passed if outcome.passed is not None else pd.NA,
+            "ifp_filter_status": outcome.status,
+            "ifp_filter_reason": outcome.reason,
+            "ifp_filter_overlap": comparison.similarities.get(
+                IFPSimilarityMetric.REFERENCE_COVERAGE
+            ),
+            "ifp_filter_similarity": selected_score,
+            "ifp_filter_threshold": self._ifp_filter_policy_config.threshold,
+            "ifp_filter_reference": str(self.validate_kwargs["reference_path"]),
+            "ifp_filter_similarity_metric": self._ifp_filter_policy_config.similarity_metric.value,
+            "ifp_filter_policy": self._ifp_filter_policy_config.mode.value,
+            "ifp_filter_taxonomy": self.ifp_taxonomy.value,
+            "ifp_filter_required_interactions": json.dumps([
+                str(item) for item in sorted(
+                    self._ifp_filter_policy_config.required_interactions
+                    or self._reference_ifp.interactions
+                    if self._ifp_filter_policy_config.mode is IFPFilterMode.REQUIRED
+                    else ()
+                )
+            ]),
+            "ifp_filter_missing_interactions": json.dumps([
+                str(item) for item in comparison.missing_interactions
+            ]),
+            "ifp_filter_mapping_status": comparison.mapping.status.value,
+            "ifp_filter_mapping_failures": json.dumps(list(comparison.mapping.failures)),
         }
 
     def _resolve_filter_reference(

@@ -188,15 +188,16 @@ def test_clustering_requires_distance_ifp_and_valid_ligand_selector(
     sample_csv_file,
     temp_dir,
 ):
-    with pytest.raises(WorkflowExecutionError, match="requires distance IFP scoring"):
-        _screen(
-            sample_system_yaml,
-            sample_options_yaml,
-            sample_csv_file,
-            temp_dir,
-            cluster_ifps=True,
-            scoring_functions=["sasa"],
-        ).run()
+    # Clustering now requests its fingerprint extraction independently of the
+    # Validate scoring-function selection.
+    _screen(
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+        cluster_ifps=True,
+        scoring_functions=["sasa"],
+    )._validate_config()
 
     system = yaml.safe_load(sample_system_yaml.read_text(encoding="utf-8"))
     system["sequences"].append({"ligand": {"id": "C", "smiles": "CC"}})

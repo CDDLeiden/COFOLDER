@@ -20,6 +20,53 @@ from cofolder.modules.runners.contracts import (
 )
 from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.recipes.screen import Screen
+from tests.modules.analytics.test_reproduction import (
+    _write_predicted_pdb,
+    _write_reference_pdb,
+)
+
+
+def test_reference_complex_ifp_filter_annotates_primary_prediction(
+    temp_dir, sample_system_yaml, sample_options_yaml, sample_csv_file
+):
+    reference_path = temp_dir / "reference.pdb"
+    _write_reference_pdb(reference_path)
+    run_dir = temp_dir / "compound"
+    structures = run_dir / "results" / "structures"
+    structures.mkdir(parents=True)
+    predicted_name = "prediction.pdb"
+    _write_predicted_pdb(
+        structures / predicted_name,
+        ((1.3, 1.2, 0.0), (2.7, 1.2, 0.0)),
+    )
+    pd.DataFrame(
+        [
+            {"CHAIN_ID": "A", "ENTITY_TYPE": "protein", "cif_file": predicted_name},
+            {"CHAIN_ID": "Z", "ENTITY_TYPE": "ligand", "cif_file": predicted_name},
+        ]
+    ).to_csv(run_dir / "results" / "chain_metrics.csv", index=False)
+
+    screen = Screen(
+        wrk_dir=str(temp_dir / "screen"),
+        system_path=str(sample_system_yaml),
+        options_path=str(sample_options_yaml),
+        library=str(sample_csv_file),
+        ligand_chain="Z",
+        smiles_column="smiles",
+        col_id="compound_id",
+        reference_path=str(reference_path),
+        ifp_filter_threshold=1.0,
+        ifp_filter_source="reference_complex",
+        ifp_reference_ligand="L",
+    )
+    screen._validate_config()
+    screen._prepare_reference_ifp()
+    result = screen._evaluate_ifp_filter(run_dir)
+
+    assert result["ifp_filter_status"] == "accepted"
+    assert result["ifp_filter_similarity"] == 1.0
+    assert result["ifp_filter_mapping_status"] == "mapped"
+    assert json.loads(result["ifp_filter_missing_interactions"]) == []
 
 
 class _ReusableScreenRunner:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -157,6 +157,17 @@ def _metric_status(
             "custom_pocket_unavailable",
             "A custom pocket reference is required for this metric.",
         )
+    if (
+        EvidenceRegime.REFERENCE_FREE not in definition.allowed_evidence_regimes
+        and not evidence_kinds.intersection(
+            regime.value for regime in definition.allowed_evidence_regimes
+        )
+    ):
+        return (
+            RecordStatus.UNSUPPORTED,
+            "required_evidence_unavailable",
+            "The metric requires reference evidence that was not supplied.",
+        )
     if not _present(value):
         return (
             RecordStatus.MISSING,
@@ -174,6 +185,7 @@ def metric_records_from_frames(
     evidence: Iterable[EvidenceSource] = (),
     requested_metrics: Collection[str] | None = None,
     unavailable_groups: Collection[str] = (),
+    evidence_regime_overrides: Mapping[str, EvidenceRegime] | None = None,
 ) -> tuple[SuccessRecord | MetricRecord, ...]:
     evidence_tuple = tuple(evidence)
     entity_ids = _entity_ids(chain_df)
@@ -238,6 +250,7 @@ def metric_records_from_frames(
                 unavailable_groups,
                 conf_to_chain,
                 entity_ids,
+                evidence_regime_overrides or {},
             )
         )
 
@@ -292,6 +305,7 @@ def metric_records_from_frames(
                 unavailable_groups,
                 conf_to_chain,
                 entity_ids,
+                evidence_regime_overrides or {},
             )
         )
     return tuple(records)
@@ -306,6 +320,7 @@ def _row_metric_records(
     unavailable_groups: Collection[str],
     conf_to_chain: dict[str, str],
     entity_ids: dict[str, str],
+    evidence_regime_overrides: Mapping[str, EvidenceRegime],
 ) -> list[MetricRecord]:
     records: list[MetricRecord] = []
     for column, raw_value in row.items():
@@ -354,7 +369,9 @@ def _row_metric_records(
                 value=value,
                 unit=definition.unit,
                 direction=definition.direction,
-                evidence_regime=resolve_evidence_regime(metric_name, evidence),
+                evidence_regime=evidence_regime_overrides.get(
+                    metric_name, resolve_evidence_regime(metric_name, evidence)
+                ),
                 evidence=evidence,
                 reason_code=reason,
                 message=message,
