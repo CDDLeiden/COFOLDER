@@ -35,6 +35,7 @@ from cofolder.modules.contracts import (
 )
 from cofolder.modules.input import load_yaml_document, system
 from cofolder.modules.runners import (
+    RunnerExecutionPlan,
     RunnerExecutionRequest,
     RunnerRuntime,
     get_runner,
@@ -104,6 +105,7 @@ class Validate:
         pocket_coverage_reference: str | None = None,
         reproduction_metrics: list[str] | None = None,
         reusable_msa_dir: str | None = None,
+        execution_plan: RunnerExecutionPlan | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -113,8 +115,13 @@ class Validate:
         self.repeats = repeats
         self.seed = seed
         self.requested_seed = seed
-        self.seed_plan: SeedPlan | None = None
-        self.backend_identity: RunnerBackendIdentity | None = None
+        self.execution_plan = execution_plan
+        self.seed_plan: SeedPlan | None = (
+            execution_plan.seed_plan if execution_plan is not None else None
+        )
+        self.backend_identity: RunnerBackendIdentity | None = (
+            execution_plan.backend if execution_plan is not None else None
+        )
         self.assess_robustness = assess_robustness
         self.assess_bias = assess_bias
         self.protein_training_data_path = (
@@ -347,32 +354,43 @@ class Validate:
                 )
 
             with self._debug_timer("seeds.resolve"):
-                self.seed, self.run_seeds = helpers.get_seeds(
-                    repeats=self.repeats,
-                    seed=self.seed,
-                    logger=self.logger,
-                )
-                origin = (
-                    SeedOrigin.GENERATED
-                    if self.requested_seed is None
-                    else SeedOrigin.USER_SPECIFIED
-                )
-                self.seed_plan = SeedPlan(
-                    requested_base_seed=self.requested_seed,
-                    resolved_base_seed=self.seed,
-                    origin=origin,
-                    repeats=tuple(
-                        RepeatSeedProvenance(
-                            repeat_id=index,
-                            requested_base_seed=self.requested_seed,
-                            resolved_base_seed=self.seed,
-                            derived_seed=run_seed,
-                            effective_seed=run_seed,
-                            origin=origin,
+                if self.execution_plan is not None:
+                    if len(self.execution_plan.seed_plan.repeats) != self.repeats:
+                        raise SeedResolutionError(
+                            "Injected execution plan repeat count does not match Validate."
                         )
-                        for index, run_seed in enumerate(self.run_seeds, 1)
-                    ),
-                )
+                    self.seed_plan = self.execution_plan.seed_plan
+                    self.seed = self.seed_plan.resolved_base_seed
+                    self.run_seeds = [
+                        item.effective_seed for item in self.seed_plan.repeats
+                    ]
+                else:
+                    self.seed, self.run_seeds = helpers.get_seeds(
+                        repeats=self.repeats,
+                        seed=self.seed,
+                        logger=self.logger,
+                    )
+                    origin = (
+                        SeedOrigin.GENERATED
+                        if self.requested_seed is None
+                        else SeedOrigin.USER_SPECIFIED
+                    )
+                    self.seed_plan = SeedPlan(
+                        requested_base_seed=self.requested_seed,
+                        resolved_base_seed=self.seed,
+                        origin=origin,
+                        repeats=tuple(
+                            RepeatSeedProvenance(
+                                repeat_id=index,
+                                requested_base_seed=self.requested_seed,
+                                resolved_base_seed=self.seed,
+                                derived_seed=run_seed,
+                                effective_seed=run_seed,
+                                origin=origin,
+                            )
+                            for index, run_seed in enumerate(self.run_seeds, 1)
+                        ),
+                    )
 
             with self._debug_timer("runner.options.load"):
                 runner_options = self.runner.load_options(self.options_path)
@@ -438,7 +456,7 @@ class Validate:
             with self._debug_timer("runner.prepare.availability"):
                 self.runner.ensure_available()
                 detect_backend = getattr(self.runner, "detect_backend_identity", None)
-                self.backend_identity = (
+                self.backend_identity = self.backend_identity or (
                     detect_backend()
                     if callable(detect_backend)
                     else RunnerBackendIdentity(

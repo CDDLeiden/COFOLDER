@@ -12,6 +12,8 @@ from cofolder.modules.contracts import (
     BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
+    ExecutionRecord,
+    ExecutionStatus,
     FailureStage,
     MetricClass,
     MetricRecord,
@@ -27,6 +29,7 @@ from cofolder.modules.contracts import (
     RunnerProvenanceError,
     SeedOrigin,
     SeedPlan,
+    StructuredExecutionError,
     UnregisteredMetricError,
     WorkflowKind,
     aggregate_metric_records,
@@ -143,6 +146,45 @@ def test_public_bundle_round_trips_backend_and_effective_seed(tmp_path):
     assert manifest["backend"]["version"] == "2.1.0"
     assert manifest["seed_plan"]["repeats"][0]["effective_seed"] == 2746317213
     assert record["effective_seed"] == 2746317213
+
+
+def test_screen_execution_record_serializes_to_cardinality_table(tmp_path):
+    identity = _identity(
+        workflow=WorkflowKind.SCREEN,
+        compound_id="cmp-1",
+        execution_directory="compound_000001",
+        repeat_id=1,
+        model_id="boltz2",
+        sample_id=0,
+    )
+    record = ExecutionRecord(
+        envelope=make_envelope(RecordKind.EXECUTION, identity, "execution"),
+        status=ExecutionStatus.UNAVAILABLE,
+        execution_directory="compound_000001",
+        error=StructuredExecutionError(
+            stage=FailureStage.INPUT_VALIDATION,
+            exception_type="LigandValidationError",
+            error_code="invalid_ligand",
+            message="Ligand could not be normalized.",
+        ),
+    )
+    bundle = PublicOutputBundle(
+        manifest=PublicManifest(
+            schema_version=PUBLIC_SCHEMA_VERSION,
+            identity=_identity(workflow=WorkflowKind.SCREEN),
+            status="failed",
+        ),
+        records=(record,),
+    )
+
+    output = write_public_bundle(bundle, tmp_path)
+    executions = pd.read_csv(output.executions_path)
+
+    assert PUBLIC_SCHEMA_VERSION == "1.0.0"
+    assert executions.loc[0, "compound_id"] == "cmp-1"
+    assert executions.loc[0, "execution_directory"] == "compound_000001"
+    assert executions.loc[0, "status"] == "unavailable"
+    assert '"error_code": "invalid_ligand"' in executions.loc[0, "error"]
 
 
 def test_public_bundle_rejects_seed_mismatch():

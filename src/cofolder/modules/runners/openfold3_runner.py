@@ -658,7 +658,7 @@ class OpenFold3Runner(BaseRunner):
                 )
             system_row = {
                 "cif_file": f"{request.repeat}_{request.system_name}_model_{sample_number - 1}{structure_path.suffix}",
-                "model_name": request.system_name,
+                "model_name": request.runtime.model_name or self.name,
                 "repeat": request.repeat,
                 "diffusion_sample": sample_number - 1,
             }
@@ -713,7 +713,7 @@ class OpenFold3Runner(BaseRunner):
                 row = {
                     "conf_chain_id": conf_chain_id,
                     "cif_file": system_row["cif_file"],
-                    "model_name": request.system_name,
+                    "model_name": request.runtime.model_name or self.name,
                     "repeat": request.repeat,
                     "diffusion_sample": sample_number - 1,
                 }

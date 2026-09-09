@@ -94,7 +94,10 @@ def test_screen_clusters_valid_ifps_and_excludes_invalid_or_incompatible_rows(
     summary = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_summary.csv")
     assert summary["ifp_cluster_id"].tolist() == ["IFP001", "IFP002", "IFP003"]
     assert summary["size"].tolist() == [2, 1, 1]
-    assert json.loads(summary.loc[0, "member_ids"]) == ["A", "B"]
+    assert json.loads(summary.loc[0, "member_ids"]) == [
+        "A|repeat=1|model=boltz2|sample=0",
+        "B|repeat=1|model=boltz2|sample=0",
+    ]
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)

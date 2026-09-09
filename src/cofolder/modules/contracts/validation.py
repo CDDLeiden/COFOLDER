@@ -19,6 +19,8 @@ from .models import (
     BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
+    ExecutionRecord,
+    ExecutionStatus,
     FailureStage,
     MetricClass,
     MetricRecord,
@@ -35,6 +37,7 @@ from .models import (
     SeedAdjustment,
     SeedOrigin,
     SeedPlan,
+    StructuredExecutionError,
     SuccessRecord,
     WorkflowExecutionError,
     WorkflowFailureRecord,
@@ -259,7 +262,61 @@ def validate_public_record(record: PublicRecord) -> None:
         ) from exc
     validate_identity(envelope.identity, record_kind=envelope.record_kind)
     expected_id: str
-    if isinstance(record, MetricRecord):
+    if isinstance(record, ExecutionRecord):
+        if envelope.record_kind != RecordKind.EXECUTION:
+            raise PublicSchemaValidationError(
+                "ExecutionRecord requires record_kind='execution'."
+            )
+        identity = envelope.identity
+        if identity.workflow != WorkflowKind.SCREEN:
+            raise PublicSchemaValidationError(
+                "ExecutionRecord is currently defined only for Screen outputs."
+            )
+        if not all(
+            (
+                identity.compound_id,
+                identity.execution_directory,
+                identity.repeat_id is not None,
+                identity.model_id,
+            )
+        ):
+            raise PublicSchemaValidationError(
+                "Screen execution identity requires compound_id, execution_directory, "
+                "repeat_id, and model_id."
+            )
+        if record.execution_directory != identity.execution_directory:
+            raise PublicSchemaValidationError(
+                "Execution record directory must match its identity."
+            )
+        if not isinstance(record.status, ExecutionStatus):
+            raise PublicSchemaValidationError(
+                "Execution record status must be an ExecutionStatus."
+            )
+        if record.status == ExecutionStatus.SUCCESS and record.error is not None:
+            raise PublicSchemaValidationError(
+                "Successful execution records must not contain an error."
+            )
+        if record.status != ExecutionStatus.SUCCESS and record.error is None:
+            raise PublicSchemaValidationError(
+                "Failed or unavailable execution records require an error."
+            )
+        if record.error is not None:
+            if not isinstance(record.error, StructuredExecutionError):
+                raise PublicSchemaValidationError(
+                    "Execution error must be StructuredExecutionError."
+                )
+            if not isinstance(record.error.stage, FailureStage):
+                raise PublicSchemaValidationError(
+                    "Execution error stage must be a FailureStage."
+                )
+            if not record.error.error_code.strip() or not record.error.message.strip():
+                raise PublicSchemaValidationError(
+                    "Execution errors require error_code and message."
+                )
+            _validate_json_value(record.error.details, path="execution.error.details")
+        _validate_artifacts(record.artifacts)
+        expected_id = make_record_id(RecordKind.EXECUTION, identity, "execution")
+    elif isinstance(record, MetricRecord):
         if envelope.record_kind != RecordKind.METRIC:
             raise PublicSchemaValidationError(
                 "MetricRecord requires record_kind='metric'."
@@ -368,11 +425,23 @@ def validate_public_bundle(bundle: PublicOutputBundle) -> PublicOutputBundle:
         raise PublicSchemaValidationError(
             f"Manifest record_counts {declared!r} do not match records {actual!r}."
         )
+    execution_success = any(
+        isinstance(record, ExecutionRecord)
+        and record.status == ExecutionStatus.SUCCESS
+        for record in bundle.records
+    )
+    execution_failure = any(
+        isinstance(record, ExecutionRecord)
+        and record.status != ExecutionStatus.SUCCESS
+        for record in bundle.records
+    )
+    has_success = bool(actual["success"]) or execution_success
+    has_failure = bool(actual["failure"]) or execution_failure
     expected_status = (
         "partial"
-        if actual["success"] and actual["failure"]
+        if has_success and has_failure
         else "success"
-        if actual["success"]
+        if has_success
         else "failed"
     )
     if bundle.manifest.status != expected_status:

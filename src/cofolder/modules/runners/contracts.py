@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from cofolder.modules.contracts.models import (
     OutputIdentity,
@@ -11,6 +12,7 @@ from cofolder.modules.contracts.models import (
     RepeatSeedProvenance,
     RunnerBackendIdentity,
     RunnerProvenanceError,
+    SeedPlan,
     SeedResolutionError,
 )
 
@@ -21,6 +23,27 @@ RUNNER_PROVENANCE_COLUMNS = (
     "backend_version_status",
     "effective_seed",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerModelSlot:
+    model_id: str
+    sample_id: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedExecution:
+    repeat_id: int
+    model_id: str
+    sample_id: int | None
+    effective_seed: int
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerExecutionPlan:
+    backend: RunnerBackendIdentity
+    seed_plan: SeedPlan
+    executions: tuple[PlannedExecution, ...]
 
 
 def runner_provenance_values(

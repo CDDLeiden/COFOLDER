@@ -9,7 +9,10 @@ import pytest
 import yaml
 from rdkit import Chem
 
-from cofolder.modules.contracts import WorkflowExecutionError
+from cofolder.modules.contracts import (
+    ScreenExecutionCardinalityError,
+    WorkflowExecutionError,
+)
 from cofolder.modules.input.system import System
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 from cofolder.modules.runners.contracts import (
@@ -263,6 +266,146 @@ class TestScreenInit:
 
 
 class TestScreenRun:
+    @patch("cofolder.recipes.screen.Validate.run")
+    def test_csv_and_sdf_publish_same_execution_schema(
+        self,
+        mock_validate_run,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        csv_path = temp_dir / "one.csv"
+        csv_path.write_text("id,smiles\none,CCO\n", encoding="utf-8")
+        molecule = Chem.MolFromSmiles("CCO")
+        molecule.SetProp("_Name", "one")
+        sdf_path = temp_dir / "one.sdf"
+        sdf_path.write_text(
+            Chem.MolToMolBlock(molecule) + "\n$$$$\n", encoding="utf-8"
+        )
+
+        csv_work = temp_dir / "csv_screen"
+        sdf_work = temp_dir / "sdf_screen"
+        Screen(
+            wrk_dir=str(csv_work),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            ligand_chain="B",
+            library=str(csv_path),
+            smiles_column="smiles",
+            col_id="id",
+        ).run()
+        Screen(
+            wrk_dir=str(sdf_work),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            ligand_chain="B",
+            library=str(sdf_path),
+        ).run()
+
+        csv_executions = pd.read_csv(csv_work / "results" / "executions.csv")
+        sdf_executions = pd.read_csv(sdf_work / "results" / "executions.csv")
+        assert csv_executions.columns.tolist() == sdf_executions.columns.tolist()
+        assert csv_executions["status"].tolist() == ["success"]
+        assert sdf_executions["status"].tolist() == ["success"]
+        assert mock_validate_run.call_count == 2
+
+    @patch("cofolder.recipes.screen.Validate.run", autospec=True)
+    def test_duplicate_normalized_execution_raises_cardinality_error(
+        self,
+        mock_validate_run,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        def write_duplicates(validator):
+            results_dir = validator.wrk_dir / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(
+                [
+                    {
+                        "model_name": "boltz2",
+                        "repeat": 1,
+                        "diffusion_sample": 0,
+                        "confidence_score": value,
+                    }
+                    for value in (0.8, 0.9)
+                ]
+            ).to_csv(results_dir / "system_metrics.csv", index=False)
+
+        mock_validate_run.side_effect = write_duplicates
+        with pytest.raises(ScreenExecutionCardinalityError, match="duplicate"):
+            Screen(
+                wrk_dir=str(temp_dir / "duplicate_screen"),
+                system_path=str(sample_system_yaml),
+                options_path=str(sample_options_yaml),
+                ligand_chain="B",
+                library=str(sample_csv_file),
+                smiles_column="smiles",
+                col_id="compound_id",
+            ).run()
+
+    @patch("cofolder.recipes.screen.Validate.run", autospec=True)
+    def test_execution_matrix_expands_compounds_repeats_and_samples(
+        self,
+        mock_validate_run,
+        sample_system_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        options_path = temp_dir / "matrix_options.yaml"
+        options_path.write_text(
+            yaml.safe_dump(
+                {
+                    "version": 1,
+                    "runtime": {
+                        "cache_path": "~/.boltz",
+                        "diffusion_samples": 2,
+                    },
+                    "runner": {"recycling_steps": 3},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def write_matrix(validator):
+            results_dir = validator.wrk_dir / "results"
+            results_dir.mkdir(parents=True, exist_ok=True)
+            pd.DataFrame(
+                [
+                    {
+                        "model_name": "boltz2",
+                        "repeat": repeat,
+                        "diffusion_sample": sample,
+                        "confidence_score": 0.9,
+                    }
+                    for repeat in (1, 2)
+                    for sample in (0, 1)
+                ]
+            ).to_csv(results_dir / "system_metrics.csv", index=False)
+
+        mock_validate_run.side_effect = write_matrix
+        work_dir = temp_dir / "matrix_screen"
+        results = Screen(
+            wrk_dir=str(work_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(options_path),
+            ligand_chain="B",
+            library=str(sample_csv_file),
+            smiles_column="smiles",
+            col_id="compound_id",
+            repeats=2,
+        ).run()
+
+        assert len(results) == 8
+        assert not results.duplicated(
+            ["compound_id", "repeat_id", "model_id", "sample_id"]
+        ).any()
+        executions = pd.read_csv(work_dir / "results" / "executions.csv")
+        assert len(executions) == 8
+        assert set(executions["status"]) == {"success"}
+        assert set(executions["schema_version"]) == {"1.0.0"}
+
     def test_screen_generates_msa_once_then_reuses_it_for_repeats_and_rows(
         self,
         monkeypatch,
@@ -300,8 +443,12 @@ class TestScreenRun:
         ).run()
 
         assert runner.msa_missing_at_run == [True, False, False, False]
-        assert results["status"].tolist() == ["success", "success"]
-        assert results["ligand_B__pair_chains_iptm_A"].tolist() == [0.7, 0.7]
+        assert results["status"].tolist() == ["success"] * 4
+        assert results["ligand_B__pair_chains_iptm_A"].tolist() == [0.7] * 4
+        assert results.groupby("compound_id")["repeat_id"].apply(list).tolist() == [
+            [1, 2],
+            [1, 2],
+        ]
         for row_index, compound_id in enumerate(("CMPD001", "CMPD002"), 1):
             row_system = yaml.safe_load(
                 (
@@ -592,7 +739,7 @@ class TestScreenRun:
         assert len(out_df) == 2
         bad = out_df[out_df["compound_id"] == "CMPD_BAD"].iloc[0]
         good = out_df[out_df["compound_id"] == "CMPD_OK"].iloc[0]
-        assert bad["status"] == "failed"
+        assert bad["status"] == "unavailable"
         assert "Invalid SMILES" in str(bad["error_message"])
         assert good["status"] == "success"
 
@@ -833,7 +980,7 @@ class TestScreenRun:
         ).run()
 
         assert mock_validate_run.call_count == 1
-        assert results["status"].tolist() == ["success", "failed"]
+        assert results["status"].tolist() == ["success", "unavailable"]
         assert results["execution_id"].tolist() == ["valid", "malformed record"]
         assert (temp_dir / "screen" / "compound_000001" / "source_ligand.sdf").is_file()
         members = pd.read_csv(temp_dir / "screen" / "results" / "compound_members.csv")

@@ -511,42 +511,64 @@ def read_public_metric_frames(run_dir: str | Path) -> tuple[pd.DataFrame, pd.Dat
         return pd.DataFrame(), pd.DataFrame()
     system_rows: dict[tuple[Any, ...], dict[str, Any]] = {}
     chain_rows: dict[tuple[Any, ...], dict[str, Any]] = {}
+    serialized_records: list[dict[str, Any]] = []
     with records_path.open(encoding="utf-8") as handle:
         for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            if record.get("record_kind") != "metric":
-                continue
-            key = (
-                record.get("repeat_id"),
-                record.get("model_id"),
-                record.get("sample_id"),
-                record.get("chain_id"),
-            )
-            target = chain_rows if record.get("chain_id") is not None else system_rows
-            row = target.setdefault(
-                key,
-                {
-                    "model_name": record.get("model_id"),
-                    "repeat": record.get("repeat_id"),
-                    "diffusion_sample": record.get("sample_id"),
-                    "effective_seed": record.get("effective_seed"),
-                },
-            )
-            if target is chain_rows:
-                row.update(
-                    {
-                        "CHAIN_ID": record.get("chain_id"),
-                        "ENTITY_TYPE": record.get("entity_type"),
-                    }
+            if line.strip():
+                serialized_records.append(json.loads(line))
+    structure_files: dict[tuple[Any, ...], str] = {}
+    for record in serialized_records:
+        if record.get("record_kind") != "success":
+            continue
+        artifact = next(
+            (
+                item
+                for item in record.get("artifacts") or ()
+                if item.get("label") == "predicted_structure"
+            ),
+            None,
+        )
+        if artifact is not None:
+            structure_files[
+                (
+                    record.get("repeat_id"),
+                    record.get("model_id"),
+                    record.get("sample_id"),
                 )
-            name = record["metric_name"]
-            if record.get("related_chain_id"):
-                name = f"{name}_{record['related_chain_id']}"
-            row[name] = (
-                record.get("value") if record.get("status") == "computed" else None
+            ] = Path(artifact["relative_path"]).name
+    for record in serialized_records:
+        if record.get("record_kind") != "metric":
+            continue
+        key = (
+            record.get("repeat_id"),
+            record.get("model_id"),
+            record.get("sample_id"),
+            record.get("chain_id"),
+        )
+        target = chain_rows if record.get("chain_id") is not None else system_rows
+        row = target.setdefault(
+            key,
+            {
+                "model_name": record.get("model_id"),
+                "repeat": record.get("repeat_id"),
+                "diffusion_sample": record.get("sample_id"),
+                "effective_seed": record.get("effective_seed"),
+                "cif_file": structure_files.get(key[:3]),
+            },
+        )
+        if target is chain_rows:
+            row.update(
+                {
+                    "CHAIN_ID": record.get("chain_id"),
+                    "ENTITY_TYPE": record.get("entity_type"),
+                }
             )
+        name = record["metric_name"]
+        if record.get("related_chain_id"):
+            name = f"{name}_{record['related_chain_id']}"
+        row[name] = (
+            record.get("value") if record.get("status") == "computed" else None
+        )
     return pd.DataFrame(system_rows.values()), pd.DataFrame(chain_rows.values())
 
 

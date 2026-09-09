@@ -19,6 +19,7 @@ from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
     RunnerExecutionResult,
     RunnerInputCapabilities,
+    RunnerModelSlot,
     RunnerPreparationResult,
 )
 
@@ -105,6 +106,21 @@ class BaseRunner(ABC):
     ) -> RepeatSeedProvenance:
         """Return the backend-facing seed; runners may explicitly adjust it."""
         return seed
+
+    def execution_models(self, options_obj: Any) -> tuple[RunnerModelSlot, ...]:
+        """Describe the model/sample axis before backend execution."""
+        samples = getattr(options_obj, "diffusion_samples", None)
+        find_value = getattr(options_obj, "find_value", None)
+        if samples is None and callable(find_value):
+            samples = find_value(key="diffusion_samples")
+        samples = int(samples or 1)
+        if samples < 1:
+            raise ValueError("Runner diffusion_samples must be positive.")
+        model_id = str(getattr(self, "model_name", None) or self.name)
+        return tuple(
+            RunnerModelSlot(model_id=model_id, sample_id=index)
+            for index in range(samples)
+        )
 
     @staticmethod
     def check_distribution_available(
@@ -243,6 +259,8 @@ class Runner(Protocol):
     def resolve_effective_seed(
         self, seed: RepeatSeedProvenance
     ) -> RepeatSeedProvenance: ...
+
+    def execution_models(self, options_obj: Any) -> tuple[RunnerModelSlot, ...]: ...
 
     def validate_system(
         self,

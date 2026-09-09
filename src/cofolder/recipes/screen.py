@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -45,18 +46,30 @@ from cofolder.modules.contracts import (
     PUBLIC_SCHEMA_VERSION,
     SCREEN_METRIC_PROFILES,
     ArtifactReference,
+    BackendVersionStatus,
     EvidenceRegime,
     EvidenceSource,
+    ExecutionRecord,
+    ExecutionStatus,
     FailureStage,
+    MetricRecord,
     OutputIdentity,
     PublicManifest,
     PublicOutputBundle,
     PublicSerializationError,
+    RecordKind,
+    RunnerBackendIdentity,
+    ScreenExecutionCardinalityError,
+    ScreenOutputNormalizationError,
+    StructuredExecutionError,
     SuccessRecord,
     WorkflowExecutionError,
+    WorkflowFailureRecord,
     WorkflowKind,
     failure_from_exception,
+    make_envelope,
     metric_records_from_frames,
+    read_public_records,
     write_public_bundle,
 )
 from cofolder.modules.input import (
@@ -77,9 +90,15 @@ from cofolder.modules.input.ligand import (
     resolve_ligand_target,
 )
 from cofolder.modules.input.system import iter_system_chains
-from cofolder.modules.runners import get_runner
+from cofolder.modules.runners import (
+    PlannedExecution,
+    RunnerExecutionPlan,
+    RunnerModelSlot,
+    get_runner,
+)
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import write
+from cofolder.modules.utils.helpers import resolve_seed_plan
 from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
 from cofolder.recipes.validate import Validate
 
@@ -182,7 +201,8 @@ class Screen:
         self._reference_ligand_selector: LigandSelector | None = None
         self._ifp_filter_policy_config: ReferenceIFPFilterPolicy | None = None
         self._prediction_ifp_cache: dict[
-            Path, tuple[InteractionFingerprint | None, str]
+            tuple[Path, int | None, int | None],
+            tuple[InteractionFingerprint | None, str],
         ] = {}
 
         self.validate_kwargs: dict[str, Any] = {
@@ -209,6 +229,7 @@ class Screen:
         self.base_system_obj: system.System | None = None
         self.ligand_target = None
         self.runner_impl = get_runner(self.runner)
+        self.execution_plan: RunnerExecutionPlan | None = None
         self._failure_stage = FailureStage.INPUT_VALIDATION
         self.reusable_msa_dir = (
             self.wrk_dir / "shared" / "msa" / self.runner
@@ -217,6 +238,53 @@ class Screen:
         )
         self.msa_reuse_settings = {}
         self.logger = logging.getLogger("cofolder.screen")
+
+    def _build_execution_plan(self, options_obj: Any) -> RunnerExecutionPlan:
+        """Resolve immutable runner, seed, repeat, model, and sample axes once."""
+        seed_plan = resolve_seed_plan(
+            int(self.validate_kwargs["repeats"]),
+            self.validate_kwargs.get("seed"),
+            self.logger,
+        )
+        resolve_effective_seed = getattr(
+            self.runner_impl, "resolve_effective_seed", None
+        )
+        adjusted = tuple(
+            resolve_effective_seed(item)
+            if callable(resolve_effective_seed)
+            else item
+            for item in seed_plan.repeats
+        )
+        seed_plan = replace(seed_plan, repeats=adjusted)
+        detect = getattr(self.runner_impl, "detect_backend_identity", None)
+        backend = detect() if callable(detect) else None
+        if backend is None:
+            backend = RunnerBackendIdentity(
+                runner_name=self.runner,
+                backend_name=self.runner,
+                version=None,
+                version_status=BackendVersionStatus.UNAVAILABLE,
+                detail="Runner does not expose backend version detection.",
+            )
+        describe = getattr(self.runner_impl, "execution_models", None)
+        models = (
+            tuple(describe(options_obj))
+            if callable(describe)
+            else (RunnerModelSlot(model_id=self.runner, sample_id=0),)
+        )
+        if not models:
+            raise ValueError("Runner execution model plan must not be empty.")
+        executions = tuple(
+            PlannedExecution(
+                repeat_id=repeat.repeat_id,
+                model_id=model.model_id,
+                sample_id=model.sample_id,
+                effective_seed=repeat.effective_seed,
+            )
+            for repeat in seed_plan.repeats
+            for model in models
+        )
+        return RunnerExecutionPlan(backend, seed_plan, executions)
 
 
     def _validate_config(self) -> None:
@@ -369,7 +437,11 @@ class Screen:
     def run(self) -> pd.DataFrame:
         try:
             return self._run_impl()
-        except (WorkflowExecutionError, PublicSerializationError):
+        except (
+            WorkflowExecutionError,
+            PublicSerializationError,
+            ScreenOutputNormalizationError,
+        ):
             raise
         except Exception as exc:
             identity = OutputIdentity(
@@ -452,6 +524,7 @@ class Screen:
             self.base_system_obj, base_dir=self.system_path.parent
         )
         options_obj = self.runner_impl.load_options(self.options_path)
+        self.execution_plan = self._build_execution_plan(options_obj)
         validated = self.runner_impl.validate_system(
             self.base_system_obj,
             options_obj,
@@ -481,11 +554,6 @@ class Screen:
             metadata_fields=self.merge_data,
             duplicate_policy=self.duplicate_id_policy,
         )
-        valid_members = [
-            outcome
-            for outcome in compound_library.outcomes
-            if isinstance(outcome, CompoundMember)
-        ]
         if self.validate_kwargs.get("conformers") == "sdf":
             if compound_library.source_format is CompoundLibraryFormat.CSV:
                 raise ValueError("--conformers sdf requires an SDF/MOL screening library.")
@@ -494,11 +562,6 @@ class Screen:
                 raise ValueError(
                     f"Runner '{self.runner}' does not support SDF ligand conformers."
                 )
-
-        if valid_members:
-            self._failure_stage = FailureStage.PREPARATION
-            self.runner_impl.ensure_available()
-            self._failure_stage = FailureStage.INPUT_VALIDATION
 
         records: list[dict[str, Any]] = []
         records_with_scores: list[dict[str, Any]] = []
@@ -551,6 +614,7 @@ class Screen:
                 if isinstance(outcome, CompoundMember)
                 else None
             )
+            row_exception: BaseException | None = None
             try:
                 assert self.ligand_target is not None
                 if isinstance(outcome, CompoundMemberFailure):
@@ -616,6 +680,7 @@ class Screen:
                     system_path=str(row_system_path),
                     options_path=str(self.options_path),
                     runner=self.runner,
+                    execution_plan=self.execution_plan,
                     reusable_msa_dir=(
                         str(self.reusable_msa_dir)
                         if self.reusable_msa_dir is not None
@@ -633,11 +698,8 @@ class Screen:
                     )
                     write.write_yaml(sys_obj, path=row_system_path)
                 row_stage = FailureStage.ANALYTICS
-                detailed.update(self._collect_score_columns(run_dir=run_dir))
-                filter_result = self._evaluate_ifp_filter(run_dir=run_dir)
-                summary.update(filter_result)
-                detailed.update(filter_result)
             except Exception as exc:
+                row_exception = exc
                 if self.reusable_msa_dir is not None and sys_obj is not None:
                     try:
                         injected = self.runner_impl.inject_reusable_msas(
@@ -664,37 +726,222 @@ class Screen:
                 source_exc = exc if isinstance(outcome, CompoundMemberFailure) else exc.__cause__ or exc
                 if isinstance(exc, WorkflowExecutionError) and exc.failures:
                     row_stage = exc.failures[0].stage
-                public_failures.append(
-                    failure_from_exception(
-                        source_exc,
-                        identity=OutputIdentity(
+                failure_details = {
+                    "row_index": i,
+                    "source_format": source.source_format.value,
+                    "source_path": str(source.source_path),
+                    "source_record_index": i,
+                    "source_record_id": source.source_record_id,
+                    "original_id": source.original_id,
+                    "execution_id": compound_id,
+                    "execution_directory": outcome.execution_directory,
+                }
+                child_failures = (
+                    exc.failures
+                    if isinstance(exc, WorkflowExecutionError) and exc.failures
+                    else ()
+                )
+                if child_failures:
+                    for child_failure in child_failures:
+                        child_identity = child_failure.envelope.identity
+                        rebased_identity = replace(
+                            child_identity,
                             workflow=WorkflowKind.SCREEN,
                             run_id=self.run_id,
                             system_id=self.system_path.stem,
                             compound_id=compound_id,
-                            runner_id=self.runner,
-                        ),
-                        stage=row_stage,
-                        error_code=getattr(
-                            source_exc, "error_code", "screen_compound_failed"
-                        ),
-                        details={
-                            "row_index": i,
-                            "source_format": source.source_format.value,
-                            "source_path": str(source.source_path),
-                            "source_record_index": i,
-                            "source_record_id": source.source_record_id,
-                            "original_id": source.original_id,
-                            "execution_id": compound_id,
-                            "execution_directory": outcome.execution_directory,
-                        },
+                            execution_directory=outcome.execution_directory,
+                            runner_id=self.execution_plan.backend.runner_name,
+                            runner_version=self.execution_plan.backend.version,
+                            backend_name=self.execution_plan.backend.backend_name,
+                            backend_version_status=(
+                                self.execution_plan.backend.version_status
+                            ),
+                        )
+                        public_failures.append(
+                            replace(
+                                child_failure,
+                                envelope=make_envelope(
+                                    RecordKind.FAILURE,
+                                    rebased_identity,
+                                    child_failure.stage.value,
+                                    child_failure.error_code,
+                                ),
+                                details={**child_failure.details, **failure_details},
+                            )
+                        )
+                else:
+                    public_failures.append(
+                        failure_from_exception(
+                            source_exc,
+                            identity=OutputIdentity(
+                                workflow=WorkflowKind.SCREEN,
+                                run_id=self.run_id,
+                                system_id=self.system_path.stem,
+                                compound_id=compound_id,
+                                execution_directory=outcome.execution_directory,
+                                runner_id=self.runner,
+                                runner_version=self.execution_plan.backend.version,
+                                backend_name=self.execution_plan.backend.backend_name,
+                                backend_version_status=(
+                                    self.execution_plan.backend.version_status
+                                ),
+                            ),
+                            stage=row_stage,
+                            error_code=getattr(
+                                source_exc, "error_code", "screen_compound_failed"
+                            ),
+                            details=failure_details,
+                        )
                     )
-                )
 
             detailed["coordinate_mode"] = coordinate_mode
             summary["coordinate_mode"] = coordinate_mode
-            records.append(summary)
-            records_with_scores.append(detailed)
+            assert self.execution_plan is not None
+            system_frame, chain_frame = read_metric_frames(run_dir)
+            has_normalized_output = not system_frame.empty or not chain_frame.empty
+            child_bundle_path = run_dir / "results" / "records.jsonl"
+            child_bundle_failures = (
+                tuple(
+                    record
+                    for record in read_public_records(child_bundle_path)
+                    if isinstance(record, WorkflowFailureRecord)
+                )
+                if child_bundle_path.is_file()
+                else ()
+            )
+            if row_exception is None and has_normalized_output:
+                self._validate_observed_execution_keys(system_frame)
+            known_child_failures = (
+                row_exception.failures
+                if isinstance(row_exception, WorkflowExecutionError)
+                else child_bundle_failures
+            )
+            failure_repeat_ids = {
+                failure.envelope.identity.repeat_id
+                for failure in known_child_failures
+                if failure.envelope.identity.repeat_id is not None
+            }
+            for slot in self.execution_plan.executions:
+                matching_child_failures = [
+                    failure
+                    for failure in known_child_failures
+                    if failure.envelope.identity.repeat_id in {None, slot.repeat_id}
+                    and (
+                        failure.envelope.identity.model_id in {None, slot.model_id}
+                    )
+                    and (
+                        failure.envelope.identity.sample_id in {None, slot.sample_id}
+                    )
+                ]
+                slot_failure = (
+                    matching_child_failures[0]
+                    if matching_child_failures
+                    else None
+                )
+                execution_row = dict(detailed)
+                execution_row.update(
+                    {
+                        "repeat": slot.repeat_id,
+                        "repeat_id": slot.repeat_id,
+                        "model_name": slot.model_id,
+                        "model_id": slot.model_id,
+                        "diffusion_sample": slot.sample_id,
+                        "sample_id": slot.sample_id,
+                        "execution_key": (
+                            f"{compound_id}|repeat={slot.repeat_id}|"
+                            f"model={slot.model_id}|sample={slot.sample_id}"
+                        ),
+                        "effective_seed": slot.effective_seed,
+                        "runner_id": self.execution_plan.backend.runner_name,
+                        "backend_name": self.execution_plan.backend.backend_name,
+                        "runner_version": self.execution_plan.backend.version,
+                        "backend_version_status": (
+                            self.execution_plan.backend.version_status.value
+                        ),
+                    }
+                )
+                if row_exception is None and slot_failure is None:
+                    slot_values, observed = self._collect_execution_score_columns(
+                        system_frame,
+                        chain_frame,
+                        slot,
+                    )
+                    execution_row.update(slot_values)
+                    execution_row.update(
+                        self._evaluate_ifp_filter(
+                            run_dir,
+                            repeat_id=slot.repeat_id,
+                            sample_id=slot.sample_id,
+                        )
+                    )
+                    if has_normalized_output and not observed:
+                        execution_row["status"] = "unavailable"
+                        execution_row["error_stage"] = FailureStage.OUTPUT_VALIDATION.value
+                        execution_row["exception_type"] = "MissingExecutionOutput"
+                        execution_row["error_code"] = "screen_execution_output_missing"
+                        execution_row["error_message"] = (
+                            "The runner did not produce this planned model/sample output."
+                        )
+                        execution_row["error_details"] = {
+                            "repeat_id": slot.repeat_id,
+                            "model_id": slot.model_id,
+                            "sample_id": slot.sample_id,
+                        }
+                    else:
+                        execution_row["status"] = "success"
+                        execution_row["error_stage"] = ""
+                        execution_row["exception_type"] = ""
+                        execution_row["error_code"] = ""
+                        execution_row["error_message"] = ""
+                        execution_row["error_details"] = {}
+                else:
+                    attempted = (
+                        not isinstance(outcome, CompoundMemberFailure)
+                        and (slot_failure.stage if slot_failure else row_stage)
+                        in {
+                            FailureStage.BACKEND_EXECUTION,
+                            FailureStage.OUTPUT_VALIDATION,
+                            FailureStage.ANALYTICS,
+                            FailureStage.AGGREGATION,
+                        }
+                        and (
+                            not failure_repeat_ids
+                            or slot.repeat_id in failure_repeat_ids
+                        )
+                    )
+                    execution_row["status"] = "failed" if attempted else "unavailable"
+                    execution_row["error_stage"] = (
+                        slot_failure.stage.value if slot_failure else row_stage.value
+                    )
+                    execution_row["exception_type"] = (
+                        slot_failure.exception_type
+                        if slot_failure
+                        else type(row_exception).__name__
+                    )
+                    execution_row["error_code"] = (
+                        slot_failure.error_code
+                        if slot_failure
+                        else getattr(
+                            row_exception,
+                            "error_code",
+                            "screen_compound_failed"
+                            if attempted
+                            else "screen_execution_unavailable",
+                        )
+                    )
+                    execution_row["error_message"] = (
+                        slot_failure.message if slot_failure else str(row_exception)
+                    )
+                    execution_row["error_details"] = (
+                        dict(slot_failure.details) if slot_failure else {}
+                    )
+                    if self._ifp_filter_enabled():
+                        execution_row.update(
+                            self._not_evaluable_filter_result("row_failed")
+                        )
+                records.append(dict(execution_row))
+                records_with_scores.append(execution_row)
             member_manifest.append(
                 {
                     "source_format": source.source_format.value,
@@ -782,6 +1029,7 @@ class Screen:
             (chain.entity_type, chain.chain_id, chain.sequence_index)
             for chain in iter_system_chains(self.base_system_obj)
         ]
+        child_record_cache: dict[Path, tuple[Any, ...]] = {}
         for _, row in results_df.iterrows():
             compound_id = str(row[self.col_id])
             identity = OutputIdentity(
@@ -789,14 +1037,152 @@ class Screen:
                 run_id=self.run_id,
                 system_id=self.system_path.stem,
                 compound_id=compound_id,
-                runner_id=self.runner,
+                execution_directory=str(row["execution_directory"]),
+                runner_id=str(row.get("runner_id") or self.runner),
+                runner_version=(
+                    str(row["runner_version"])
+                    if pd.notna(row.get("runner_version"))
+                    else None
+                ),
+                backend_name=str(row.get("backend_name") or self.runner),
+                backend_version_status=(
+                    self.execution_plan.backend.version_status
+                    if self.execution_plan is not None
+                    else None
+                ),
+                effective_seed=int(row["effective_seed"]),
+                repeat_id=int(row["repeat_id"]),
+                model_id=str(row["model_id"]),
+                sample_id=(
+                    int(row["sample_id"])
+                    if pd.notna(row.get("sample_id"))
+                    else None
+                ),
             )
-            if str(row.get("status")) == "failed":
+            execution_status = ExecutionStatus(str(row.get("status")))
+            execution_error = None
+            if execution_status is not ExecutionStatus.SUCCESS:
+                execution_error = StructuredExecutionError(
+                    stage=FailureStage(str(row.get("error_stage"))),
+                    exception_type=str(row.get("exception_type") or "ExecutionUnavailable"),
+                    error_code=str(row.get("error_code") or "screen_execution_unavailable"),
+                    message=str(row.get("error_message") or "Execution unavailable."),
+                    details={
+                        "source_format": str(row.get("source_format")),
+                        "source_record_index": int(row.get("source_record_index")),
+                        "source_record_id": str(row.get("source_record_id")),
+                        **(
+                            row.get("error_details")
+                            if isinstance(row.get("error_details"), dict)
+                            else {}
+                        ),
+                    },
+                )
+            public_records.append(
+                ExecutionRecord(
+                    envelope=make_envelope(
+                        RecordKind.EXECUTION, identity, "execution"
+                    ),
+                    status=execution_status,
+                    execution_directory=str(row["execution_directory"]),
+                    error=execution_error,
+                )
+            )
+            child_records_path = Path(row["run_dir"]) / "results" / "records.jsonl"
+            child_records: tuple[Any, ...] = ()
+            if child_records_path.is_file():
+                if child_records_path not in child_record_cache:
+                    child_record_cache[child_records_path] = read_public_records(
+                        child_records_path
+                    )
+                child_records = child_record_cache[child_records_path]
+                for child_failure in child_records:
+                    if not isinstance(child_failure, WorkflowFailureRecord):
+                        continue
+                    child_identity = child_failure.envelope.identity
+                    if child_identity.repeat_id not in {None, identity.repeat_id}:
+                        continue
+                    if child_identity.model_id not in {None, identity.model_id}:
+                        continue
+                    if child_identity.sample_id not in {None, identity.sample_id}:
+                        continue
+                    rebased_identity = replace(
+                        child_identity,
+                        workflow=WorkflowKind.SCREEN,
+                        run_id=self.run_id,
+                        system_id=self.system_path.stem,
+                        compound_id=compound_id,
+                        execution_directory=str(row["execution_directory"]),
+                        runner_id=identity.runner_id,
+                        runner_version=identity.runner_version,
+                        backend_name=identity.backend_name,
+                        backend_version_status=identity.backend_version_status,
+                        effective_seed=identity.effective_seed,
+                        repeat_id=identity.repeat_id,
+                        model_id=identity.model_id,
+                        sample_id=identity.sample_id,
+                    )
+                    public_records.append(
+                        replace(
+                            child_failure,
+                            envelope=make_envelope(
+                                RecordKind.FAILURE,
+                                rebased_identity,
+                                child_failure.stage.value,
+                                child_failure.error_code,
+                                created_at=child_failure.envelope.created_at,
+                            ),
+                        )
+                    )
+            if execution_status is not ExecutionStatus.SUCCESS:
                 continue
+            preserved_metric_ids: set[str] = set()
+            if child_records:
+                for child_record in child_records:
+                    if not isinstance(child_record, MetricRecord):
+                        continue
+                    child_identity = child_record.envelope.identity
+                    if child_identity.repeat_id != identity.repeat_id:
+                        continue
+                    if child_identity.sample_id != identity.sample_id:
+                        continue
+                    rebased_identity = replace(
+                        child_identity,
+                        workflow=WorkflowKind.SCREEN,
+                        run_id=self.run_id,
+                        system_id=self.system_path.stem,
+                        compound_id=compound_id,
+                        execution_directory=str(row["execution_directory"]),
+                        runner_id=identity.runner_id,
+                        runner_version=identity.runner_version,
+                        backend_name=identity.backend_name,
+                        backend_version_status=identity.backend_version_status,
+                        effective_seed=identity.effective_seed,
+                        repeat_id=identity.repeat_id,
+                        model_id=identity.model_id,
+                        sample_id=identity.sample_id,
+                    )
+                    rebased_record = replace(
+                        child_record,
+                        envelope=make_envelope(
+                            RecordKind.METRIC,
+                            rebased_identity,
+                            child_record.metric_name,
+                            child_record.statistic,
+                            created_at=child_record.envelope.created_at,
+                        ),
+                    )
+                    public_records.append(rebased_record)
+                    preserved_metric_ids.add(rebased_record.envelope.record_id)
             system_values = {
-                "model_name": None,
-                "repeat": None,
-                "diffusion_sample": None,
+                "model_name": row["model_id"],
+                "repeat": row["repeat_id"],
+                "diffusion_sample": row.get("sample_id"),
+                "runner_id": row.get("runner_id"),
+                "runner_version": row.get("runner_version"),
+                "backend_name": row.get("backend_name"),
+                "backend_version_status": row.get("backend_version_status"),
+                "effective_seed": row.get("effective_seed"),
             }
             chain_values: list[dict[str, Any]] = []
             for entity_type, chain_id, entity_position in chain_specs:
@@ -805,9 +1191,14 @@ class Screen:
                     "CHAIN_ID": chain_id,
                     "ENTITY_ID": f"entity:{entity_position}",
                     "ENTITY_TYPE": entity_type,
-                    "model_name": None,
-                    "repeat": None,
-                    "diffusion_sample": None,
+                    "model_name": row["model_id"],
+                    "repeat": row["repeat_id"],
+                    "diffusion_sample": row.get("sample_id"),
+                    "runner_id": row.get("runner_id"),
+                    "runner_version": row.get("runner_version"),
+                    "backend_name": row.get("backend_name"),
+                    "backend_version_status": row.get("backend_version_status"),
+                    "effective_seed": row.get("effective_seed"),
                 }
                 for key, value in row.items():
                     if str(key).startswith(prefix):
@@ -819,40 +1210,67 @@ class Screen:
                     system_values[name] = value
                 elif str(key) in METRIC_CATALOG:
                     system_values[str(key)] = value
-            public_records.extend(
-                metric_records_from_frames(
-                    pd.DataFrame([system_values]),
-                    pd.DataFrame(chain_values),
-                    base_identity=identity,
-                    evidence=evidence,
-                    requested_metrics=requested or None,
-                    evidence_regime_overrides={
+            generated_records = metric_records_from_frames(
+                pd.DataFrame([system_values]),
+                pd.DataFrame(chain_values),
+                base_identity=identity,
+                evidence=evidence,
+                requested_metrics=requested or None,
+                evidence_regime_overrides=(
+                    {
                         name: (
                             EvidenceRegime.REFERENCE_STRUCTURE
-                            if self._resolved_ifp_filter_source == "reference_complex"
+                            if self._resolved_ifp_filter_source
+                            == "reference_complex"
                             else EvidenceRegime.CUSTOM_POCKET
                         )
                         for name in METRIC_CATALOG
                         if name.startswith("ifp_filter_")
-                    } if self._ifp_filter_enabled() else None,
-                )
+                    }
+                    if self._ifp_filter_enabled()
+                    else None
+                ),
             )
-        public_records.extend(failures)
+            public_records.extend(
+                record
+                for record in generated_records
+                if not isinstance(record, SuccessRecord)
+                and record.envelope.record_id not in preserved_metric_ids
+            )
+        existing_record_ids = {
+            record.envelope.record_id for record in public_records
+        }
+        public_records.extend(
+            failure
+            for failure in failures
+            if failure.envelope.record_id not in existing_record_ids
+        )
         has_success = any(
-            isinstance(record, SuccessRecord) for record in public_records
+            isinstance(record, ExecutionRecord)
+            and record.status is ExecutionStatus.SUCCESS
+            for record in public_records
+        )
+        has_unsuccessful_execution = any(
+            isinstance(record, ExecutionRecord)
+            and record.status is not ExecutionStatus.SUCCESS
+            for record in public_records
         )
         status = (
             "partial"
-            if failures and has_success
+            if has_success and (failures or has_unsuccessful_execution)
             else "success"
             if has_success
             else "failed"
         )
+        backend = self.execution_plan.backend if self.execution_plan else None
         manifest_identity = OutputIdentity(
             workflow=WorkflowKind.SCREEN,
             run_id=self.run_id,
             system_id=self.system_path.stem,
             runner_id=self.runner,
+            runner_version=backend.version if backend else None,
+            backend_name=backend.backend_name if backend else None,
+            backend_version_status=backend.version_status if backend else None,
         )
         bundle = PublicOutputBundle(
             manifest=PublicManifest(
@@ -862,6 +1280,12 @@ class Screen:
                 evidence=tuple(evidence),
                 requested_metrics=tuple(sorted(requested)),
                 artifacts=(
+                    ArtifactReference(
+                        "executions",
+                        "executions.csv",
+                        "table",
+                        "One terminal record per compound/repeat/model/sample.",
+                    ),
                     ArtifactReference(
                         "compound_members",
                         "compound_members.csv",
@@ -879,6 +1303,14 @@ class Screen:
                         if self.cluster_ifps
                         else ()
                     ),
+                ),
+                backend=(
+                    backend
+                ),
+                seed_plan=(
+                    self.execution_plan.seed_plan
+                    if self.execution_plan is not None
+                    else None
                 ),
             ),
             records=tuple(public_records),
@@ -915,10 +1347,24 @@ class Screen:
             if row.get("status") != "success":
                 continue
             fingerprint, _ = self._load_selected_interaction_fingerprint(
-                Path(row["run_dir"])
+                Path(row["run_dir"]),
+                repeat_id=int(row["repeat_id"]),
+                sample_id=(
+                    int(row["sample_id"])
+                    if pd.notna(row.get("sample_id"))
+                    else None
+                ),
             )
             if fingerprint is None and self.ifp_taxonomy is IFPTaxonomy.DISTANCE:
-                vector, _ = self._load_selected_ligand_ifp(Path(row["run_dir"]))
+                vector, _ = self._load_selected_ligand_ifp(
+                    Path(row["run_dir"]),
+                    repeat_id=int(row["repeat_id"]),
+                    sample_id=(
+                        int(row["sample_id"])
+                        if pd.notna(row.get("sample_id"))
+                        else None
+                    ),
+                )
                 if vector is not None:
                     if legacy_width is None:
                         legacy_width = len(vector)
@@ -940,7 +1386,7 @@ class Screen:
                     )
             if fingerprint is None:
                 continue
-            parsed_rows.append((position, fingerprint, str(row[self.col_id])))
+            parsed_rows.append((position, fingerprint, str(row["execution_key"])))
 
         if parsed_rows:
             clustered = cluster_interaction_fingerprints(
@@ -993,24 +1439,31 @@ class Screen:
         )
 
     def _load_selected_interaction_fingerprint(
-        self, run_dir: Path
+        self,
+        run_dir: Path,
+        *,
+        repeat_id: int | None = None,
+        sample_id: int | None = None,
     ) -> tuple[InteractionFingerprint | None, str]:
         run_dir = Path(run_dir)
-        if run_dir in self._prediction_ifp_cache:
-            return self._prediction_ifp_cache[run_dir]
+        cache_key = (run_dir, repeat_id, sample_id)
+        if cache_key in self._prediction_ifp_cache:
+            return self._prediction_ifp_cache[cache_key]
         _, chain_df = read_metric_frames(run_dir)
         if chain_df.empty or not {"CHAIN_ID", "ENTITY_TYPE", "cif_file"}.issubset(chain_df.columns):
             result = (None, "missing_chain_metrics")
-            self._prediction_ifp_cache[run_dir] = result
+            self._prediction_ifp_cache[cache_key] = result
             return result
-        selected = self._select_chain_metrics_rows(chain_df)
+        selected = self._select_chain_metrics_rows(
+            chain_df, repeat_id=repeat_id, sample_id=sample_id
+        )
         ligand_rows = selected[
             (selected["ENTITY_TYPE"].astype(str).str.lower() == "ligand")
             & (selected["CHAIN_ID"].astype(str) == self.ligand_chain)
         ]
         if ligand_rows.empty:
             result = (None, "ligand_chain_not_found")
-            self._prediction_ifp_cache[run_dir] = result
+            self._prediction_ifp_cache[cache_key] = result
             return result
         cif_name = ligand_rows.iloc[0].get("cif_file")
         path = run_dir / "results" / "structures" / str(cif_name)
@@ -1028,17 +1481,25 @@ class Screen:
             ), "")
         except ReferenceIFPError as exc:
             result = (None, str(exc))
-        self._prediction_ifp_cache[run_dir] = result
+        self._prediction_ifp_cache[cache_key] = result
         return result
 
-    def _load_selected_ligand_ifp(self, run_dir: Path) -> tuple[list[int] | None, str]:
+    def _load_selected_ligand_ifp(
+        self,
+        run_dir: Path,
+        *,
+        repeat_id: int | None = None,
+        sample_id: int | None = None,
+    ) -> tuple[list[int] | None, str]:
         _, chain_df = read_metric_frames(run_dir)
         if chain_df.empty:
             return None, "missing_chain_metrics"
         required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
         if chain_df.empty or not required.issubset(chain_df.columns):
             return None, "missing_ifp"
-        chain_df = self._select_chain_metrics_rows(chain_df)
+        chain_df = self._select_chain_metrics_rows(
+            chain_df, repeat_id=repeat_id, sample_id=sample_id
+        )
         ligand_rows = chain_df[
             chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
         ]
@@ -1104,12 +1565,20 @@ class Screen:
             "ifp_filter_mapping_failures": json.dumps([reason]),
         }
 
-    def _evaluate_ifp_filter(self, run_dir: Path) -> dict[str, Any]:
-        """Evaluate strict reference overlap for one completed screen row."""
+    def _evaluate_ifp_filter(
+        self,
+        run_dir: Path,
+        *,
+        repeat_id: int | None = None,
+        sample_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Evaluate strict reference overlap for one completed execution."""
         if not self._ifp_filter_enabled():
             return self._default_filter_result()
         if self._resolved_ifp_filter_source == "reference_complex":
-            return self._evaluate_reference_complex_filter(run_dir)
+            return self._evaluate_reference_complex_filter(
+                run_dir, repeat_id=repeat_id, sample_id=sample_id
+            )
 
         _, chain_df = read_metric_frames(run_dir)
         if chain_df.empty:
@@ -1118,7 +1587,9 @@ class Screen:
         if chain_df.empty or not required.issubset(chain_df.columns):
             return self._not_evaluable_filter_result("missing_ifp")
 
-        chain_df = self._select_chain_metrics_rows(chain_df)
+        chain_df = self._select_chain_metrics_rows(
+            chain_df, repeat_id=repeat_id, sample_id=sample_id
+        )
         ligand_rows = chain_df[
             chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
         ]
@@ -1176,14 +1647,20 @@ class Screen:
             "ifp_filter_mapping_failures": json.dumps([]),
         }
 
-    def _evaluate_reference_complex_filter(self, run_dir: Path) -> dict[str, Any]:
+    def _evaluate_reference_complex_filter(
+        self,
+        run_dir: Path,
+        *,
+        repeat_id: int | None = None,
+        sample_id: int | None = None,
+    ) -> dict[str, Any]:
         if self._reference_ifp_failure:
             return self._not_evaluable_filter_result(self._reference_ifp_failure)
         if self._reference_ifp is None or self._ifp_filter_policy_config is None:
             return self._not_evaluable_filter_result("reference_ifp_extraction_failed")
         try:
             prediction, extraction_reason = self._load_selected_interaction_fingerprint(
-                run_dir
+                run_dir, repeat_id=repeat_id, sample_id=sample_id
             )
             if prediction is None:
                 reason = (
@@ -1333,6 +1810,71 @@ class Screen:
         self._ensure_screen_metric_schema(out)
         return out
 
+    def _collect_execution_score_columns(
+        self,
+        system_df: pd.DataFrame,
+        chain_df: pd.DataFrame,
+        slot: PlannedExecution,
+    ) -> tuple[dict[str, Any], bool]:
+        """Collect metrics for exactly one planned repeat/model/sample slot."""
+
+        def select(frame: pd.DataFrame) -> pd.DataFrame:
+            if frame.empty:
+                return frame
+            mask = pd.Series(True, index=frame.index)
+            if "repeat" in frame:
+                mask &= pd.to_numeric(frame["repeat"], errors="coerce").eq(
+                    slot.repeat_id
+                )
+            if "diffusion_sample" in frame and slot.sample_id is not None:
+                mask &= pd.to_numeric(
+                    frame["diffusion_sample"], errors="coerce"
+                ).eq(slot.sample_id)
+            if "model_name" in frame:
+                observed_models = set(frame["model_name"].dropna().astype(str))
+                if slot.model_id in observed_models:
+                    mask &= frame["model_name"].astype(str).eq(slot.model_id)
+            return frame.loc[mask]
+
+        selected_system = select(system_df)
+        selected_chain = select(chain_df)
+        if len(selected_system) > 1:
+            raise ScreenExecutionCardinalityError(
+                "Validate produced duplicate system rows for execution "
+                f"repeat={slot.repeat_id}, model={slot.model_id!r}, "
+                f"sample={slot.sample_id!r}."
+            )
+        observed = not selected_system.empty or not selected_chain.empty
+        values = (
+            primary_metric_values(selected_system, selected_chain)
+            if observed
+            else {}
+        )
+        self._ensure_screen_metric_schema(values)
+        return values, observed
+
+    def _validate_observed_execution_keys(self, system_df: pd.DataFrame) -> None:
+        """Reject normalized system outputs outside the planned execution matrix."""
+        if system_df.empty or self.execution_plan is None:
+            return
+        required = {"repeat", "diffusion_sample"}
+        if not required.issubset(system_df.columns):
+            raise ScreenExecutionCardinalityError(
+                "Validate system output lacks repeat/diffusion_sample identity."
+            )
+        planned = {
+            (slot.repeat_id, slot.sample_id) for slot in self.execution_plan.executions
+        }
+        observed = {
+            (int(row["repeat"]), int(row["diffusion_sample"]))
+            for _, row in system_df.iterrows()
+        }
+        extras = sorted(observed - planned)
+        if extras:
+            raise ScreenExecutionCardinalityError(
+                f"Validate produced executions outside the planned matrix: {extras}."
+            )
+
     def _ensure_screen_metric_schema(self, output: dict[str, Any]) -> None:
         """Populate stable manuscript-facing score columns, using nulls when unavailable."""
 
@@ -1369,8 +1911,22 @@ class Screen:
         return df.iloc[0]
 
     @staticmethod
-    def _select_chain_metrics_rows(df: pd.DataFrame) -> pd.DataFrame:
-        """Prefer repeat=1/sample=0 chain rows when available; otherwise de-duplicate by chain."""
+    def _select_chain_metrics_rows(
+        df: pd.DataFrame,
+        *,
+        repeat_id: int | None = None,
+        sample_id: int | None = None,
+    ) -> pd.DataFrame:
+        """Select one execution's chain rows, retaining legacy primary selection."""
+        if repeat_id is not None and "repeat" in df.columns:
+            selected = df[pd.to_numeric(df["repeat"], errors="coerce").eq(repeat_id)]
+            if sample_id is not None and "diffusion_sample" in selected.columns:
+                selected = selected[
+                    pd.to_numeric(
+                        selected["diffusion_sample"], errors="coerce"
+                    ).eq(sample_id)
+                ]
+            return selected
         if {"repeat", "diffusion_sample"}.issubset(df.columns):
             sub = df[(df["repeat"] == 1) & (df["diffusion_sample"] == 0)]
             if not sub.empty:

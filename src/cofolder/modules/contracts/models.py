@@ -20,6 +20,7 @@ class WorkflowKind(StrEnum):
 
 
 class RecordKind(StrEnum):
+    EXECUTION = "execution"
     SUCCESS = "success"
     METRIC = "metric"
     FAILURE = "failure"
@@ -32,6 +33,12 @@ class RecordStatus(StrEnum):
     UNSUPPORTED = "unsupported"
     FAILED = "failed"
     NOT_REQUESTED = "not_requested"
+
+
+class ExecutionStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    UNAVAILABLE = "unavailable"
 
 
 class EvidenceRegime(StrEnum):
@@ -121,6 +128,7 @@ class OutputIdentity:
     run_id: str
     system_id: str
     compound_id: str | None = None
+    execution_directory: str | None = None
     runner_id: str | None = None
     runner_version: str | None = None
     backend_name: str | None = None
@@ -169,6 +177,25 @@ class SuccessRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class StructuredExecutionError:
+    stage: FailureStage
+    exception_type: str
+    error_code: str
+    message: str
+    retryable: bool = False
+    details: Mapping[str, JSONValue] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionRecord:
+    envelope: PublicRecordEnvelope
+    status: ExecutionStatus
+    execution_directory: str
+    error: StructuredExecutionError | None = None
+    artifacts: tuple[ArtifactReference, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class MetricRecord:
     envelope: PublicRecordEnvelope
     metric_name: str
@@ -197,7 +224,9 @@ class WorkflowFailureRecord:
     details: Mapping[str, JSONValue] = field(default_factory=dict)
 
 
-PublicRecord: TypeAlias = SuccessRecord | MetricRecord | WorkflowFailureRecord
+PublicRecord: TypeAlias = (
+    ExecutionRecord | SuccessRecord | MetricRecord | WorkflowFailureRecord
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,6 +252,7 @@ class PublicOutputBundle:
 class SerializedPublicOutput:
     output_dir: Path
     records_path: Path
+    executions_path: Path
     successes_path: Path
     metrics_path: Path
     failures_path: Path
@@ -255,6 +285,14 @@ class EvidenceCompatibilityError(PublicSchemaValidationError):
 
 class PublicSerializationError(RuntimeError):
     """Raised when a validated public bundle cannot be serialized atomically."""
+
+
+class ScreenOutputNormalizationError(PublicContractError):
+    """Raised when child output cannot be mapped to planned Screen executions."""
+
+
+class ScreenExecutionCardinalityError(ScreenOutputNormalizationError):
+    """Raised when observed Screen output contradicts its execution matrix."""
 
 
 class SeedResolutionError(ValueError):
