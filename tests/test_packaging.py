@@ -47,6 +47,7 @@ def test_unsupported_ui_is_absent_from_install_metadata():
 
     package_discovery = pyproject["tool"]["setuptools"]["packages"]["find"]
     assert set(package_discovery["exclude"]) >= {"cofolder.ui", "cofolder.ui.*"}
+    assert pyproject["tool"]["setuptools"]["include-package-data"] is False
 
     scripts = pyproject["project"]["scripts"]
     assert scripts["cofolder"] == "cofolder.cli:main"
@@ -71,4 +72,20 @@ def test_package_version_is_consistent():
         "__version__"
     ]
 
-    assert pyproject["project"]["version"] == package_version == "0.1.0"
+    assert "version" not in pyproject["project"]
+    assert "version" in pyproject["project"]["dynamic"]
+    assert pyproject["tool"]["setuptools"]["dynamic"]["version"] == {
+        "attr": "cofolder.__version__"
+    }
+    assert package_version == "1.0.0"
+
+
+def test_package_declares_mit_license_metadata():
+    repository = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads(
+        (repository / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert pyproject["project"]["license"] == "MIT"
+    assert pyproject["project"]["license-files"] == ["LICENSE"]
+    assert "setuptools >= 77.0.3" in pyproject["build-system"]["requires"]

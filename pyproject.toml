@@ -1,12 +1,14 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cofolder"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Collection of helpful tools for performing various co-folding tasks using cofolding models (e.g. Boltz.)"
 readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
   {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
@@ -63,6 +65,12 @@ docs = [
 ]
 [project.scripts]
 cofolder = "cofolder.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = {attr = "cofolder.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -275,9 +275,9 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 plan_version: 2
 overall_status: IN_PROGRESS
 active_phase: S3
-active_task: S3.1
-last_completed_task: S2.4
-next_action: "Start S3.1 by making package, runtime and CLI versions resolve from one authoritative 1.0.0 source and declaring MIT package metadata."
+active_task: S3.2
+last_completed_task: S3.1
+next_action: "Start S3.2 by defining explicit wheel/sdist allowlists and packaging the supported tests, attribution, examples and small reference resources."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
 last_updated: 2026-09-10
@@ -329,7 +329,7 @@ use, or feature/interface removal beyond approved R01-R11 and their gates.
 | S0 | Baseline, ownership and release-scope freeze | None | **DONE** | 2026-09-09 baseline/map/R01-R10 records plus 2026-09-10 issue-24/R11 scope decision and Python API flow references |
 | S1 | Command correctness and secret-safe failures (C01, C03, narrow C09 seam) | S0 | **DONE** | 51 focused tests and 530-test full suite pass; all seven console/module parity cases match |
 | S2 | Release-surface alignment and API orientation (C02, R11) | S0 | **DONE** | Supported docs point to four CLI/Python workflows; clean 84-file wheel excludes UI/Streamlit; 525 supported tests plus 6 development-only UI checks pass |
-| S3 | Version, licence and deliberate artifacts (C04, C05) | S1, S2 | **NOT_STARTED** | Sdist-to-wheel and installed-outside-checkout checks pass with the UI absent from the wheel |
+| S3 | Version, licence and deliberate artifacts (C04, C05) | S1, S2 | **IN_PROGRESS** | Sdist-to-wheel and installed-outside-checkout checks pass with the UI absent from the wheel |
 | S4 | Reproducible quality and supported environments (C06, C07) | S3 | **NOT_STARTED** | Repository-owned lint/test/package lanes pass in documented environments |
 | S5 | Additive CLI/Python usability and discovery improvements (C11–C13) | S3, S4 | **NOT_STARTED** | CLI/Python journeys and resolver/result-summary tests pass |
 | S6 | Behavior-preserving responsibility extraction (C09, C10) | S1–S5 | **NOT_STARTED** | Before/after contract fixtures and full suite show semantic parity |
@@ -549,7 +549,7 @@ or a work-log reference as tasks finish.
 | S2.2 | Development-material boundary | Add explicit warnings to retained UI source/launcher material and keep it out of the supported architecture; do not repair obsolete workflow or command behavior | **DONE** | UI package/app, visible header, launcher, Streamlit config and renamed checker warn that behavior is obsolete/unsupported; no workflow command behavior repaired. |
 | S2.3 | Installed/test surface boundary | Exclude `cofolder.ui`, UI entry points and Streamlit-only dependencies from the wheel and supported extras/test collection while preserving supported CLI/recipe coverage | **DONE** | `ui` extra removed; setuptools excludes `cofolder.ui`; checker renamed outside pytest's pattern; packaging regressions pass and default collection contains 525 supported tests with no UI nodes. |
 | S2.4 | UI-scope verification | Search supported docs for launch claims; inspect package metadata/wheel/import inventory; prove supported tests collect without Streamlit and all four CLI/Python workflows remain represented | **DONE** | Clean 84-file wheel has no UI/Streamlit and only the `cofolder` entry point; 525 supported tests and 6 optional UI checks pass; all seven console/module parity cases and link/search checks pass. |
-| S3.1 | Single version source and MIT metadata | Runtime, wheel metadata and both CLI entry points resolve to `1.0.0`; output schema version remains independent; wheel metadata and licence file identify MIT | **NOT_STARTED** | — |
+| S3.1 | Single version source and MIT metadata | Runtime, wheel metadata and both CLI entry points resolve to `1.0.0`; output schema version remains independent; wheel metadata and licence file identify MIT | **DONE** | `cofolder.__version__` is the setuptools dynamic source; focused 38-pass and full 526-pass suites; clean 84-file wheel and outside-checkout install report `1.0.0`, `License-Expression: MIT`, packaged `LICENSE`, no UI files and 12 acceptance resources. |
 | S3.2 | Explicit artifact inventory | Define wheel/sdist allowlists; include licence/attribution in both, complete supported tests and required resources in sdist, exclude UI from the wheel, and package runnable examples plus required small PDB/CIF references without caches/weights | **NOT_STARTED** | — |
 | S3.3 | Installed access paths | Add resource locator/copy command plus installed backend-setup/data-preparation entry points; retain source wrappers until their approved R09 migration and S7 removal step is ready; add no UI entry point | **NOT_STARTED** | — |
 | S3.4 | Artifact verification | Build sdist, build wheel from unpacked sdist, inspect both inventories, install outside checkout, run import/version/help/resource-copy/dry-run checks, then run sdist tests with declared extras | **NOT_STARTED** | — |
@@ -646,6 +646,7 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-10 | S2.2 | `4d1fbd6`; working tree | UI package/app, launcher, Streamlit config and development checker | `python tests/ui_development_check.py`: 6/6 passed with unsupported-development result | Retained UI material is visibly unsupported and obsolete; its workflow behavior was not repaired. Advance to S2.3 |
 | 2026-09-10 | S2.3 | `4d1fbd6`; working tree | `pyproject.toml`, `tests/test_packaging.py`, renamed UI checker | Packaging tests: 5 passed; default collection: 525 tests and no UI nodes | Removed supported `ui` extra; excluded `cofolder.ui` from discovery; preserved the checker outside the release lane. Advance to S2.4 |
 | 2026-09-10 | S2.4 | `4d1fbd6`; working tree | S2 changes and this audit | Clean wheel: 84 files, no UI/Streamlit, only `cofolder` entry point; `pytest -q`: 525 passed; seven CLI/module cases matched; link/search and `git diff --check` passed | S2 exit satisfied. Advance to S3.1 version and MIT metadata |
+| 2026-09-10 | S3.1 | `31b3cf4`; working tree | `pyproject.toml`, `src/cofolder/__init__.py`, `tests/test_packaging.py`, `tests/test_cli.py`, this audit | `pytest -q tests/test_packaging.py tests/test_cli.py`: 38 passed; `pytest -q`: 526 passed in 25.86s; `git diff --check` passed; locally cached setuptools 83/packaging 25 built an 84-file wheel whose metadata/version/licence, UI exclusion and 12 acceptance resources passed inspection; no-network outside-checkout install and both CLI entry points reported `1.0.0` | `cofolder.__version__` is the sole version source via dynamic setuptools metadata; SPDX MIT metadata requires setuptools `>=77.0.3`; `include-package-data = false` preserves the approved UI exclusion under the newer backend. Output schema version remains independent. Advance to S3.2 explicit artifact inventory |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

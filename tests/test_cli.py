@@ -63,11 +63,12 @@ class TestCLIMain:
             cli.main(["-h"])
         assert exc_info.value.code == 0
 
-    def test_version_flag(self):
+    def test_version_flag(self, capsys):
         """Test version flag."""
         with pytest.raises(SystemExit) as exc_info:
             cli.main(["-v"])
         assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "cofolder 1.0.0\n"
 
     def test_unavailable_runner_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
         from cofolder.modules.runners.boltz2_runner import Boltz2Runner
