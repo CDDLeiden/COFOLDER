@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Collection of helpful tools for performing various co-folding tasks using cofolding models (e.g. Boltz.)"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_SOFTWARE.md"]
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
   {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
@@ -79,3 +79,11 @@ exclude = ["cofolder.ui", "cofolder.ui.*"]
 
 [tool.setuptools.package-data]
 "cofolder.acceptance" = ["data/*.yaml", "data/*.csv"]
+"cofolder.resources.examples" = [
+    "*.cif",
+    "*.csv",
+    "*.md",
+    "*.pdb",
+    "*.py",
+    "*.yaml",
+]
