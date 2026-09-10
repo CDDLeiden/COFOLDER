@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from abc import ABC, abstractmethod
 from importlib import metadata
 from pathlib import Path
@@ -120,6 +121,23 @@ class BaseRunner(ABC):
         return tuple(
             RunnerModelSlot(model_id=model_id, sample_id=index)
             for index in range(samples)
+        )
+
+    @staticmethod
+    def _check_python_compatibility(
+        *, runner_name: str, maximum_exclusive: tuple[int, int]
+    ) -> tuple[bool, str | None]:
+        """Reject Python versions outside a backend's supported range."""
+        current = sys.version_info[:2]
+        if current < maximum_exclusive:
+            return True, None
+
+        current_label = ".".join(str(part) for part in current)
+        maximum_label = ".".join(str(part) for part in maximum_exclusive)
+        return False, (
+            f"The selected '{runner_name}' runner does not support Python "
+            f"{current_label}. It requires Python below {maximum_label}; use a "
+            "Python 3.11 or 3.12 environment."
         )
 
     @staticmethod

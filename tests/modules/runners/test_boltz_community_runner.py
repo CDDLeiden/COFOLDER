@@ -48,7 +48,7 @@ def test_boltz_community_runner_accepts_installed_package_line():
 
     def _fake_version(name):
         if name == "boltz-community":
-            return "0.6.0"
+            return "2.10.12"
         raise PackageNotFoundError
 
     with patch(
@@ -64,6 +64,26 @@ def test_boltz_community_runner_accepts_installed_package_line():
         "affinity_metrics",
         "affinity_metrics_ext",
     }
+
+
+def test_boltz_community_runner_rejects_unverified_package_version():
+    runner = BoltzCommunityRunner()
+
+    def _fake_version(name):
+        if name == "boltz-community":
+            return "2.10.11"
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "requires boltz-community==2.10.12" in message
+    assert "boltz-community 2.10.11 is installed" in message
+    assert "cofolder[boltz-community]" in message
 
 
 def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch, temp_dir):

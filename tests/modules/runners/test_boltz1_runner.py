@@ -84,6 +84,21 @@ def test_boltz1_runner_accepts_exact_100_package_line():
     assert runner.capabilities == {"confidence_metrics"}
 
 
+def test_boltz1_runner_rejects_python_313_before_package_discovery():
+    runner = Boltz1Runner()
+
+    with (
+        patch("cofolder.modules.runners.base.sys.version_info", (3, 13)),
+        patch("cofolder.modules.runners.base.metadata.version") as version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "does not support Python 3.13" in message
+    assert "Python 3.11 or 3.12" in message
+    version.assert_not_called()
+
+
 def test_boltz1_runner_rejects_workflow_owned_model_flag(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(

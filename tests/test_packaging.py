@@ -77,6 +77,26 @@ def test_default_dependencies_include_core_runtime_packages():
     assert "scikit-learn" in dependencies
 
 
+def test_backend_extras_use_supported_immutable_versions():
+    pyproject = _load_pyproject()
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+
+    assert optional_dependencies["boltz1"] == [
+        "boltz==1.0.0; python_version < '3.13'"
+    ]
+    assert optional_dependencies["boltz2"] == [
+        "boltz[cuda]>=2.0.0,<3; python_version < '3.13'"
+    ]
+    assert optional_dependencies["boltz-community"] == [
+        "boltz-community[cuda]==2.10.12"
+    ]
+    assert not any(
+        "git+" in dependency
+        for dependencies in optional_dependencies.values()
+        for dependency in dependencies
+    )
+
+
 def test_tutorial_extra_includes_marimo():
     pyproject = _load_pyproject()
     tutorials = pyproject["project"]["optional-dependencies"]["tutorials"]

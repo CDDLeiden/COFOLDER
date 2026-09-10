@@ -43,6 +43,14 @@ pip install -e ".[boltz-community]"
 pip install -e ".[openfold3]"
 ```
 
+The initial release supports Boltz `1.0.0` for the `boltz1` runner, Boltz
+`>=2.0.0,<3` for `boltz2`, and Boltz Community `2.10.12`. Boltz 1 and Boltz 2
+require Python below 3.13; use Python 3.11 or 3.12 as listed above. Install each
+Boltz-family backend in its own environment because the distributions provide
+the same `boltz` command and Python package namespace. COFOLDER reports an
+explicit compatibility error when it detects an unsupported version, Python
+version, or mixed Boltz-family environment.
+
 The integrated `openfold3` runner still has a second setup step after installation because the upstream model cache, checkpoints, and CCD need to be prepared:
 
 ```bash

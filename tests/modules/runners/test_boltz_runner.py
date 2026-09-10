@@ -395,6 +395,59 @@ def test_boltz2_runner_rejects_boltz1_package_line():
     assert "cofolder[boltz2]" in message
 
 
+@pytest.mark.parametrize("installed_version", ["2.0.0", "2.2.1", "2.99.0"])
+def test_boltz2_runner_accepts_supported_major_line(installed_version):
+    runner = Boltz2Runner()
+
+    def _fake_version(name):
+        if name == "boltz":
+            return installed_version
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is True
+    assert message is None
+
+
+def test_boltz2_runner_rejects_next_major_package_line():
+    runner = Boltz2Runner()
+
+    def _fake_version(name):
+        if name == "boltz":
+            return "3.0.0"
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "Boltz-2 package line" in message
+    assert "cofolder[boltz2]" in message
+
+
+def test_boltz2_runner_rejects_python_313_before_package_discovery():
+    runner = Boltz2Runner()
+
+    with (
+        patch("cofolder.modules.runners.base.sys.version_info", (3, 13)),
+        patch("cofolder.modules.runners.base.metadata.version") as version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "does not support Python 3.13" in message
+    assert "Python 3.11 or 3.12" in message
+    version.assert_not_called()
+
+
 def test_boltz2_runner_load_options_keeps_model_runner_owned(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(

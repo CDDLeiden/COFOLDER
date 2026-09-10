@@ -26,6 +26,13 @@ class Boltz1Runner(BoltzRunner):
     )
 
     def check_availability(self) -> tuple[bool, str | None]:
+        compatible, message = self._check_python_compatibility(
+            runner_name=self.name,
+            maximum_exclusive=(3, 13),
+        )
+        if not compatible:
+            return compatible, message
+
         available, message = self.check_distribution_available(
             distribution_name="boltz",
             missing_message=(
