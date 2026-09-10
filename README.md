@@ -93,6 +93,15 @@ For detailed setup, workflow selection, and command options, use:
 - [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
 - [docs/user-guide/overview.md](docs/user-guide/overview.md)
 
+For CLI-independent execution and backend integration, use the Python API flow
+references:
+
+- [Bias recipe](docs/reference/python-api/bias-recipe-flow.md)
+- [Validate recipe](docs/reference/python-api/validate-recipe-flow.md)
+- [Screen recipe](docs/reference/python-api/screen-recipe-flow.md)
+- [Oracle recipe](docs/reference/python-api/oracle-recipe-flow.md)
+- [Constructing a new backend runner](docs/reference/python-api/new-backend-runner.md)
+
 ## Repository Guide
 
 These top-level paths now have distinct roles:
@@ -102,21 +111,9 @@ These top-level paths now have distinct roles:
 - [`tutorials/`](tutorials/): interactive notebook tutorials for hands-on exploration
 - [`scripts/`](scripts/): helper utilities for optional setup and bias-data preparation
 - [`legacy/`](legacy/): archival material preserved for traceability, not the recommended public path
-- [`run_ui.sh`](run_ui.sh): optional launcher for the Streamlit UI in an environment where the UI extra is already installed
 - [`LICENSE`](LICENSE) and [`THIRD_PARTY_SOFTWARE.md`](THIRD_PARTY_SOFTWARE.md): repository licensing and third-party attribution
 
 For a short tour of how these pieces fit together, see [docs/getting-started/repository-tour.md](docs/getting-started/repository-tour.md).
-
-## Optional UI
-
-COFOLDER also includes an optional Streamlit interface:
-
-```bash
-python -m pip install -e ".[ui]"
-./run_ui.sh
-```
-
-The UI launcher no longer installs packages implicitly. This keeps setup reproducible and makes the required environment explicit.
 
 ## Folder-Specific Notes
 

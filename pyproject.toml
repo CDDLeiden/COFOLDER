@@ -61,17 +61,13 @@ docs = [
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
-ui = [
-    "streamlit>=1.28.0",
-    "streamlit-option-menu>=0.3.6",
-]
-
 [project.scripts]
 cofolder = "cofolder.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cofolder*"]
+exclude = ["cofolder.ui", "cofolder.ui.*"]
 
 [tool.setuptools.package-data]
 "cofolder.acceptance" = ["data/*.yaml", "data/*.csv"]

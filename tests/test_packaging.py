@@ -28,6 +28,31 @@ def test_tutorial_extra_includes_marimo():
     assert any(dep.startswith("marimo") for dep in tutorials)
 
 
+def test_unsupported_ui_is_absent_from_install_metadata():
+    repository = Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads(
+        (repository / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+    all_dependencies = list(pyproject["project"]["dependencies"])
+    for dependencies in optional_dependencies.values():
+        all_dependencies.extend(dependencies)
+
+    assert "ui" not in optional_dependencies
+    assert not any(
+        dependency.lower().startswith("streamlit")
+        for dependency in all_dependencies
+    )
+
+    package_discovery = pyproject["tool"]["setuptools"]["packages"]["find"]
+    assert set(package_discovery["exclude"]) >= {"cofolder.ui", "cofolder.ui.*"}
+
+    scripts = pyproject["project"]["scripts"]
+    assert scripts["cofolder"] == "cofolder.cli:main"
+    assert not any("ui" in script.lower() for script in scripts)
+
+
 def test_bias_training_builder_is_an_importable_package_module():
     spec = importlib.util.find_spec(
         "cofolder.modules.analytics.build_bias_training_data"

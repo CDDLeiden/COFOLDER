@@ -1,5 +1,7 @@
-"""
-Streamlit UI for COFOLDER - A professional interface for running Boltz co-folding workflows.
+"""Unsupported, obsolete Streamlit prototype retained for development reference.
+
+This module is excluded from COFOLDER's installed and supported release surface.
+Its configuration and command construction may not match current recipe contracts.
 """
 import os
 import sys
@@ -210,6 +212,13 @@ def render_header():
             <small>Last updated: {datetime.now().strftime('%Y-%m-%d')}</small>
         </div>
         """, unsafe_allow_html=True)
+
+    st.error(
+        "Unsupported development prototype: this UI is not part of the COFOLDER "
+        "release and its configuration and commands may not match current recipe "
+        "contracts. Use the bias, validate, screen, or oracle CLI commands or the "
+        "Python API instead."
+    )
 
 
 def load_yaml_file(file_path: str) -> Optional[Dict[str, Any]]:

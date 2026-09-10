@@ -274,10 +274,10 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 ```yaml
 plan_version: 2
 overall_status: IN_PROGRESS
-active_phase: S2
-active_task: S2.1
-last_completed_task: S1.4
-next_action: "Remove or qualify supported UI documentation claims and direct users to the four CLI commands and Python API references."
+active_phase: S3
+active_task: S3.1
+last_completed_task: S2.4
+next_action: "Start S3.1 by making package, runtime and CLI versions resolve from one authoritative 1.0.0 source and declaring MIT package metadata."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
 last_updated: 2026-09-10
@@ -328,7 +328,7 @@ use, or feature/interface removal beyond approved R01-R11 and their gates.
 |---|---|---|---|---|
 | S0 | Baseline, ownership and release-scope freeze | None | **DONE** | 2026-09-09 baseline/map/R01-R10 records plus 2026-09-10 issue-24/R11 scope decision and Python API flow references |
 | S1 | Command correctness and secret-safe failures (C01, C03, narrow C09 seam) | S0 | **DONE** | 51 focused tests and 530-test full suite pass; all seven console/module parity cases match |
-| S2 | Release-surface alignment and API orientation (C02, R11) | S0 | **IN_PROGRESS** | Python API flow references exist; supported docs/artifacts/dependencies/tests consistently exclude the UI |
+| S2 | Release-surface alignment and API orientation (C02, R11) | S0 | **DONE** | Supported docs point to four CLI/Python workflows; clean 84-file wheel excludes UI/Streamlit; 525 supported tests plus 6 development-only UI checks pass |
 | S3 | Version, licence and deliberate artifacts (C04, C05) | S1, S2 | **NOT_STARTED** | Sdist-to-wheel and installed-outside-checkout checks pass with the UI absent from the wheel |
 | S4 | Reproducible quality and supported environments (C06, C07) | S3 | **NOT_STARTED** | Repository-owned lint/test/package lanes pass in documented environments |
 | S5 | Additive CLI/Python usability and discovery improvements (C11–C13) | S3, S4 | **NOT_STARTED** | CLI/Python journeys and resolver/result-summary tests pass |
@@ -545,10 +545,10 @@ or a work-log reference as tasks finish.
 | S1.2 | Correct typed command construction | Introduce the narrow `_boltz_command` boundary or equivalent; preserve the public `Command` facade; remove internal truth-value ambiguity and lossy typed→legacy→argv conversion | **DONE** | `_boltz_command.py` builds argv from `RunnerOptions`; Boltz runners retain typed options through preparation/execution; legacy `Command` remains and its numeric regression passes. |
 | S1.3 | Secret-safe execution reporting | Use real argv only for subprocess execution and a recursively redacted display form for Boltz/OpenFold3 logs and typed failures; test success/failure without leaking dummy secrets | **DONE** | `_command_reporting.py` plus Boltz/OpenFold3 integrations preserve real subprocess argv and redact logs/results/failures; success/failure tests included in focused 51-pass run. |
 | S1.4 | Phase verification | Run focused command/runner/contract tests, CLI smoke tests and `pytest -q`; record exact counts and remaining known failures | **DONE** | Focused runner/input tests: 51 passed; `pytest -q`: 530 passed in 26.17s; console/module root/four-command help and version matched at exit 0, unknown command matched at exit 2. |
-| S2.1 | Supported documentation scope | Remove unqualified UI launch/availability claims; mark any retained references unsupported and development-only; direct users to Bias/Validate/Screen/Oracle CLI and Python APIs | **IN_PROGRESS** | Start from README and docs references to `run_ui.sh`, Streamlit and UI availability; preserve the new Python API reference files. |
-| S2.2 | Development-material boundary | Add explicit warnings to retained UI source/launcher material and keep it out of the supported architecture; do not repair obsolete workflow or command behavior | **NOT_STARTED** | — |
-| S2.3 | Installed/test surface boundary | Exclude `cofolder.ui`, UI entry points and Streamlit-only dependencies from the wheel and supported extras/test collection while preserving supported CLI/recipe coverage | **NOT_STARTED** | — |
-| S2.4 | UI-scope verification | Search supported docs for launch claims; inspect package metadata/wheel/import inventory; prove supported tests collect without Streamlit and all four CLI/Python workflows remain represented | **NOT_STARTED** | — |
+| S2.1 | Supported documentation scope | Remove unqualified UI launch/availability claims; mark any retained references unsupported and development-only; direct users to Bias/Validate/Screen/Oracle CLI and Python APIs | **DONE** | README UI installation/launch section removed; repository tour marks retained files unsupported; README, docs home and MkDocs navigation link all five Python API flow references; supported-doc search passes. |
+| S2.2 | Development-material boundary | Add explicit warnings to retained UI source/launcher material and keep it out of the supported architecture; do not repair obsolete workflow or command behavior | **DONE** | UI package/app, visible header, launcher, Streamlit config and renamed checker warn that behavior is obsolete/unsupported; no workflow command behavior repaired. |
+| S2.3 | Installed/test surface boundary | Exclude `cofolder.ui`, UI entry points and Streamlit-only dependencies from the wheel and supported extras/test collection while preserving supported CLI/recipe coverage | **DONE** | `ui` extra removed; setuptools excludes `cofolder.ui`; checker renamed outside pytest's pattern; packaging regressions pass and default collection contains 525 supported tests with no UI nodes. |
+| S2.4 | UI-scope verification | Search supported docs for launch claims; inspect package metadata/wheel/import inventory; prove supported tests collect without Streamlit and all four CLI/Python workflows remain represented | **DONE** | Clean 84-file wheel has no UI/Streamlit and only the `cofolder` entry point; 525 supported tests and 6 optional UI checks pass; all seven console/module parity cases and link/search checks pass. |
 | S3.1 | Single version source and MIT metadata | Runtime, wheel metadata and both CLI entry points resolve to `1.0.0`; output schema version remains independent; wheel metadata and licence file identify MIT | **NOT_STARTED** | — |
 | S3.2 | Explicit artifact inventory | Define wheel/sdist allowlists; include licence/attribution in both, complete supported tests and required resources in sdist, exclude UI from the wheel, and package runnable examples plus required small PDB/CIF references without caches/weights | **NOT_STARTED** | — |
 | S3.3 | Installed access paths | Add resource locator/copy command plus installed backend-setup/data-preparation entry points; retain source wrappers until their approved R09 migration and S7 removal step is ready; add no UI entry point | **NOT_STARTED** | — |
@@ -642,6 +642,10 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-10 | S1.3 | `e9642f2`; working tree | `_command_reporting.py`, Boltz/OpenFold3 runner modules and tests | Focused input/runner selection: 51 passed; dummy secrets absent from success/failure logs and serialized failure evidence | Redaction implementation complete at focused scope. Resume S1.4 with CLI parity and full suite |
 | 2026-09-10 | PLAN-2 | `e9642f2`; working tree | `docs/release/codebase_cleanup_audit_09092026.md` | Reconciled issue 24, R11, phase dependencies, task ledger and final gates; no release implementation added by this plan edit | S1 remains active at S1.4; S2 replaces UI repair with supported-surface exclusion; all non-UI findings remain scheduled |
 | 2026-09-10 | S1.4 | `e9642f2`; working tree | S1 implementation/tests and this audit | `pytest -q`: 530 passed in 26.17s; console/module root and four-command help/version outputs and exits matched; unknown command matched at exit 2 | S1 exit satisfied. Advance to S2.1 supported documentation scope |
+| 2026-09-10 | S2.1 | `4d1fbd6`; working tree | `README.md`, documentation home/tour/navigation | Link/search checks pass for all five Python API flows; no supported UI installation or launch recommendation remains | Supported surface directs users to Bias/Validate/Screen/Oracle CLI and Python APIs. Advance to S2.2 |
+| 2026-09-10 | S2.2 | `4d1fbd6`; working tree | UI package/app, launcher, Streamlit config and development checker | `python tests/ui_development_check.py`: 6/6 passed with unsupported-development result | Retained UI material is visibly unsupported and obsolete; its workflow behavior was not repaired. Advance to S2.3 |
+| 2026-09-10 | S2.3 | `4d1fbd6`; working tree | `pyproject.toml`, `tests/test_packaging.py`, renamed UI checker | Packaging tests: 5 passed; default collection: 525 tests and no UI nodes | Removed supported `ui` extra; excluded `cofolder.ui` from discovery; preserved the checker outside the release lane. Advance to S2.4 |
+| 2026-09-10 | S2.4 | `4d1fbd6`; working tree | S2 changes and this audit | Clean wheel: 84 files, no UI/Streamlit, only `cofolder` entry point; `pytest -q`: 525 passed; seven CLI/module cases matched; link/search and `git diff --check` passed | S2 exit satisfied. Advance to S3.1 version and MIT metadata |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

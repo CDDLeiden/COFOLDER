@@ -1,7 +1,9 @@
 #!/usr/bin/env python
-"""
-Test suite for COFOLDER UI
-Validates that all UI components work correctly
+"""Optional checks for the unsupported, obsolete source-tree UI prototype.
+
+This file intentionally does not match pytest's default test filename pattern and
+is not part of the supported release test suite. Its checks require Streamlit and
+do not establish compatibility with current COFOLDER recipe contracts.
 """
 import sys
 import os
@@ -175,9 +177,10 @@ def test_recipes_configuration():
 
 
 def main():
-    """Run all tests."""
+    """Run the optional development checks."""
     print("=" * 60)
-    print("COFOLDER UI Test Suite")
+    print("UNSUPPORTED COFOLDER UI DEVELOPMENT CHECKS")
+    print("These checks do not establish compatibility with current recipe contracts.")
     print("=" * 60)
 
     tests = [
@@ -205,11 +208,8 @@ def main():
     print(f"Results: {passed}/{total} tests passed")
 
     if all(results):
-        print("\n✅ All tests passed! UI is ready to use.")
-        print("\nTo start the UI, run:")
-        print("  ./run_ui.sh")
-        print("  # or")
-        print("  streamlit run src/cofolder/ui/app.py")
+        print("\nAll optional development checks passed.")
+        print("The UI remains unsupported and outside the COFOLDER release surface.")
         return 0
     else:
         print("\n❌ Some tests failed. Please check the output above.")

@@ -41,6 +41,14 @@ If you are new to COFOLDER, follow this order:
 - Read [Adding New Runners](tutorials/runners.md)
 - Use [Backend Acceptance](tutorials/backend-acceptance.md) before promoting backend or CLI-adjacent changes
 
+### I want to use the Python API
+
+- Follow the [Bias recipe](reference/python-api/bias-recipe-flow.md)
+- Follow the [Validate recipe](reference/python-api/validate-recipe-flow.md)
+- Follow the [Screen recipe](reference/python-api/screen-recipe-flow.md)
+- Follow the [Oracle recipe](reference/python-api/oracle-recipe-flow.md)
+- Read [Constructing a new backend runner](reference/python-api/new-backend-runner.md)
+
 ## Repository Orientation
 
 The public repo is organized around a few distinct user paths:

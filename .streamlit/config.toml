@@ -1,3 +1,6 @@
+# Unsupported development-only configuration for the obsolete source-tree UI.
+# This configuration is not installed or supported as part of COFOLDER releases.
+
 [client]
 showErrorDetails = true
 toolbarMode = "developer"   # ensure app menu (⋮) is fully enabled

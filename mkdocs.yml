@@ -91,6 +91,13 @@ nav:
       - Adding New Runners: tutorials/runners.md
       - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
+      - Python execution flows:
+          - Overview: reference/python-api/index.md
+          - Bias recipe: reference/python-api/bias-recipe-flow.md
+          - Validate recipe: reference/python-api/validate-recipe-flow.md
+          - Screen recipe: reference/python-api/screen-recipe-flow.md
+          - Oracle recipe: reference/python-api/oracle-recipe-flow.md
+          - New backend runner: reference/python-api/new-backend-runner.md
       - Recipes:
           - Bias: api/recipes/bias.md
           - Validate: api/recipes/validate.md
