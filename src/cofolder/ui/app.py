@@ -10,7 +10,6 @@ import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
 import streamlit as st
-from streamlit_option_menu import option_menu
 import subprocess
 from datetime import datetime
 

@@ -129,12 +129,6 @@ def plot_reference_overlap_scatter(
         "mixed": "s",
         "unknown": "D",
     }
-    display_names = {
-        "public": "Public references",
-        "custom": "Custom references",
-        "mixed": "Mixed provenance",
-        "unknown": "Other provenance",
-    }
     source_order = [source for source in ("public", "custom", "mixed", "unknown") if source in set(plot_df["source"])]
     source_order.extend(
         source for source in sorted(set(plot_df["source"])) if source not in set(source_order)

@@ -7,6 +7,7 @@ do not establish compatibility with current COFOLDER recipe contracts.
 """
 import sys
 import os
+import importlib
 from pathlib import Path
 import pytest
 
@@ -19,12 +20,9 @@ def test_imports():
     """Test that all required modules can be imported."""
     print("Testing imports...")
     try:
-        import streamlit
-        print("  ✓ streamlit")
-        import yaml
-        print("  ✓ yaml")
-        from cofolder.ui import app
-        print("  ✓ cofolder.ui.app")
+        for module_name in ("streamlit", "yaml", "cofolder.ui.app"):
+            importlib.import_module(module_name)
+            print(f"  ✓ {module_name}")
     except ImportError as e:
         pytest.fail(f"Import failed: {e}")
 
@@ -146,12 +144,12 @@ def test_file_structure():
         # Check config files
         config_file = REPO_ROOT / '.streamlit' / 'config.toml'
         assert config_file.exists(), "Missing .streamlit/config.toml"
-        print(f"  ✓ .streamlit/config.toml")
+        print("  ✓ .streamlit/config.toml")
 
         # Check launcher script
         launcher_file = REPO_ROOT / 'run_ui.sh'
         assert launcher_file.exists(), "Missing run_ui.sh"
-        print(f"  ✓ run_ui.sh")
+        print("  ✓ run_ui.sh")
 
     except Exception as e:
         pytest.fail(f"Error: {e}")
@@ -170,7 +168,7 @@ def test_recipes_configuration():
         common_options = ['out_dir', 'cache', 'checkpoint', 'devices', 'accelerator']
         for opt in common_options:
             assert opt in DEFAULT_OPTIONS, f"Missing common option: {opt}"
-        print(f"  ✓ All common options present")
+        print("  ✓ All common options present")
 
     except Exception as e:
         pytest.fail(f"Error: {e}")

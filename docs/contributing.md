@@ -20,7 +20,7 @@ Thank you for your interest in contributing to COFOLDER! This guide will help yo
 Install in development mode with all dependencies:
 
 ```bash
-pip install -e ".[docs,test]"
+pip install -e ".[docs,test,development]"
 ```
 
 If your work changes runner integrations, backend packaging, or the shared CLI workflows, use the backend-specific clean-install acceptance lane described in [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). That lane is intentionally manual and expensive, so it complements routine tests instead of replacing them.
@@ -75,6 +75,12 @@ If you are integrating a new runner or changing runner behavior, update both:
 Before changes that affect runners, backend packaging, or shared CLI behavior are promoted toward `main`, run the backend acceptance lane from [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). These checks are not CI-default and should be treated as a deliberate pre-promotion safeguard.
 
 ## Code Style
+
+Run the repository-owned lint baseline from the repository root:
+
+```bash
+ruff check src tests scripts tutorials examples
+```
 
 ### Python Style
 

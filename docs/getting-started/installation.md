@@ -211,7 +211,7 @@ marimo edit tutorials/bias.py
 For development work, install with all optional dependencies:
 
 ```bash
-pip install -e ".[docs,test]"
+pip install -e ".[docs,test,development]"
 ```
 
 Add the backend extra you need in the same environment, for example:

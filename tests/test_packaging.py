@@ -82,6 +82,16 @@ def test_tutorial_extra_includes_marimo():
     assert any(dep.startswith("marimo") for dep in tutorials)
 
 
+def test_development_extra_exposes_repository_tools():
+    pyproject = _load_pyproject()
+    optional_dependencies = pyproject["project"]["optional-dependencies"]
+    development = optional_dependencies["development"]
+
+    assert any(dep.startswith("black") for dep in development)
+    assert any(dep.startswith("ruff") for dep in development)
+    assert not any(dep.lower().startswith("streamlit") for dep in development)
+
+
 def test_unsupported_ui_is_absent_from_install_metadata():
     pyproject = _load_pyproject()
 
@@ -199,7 +209,6 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
 def test_sdist_manifest_excludes_unsupported_and_generated_material():
     directives = _manifest_directives()
     required_exclusions = {
-        "exclude tests/tmp_test.py",
         "exclude tests/ui_development_check.py",
         "prune src/cofolder/ui",
         "prune legacy",

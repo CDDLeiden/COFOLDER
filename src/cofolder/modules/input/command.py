@@ -7,7 +7,7 @@ options and building subprocess commands for predictions.
 import multiprocessing
 import logging
 import os
-from cofolder.modules.utils import helpers, read, write
+from cofolder.modules.utils import read, write
 
 logger = logging.getLogger(__name__)
 

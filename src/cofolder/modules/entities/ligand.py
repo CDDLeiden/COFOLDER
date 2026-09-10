@@ -198,9 +198,11 @@ def handle_conformers(
         mols = read.read_sdf(str(sdf_file_path))
         if not mols:
             raise ValueError(f"No valid molecules found in SDF: {sdf_file_path}")
-        
-        if conformers == "sdf": mol = mols[ligand_idx]
-        else: mol = mols[0]
+
+        if conformers == "sdf":
+            mol = mols[ligand_idx]
+        else:
+            mol = mols[0]
 
         # CCD conversion
         boltz_cache = opt_obj.find_value(key='cache') or '~/.boltz'

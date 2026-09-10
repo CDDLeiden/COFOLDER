@@ -562,7 +562,6 @@ class Structure:
                     raise
 
                 rdkit_index = int(match.group(1))
-                atom_symbol = match.group(2)
 
                 # RDKit index == index into u_protein.atoms[keep_mask]
                 active_indices = np.flatnonzero(keep_mask)

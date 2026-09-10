@@ -9,8 +9,6 @@ from typing import Any, Iterator
 from cofolder.modules.utils import read
 from cofolder.modules.utils import write
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 SUPPORTED_ENTITY_TYPES = frozenset({"protein", "ligand", "dna", "rna"})

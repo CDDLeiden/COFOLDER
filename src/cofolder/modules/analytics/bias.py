@@ -1138,15 +1138,15 @@ def _extract_system_queries(
                     protein_by_chain[str(cid).strip()] = str(sequence) if sequence else None
 
         if "ligand" in seq:
-            l = seq["ligand"] or {}
-            ids = l.get("id")
+            ligand_data = seq["ligand"] or {}
+            ids = ligand_data.get("id")
             if ids is None:
                 continue
             if not isinstance(ids, list):
                 ids = [ids]
 
-            smiles = l.get("smiles")
-            ccd = l.get("ccd")
+            smiles = ligand_data.get("smiles")
+            ccd = ligand_data.get("ccd")
             ccd_ids = ccd if isinstance(ccd, list) else ([ccd] if ccd else [])
             ccd_ids = [_norm_id(x) for x in ccd_ids if str(x).strip()]
             for cid in ids:
