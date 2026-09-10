@@ -17,10 +17,10 @@ Thank you for your interest in contributing to COFOLDER! This guide will help yo
 
 ## Development Setup
 
-Install in development mode with all dependencies:
+Install the supported test, tutorial, documentation, and development tools:
 
 ```bash
-pip install -e ".[docs,test,development]"
+python -m pip install -e ".[docs,test,tutorials,development]"
 ```
 
 If your work changes runner integrations, backend packaging, or the shared CLI workflows, use the backend-specific clean-install acceptance lane described in [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). That lane is intentionally manual and expensive, so it complements routine tests instead of replacing them.
@@ -41,10 +41,41 @@ When tests are in place:
 - Ensure existing tests still pass
 - Aim for good test coverage
 
+The supported suite is divided into four exhaustive, non-overlapping lanes:
+
+```bash
+python scripts/run_test_lane.py core
+python scripts/run_test_lane.py contracts-tutorial
+python scripts/run_test_lane.py artifact
+python scripts/run_test_lane.py acceptance
+```
+
+Use `python scripts/run_test_lane.py all` to run their union. The lane runner fails
+before pytest starts if a supported `test_*.py` module has missing or overlapping
+ownership. Install `.[test]` for core tests, `.[test,tutorials]` for the combined
+contracts/tutorial lane, `.[test,development]` for artifact checks, and
+`.[test,acceptance]` for the lightweight acceptance-contract tests.
+
+The artifact lane's end-to-end build and installed-package smoke check is:
+
+```bash
+python scripts/verify_release_artifacts.py
+```
+
+It builds an sdist and then builds the wheel from the unpacked sdist. It verifies
+the supported inventory and UI exclusion before installing the wheel outside the
+checkout and exercising metadata, entry-point help, and example copying.
+
 For backend-, runner-, or CLI-adjacent changes:
 - keep routine targeted tests in place
 - run the backend acceptance notebooks before promoting the change toward `main`
-- use one fresh environment per backend (`boltz1`, `boltz2`, `boltz-community`) instead of reusing a mixed development environment
+- use one fresh environment per backend (`boltz1`, `boltz2`, `boltz-community`, or `openfold3`) instead of reusing a mixed development environment
+
+Routine CI does not install those backend extras, download models, use external MSA
+services, require a GPU, or perform inference. Its `acceptance` lane contains only
+lightweight mocked contract checks. Actual Boltz1, Boltz2, Boltz Community, and
+OpenFold3 acceptance remains manual and each backend must use a separate environment;
+a routine CI pass is not evidence that any backend acceptance run passed.
 
 ### 3. Update Documentation
 

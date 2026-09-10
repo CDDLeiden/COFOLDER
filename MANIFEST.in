@@ -3,6 +3,7 @@ include README.md
 include LICENSE
 include THIRD_PARTY_SOFTWARE.md
 include mkdocs.yml
+recursive-include .github/workflows *.yml
 
 recursive-include src/cofolder *.py
 recursive-include src/cofolder/acceptance/data *.csv *.yaml

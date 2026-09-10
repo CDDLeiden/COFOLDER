@@ -8,6 +8,8 @@ import importlib.util
 import runpy
 import tomllib
 
+import yaml
+
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 
@@ -82,14 +84,54 @@ def test_tutorial_extra_includes_marimo():
     assert any(dep.startswith("marimo") for dep in tutorials)
 
 
+def test_acceptance_extra_includes_marimo():
+    pyproject = _load_pyproject()
+    acceptance = pyproject["project"]["optional-dependencies"]["acceptance"]
+
+    assert any(dep.startswith("marimo") for dep in acceptance)
+
+
+def test_test_extra_is_pytest_focused():
+    pyproject = _load_pyproject()
+    test = pyproject["project"]["optional-dependencies"]["test"]
+
+    assert any(dep.startswith("pytest") for dep in test)
+    assert not any(dep.startswith("marimo") for dep in test)
+    assert not any(dep.lower().startswith("streamlit") for dep in test)
+
+
 def test_development_extra_exposes_repository_tools():
     pyproject = _load_pyproject()
     optional_dependencies = pyproject["project"]["optional-dependencies"]
     development = optional_dependencies["development"]
 
     assert any(dep.startswith("black") for dep in development)
+    assert any(dep.startswith("build") for dep in development)
     assert any(dep.startswith("ruff") for dep in development)
     assert not any(dep.lower().startswith("streamlit") for dep in development)
+
+
+def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
+    workflow = (REPOSITORY / ".github/workflows/quality.yml").read_text(
+        encoding="utf-8"
+    )
+    normalized = workflow.lower()
+    jobs = yaml.safe_load(workflow)["jobs"]
+    matrix = jobs["supported-tests"]["strategy"]["matrix"]["include"]
+    expected_test_jobs = {
+        (version, lane)
+        for version in ("3.11", "3.12")
+        for lane in ("core", "contracts-tutorial", "acceptance")
+    }
+
+    assert {(job["python-version"], job["lane"]) for job in matrix} == (
+        expected_test_jobs
+    )
+    for lane in ("core", "contracts-tutorial", "artifact", "acceptance"):
+        assert lane in workflow
+    assert "streamlit" not in normalized
+    assert "[acceptance,boltz" not in normalized
+    assert "[acceptance,openfold3" not in normalized
 
 
 def test_unsupported_ui_is_absent_from_install_metadata():
@@ -189,6 +231,7 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
         "include LICENSE",
         "include THIRD_PARTY_SOFTWARE.md",
         "include mkdocs.yml",
+        "recursive-include .github/workflows *.yml",
         "recursive-include src/cofolder *.py",
         "recursive-include src/cofolder/acceptance/data *.csv *.yaml",
         (
