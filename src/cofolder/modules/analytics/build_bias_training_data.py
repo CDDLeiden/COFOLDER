@@ -18,6 +18,7 @@ This implements the intended bias bootstrap strategy:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
@@ -693,8 +694,12 @@ def _write_chain_ligand_csvs(output_ligand_csv: Path, ligand_df: pd.DataFrame) -
         print(f"[done] chain_ligand_csv[{chain_id}]={chain_path} rows={len(sub)}")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    prog: str | None = None,
+) -> int:
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument("--system_path", type=Path, required=True)
     parser.add_argument("--components_cif", type=Path, required=True)
     parser.add_argument("--output_protein_csv", type=Path, required=True)
@@ -771,7 +776,7 @@ def main() -> int:
         default=None,
         help="Optional ligand chain IDs to process (e.g. --ligand_chains E F).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     cutoff = _parse_iso_date(args.release_cutoff)
     if cutoff is None:

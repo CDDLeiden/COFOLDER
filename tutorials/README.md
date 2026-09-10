@@ -34,7 +34,7 @@ For OpenFold3, prepare its cache before launching the notebook:
 ```bash
 python -m pip install -e ".[tutorials,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
-scripts/setup_openfold3.sh
+cofolder-tools setup-openfold3
 marimo edit tutorials/openfold3_system_inputs.py
 ```
 

@@ -105,7 +105,7 @@ def _(mo):
 
     This is a dedicated OpenFold3 lane. Before running the expensive cells:
 
-    - prepare the OpenFold3 cache and model data with `scripts/setup_openfold3.sh`
+    - prepare the OpenFold3 cache and model data with `cofolder-tools setup-openfold3`
     - launch this notebook with `OPENFOLD_CACHE` already set, or enter the cache path in the notebook before enabling any expensive step
     - treat this lane as confidence-only: it requests `confidence_metrics`, not affinity groups
     - keep MSA/template experiments separate unless you are deliberately testing them
@@ -197,7 +197,7 @@ def _(
 
     **Availability check:** `{availability_message}`
 
-    **Setup requirement:** choose a cache path and run `scripts/setup_openfold3.sh` against that path before starting any expensive workflow cell.
+    **Setup requirement:** choose a cache path and run `cofolder-tools setup-openfold3` against that path before starting any expensive workflow cell.
 
     **OPENFOLD_CACHE for this notebook:** `{openfold_cache_display}`
 
@@ -211,7 +211,7 @@ def _(
 
     ```bash
     export OPENFOLD_CACHE="{export_target}"
-    scripts/setup_openfold3.sh
+    cofolder-tools setup-openfold3
     ```
 
     The OpenFold3 extra installs the backend package, while the setup script prepares the cache, checkpoints, and CCD in the chosen cache root.

@@ -84,7 +84,7 @@ def check_openfold3_setup_ready(
             False,
             (
                 "The selected 'openfold3' runner is installed, but its setup is incomplete. "
-                f"Expected setup marker '{ckpt_root_path}'. Run `scripts/setup_openfold3.sh` "
+                f"Expected setup marker '{ckpt_root_path}'. Run `cofolder-tools setup-openfold3` "
                 "after installing the OpenFold3 extra."
             ),
         )
@@ -95,7 +95,7 @@ def check_openfold3_setup_ready(
             False,
             (
                 "The selected 'openfold3' runner is installed, but its setup marker is empty. "
-                f"Re-run `scripts/setup_openfold3.sh` for OPENFOLD_CACHE='{cache_root}'."
+                f"Re-run `cofolder-tools setup-openfold3` for OPENFOLD_CACHE='{cache_root}'."
             ),
         )
 
@@ -107,7 +107,7 @@ def check_openfold3_setup_ready(
             False,
             (
                 "The selected 'openfold3' runner is installed, but its configured checkpoint root "
-                f"'{checkpoint_root}' does not exist. Re-run `scripts/setup_openfold3.sh`."
+                f"'{checkpoint_root}' does not exist. Re-run `cofolder-tools setup-openfold3`."
             ),
         )
     return True, None

@@ -101,7 +101,10 @@ def test_unsupported_ui_is_absent_from_install_metadata():
     assert pyproject["tool"]["setuptools"]["include-package-data"] is False
 
     scripts = pyproject["project"]["scripts"]
-    assert scripts["cofolder"] == "cofolder.cli:main"
+    assert scripts == {
+        "cofolder": "cofolder.cli:main",
+        "cofolder-tools": "cofolder.tools.cli:main",
+    }
     assert not any("ui" in script.lower() for script in scripts)
 
 
@@ -113,6 +116,9 @@ def test_bias_training_builder_is_an_importable_package_module():
     assert spec is not None
     assert spec.origin is not None
     assert Path(spec.origin).name == "build_bias_training_data.py"
+
+    tools_spec = importlib.util.find_spec("cofolder.tools.build_bias_training_data")
+    assert tools_spec is not None
 
 
 def test_package_version_is_consistent():

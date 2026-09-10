@@ -278,13 +278,13 @@ def test_openfold3_runner_check_availability_only_requires_package_install(monke
     assert message is None
 
 
-def test_openfold3_runner_reports_setup_script_when_cache_is_unprepared(monkeypatch, temp_dir):
+def test_openfold3_runner_reports_installed_setup_tool_when_cache_is_unprepared(monkeypatch, temp_dir):
     cache_root = temp_dir / "openfold3-cache"
     cache_root.mkdir(parents=True, exist_ok=True)
     available, message = check_openfold3_setup_ready({"OPENFOLD_CACHE": str(cache_root)})
 
     assert available is False
-    assert "scripts/setup_openfold3.sh" in message
+    assert "cofolder-tools setup-openfold3" in message
     assert "ckpt_root" in message
 
 

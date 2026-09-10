@@ -65,6 +65,7 @@ docs = [
 ]
 [project.scripts]
 cofolder = "cofolder.cli:main"
+cofolder-tools = "cofolder.tools.cli:main"
 
 [tool.setuptools]
 include-package-data = false

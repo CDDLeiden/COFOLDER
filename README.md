@@ -46,10 +46,14 @@ OpenFold3 install:
 
 ```bash
 python -m pip install -e ".[openfold3]"
-scripts/setup_openfold3.sh
+cofolder-tools setup-openfold3
 ```
 
 The `bias` workflow is part of the base package and does not require a co-folding backend.
+
+Installed setup and data-preparation helpers are grouped under `cofolder-tools`.
+Run `cofolder-tools --help` to copy the bundled examples, prepare OpenFold3,
+install MMseqs2, or fetch/build bias-training data.
 
 ## Common Commands
 

@@ -4,12 +4,19 @@ This folder contains helper utilities that support optional setup and data-prepa
 
 These scripts are not the primary public interface. The primary public interface is the `cofolder` CLI.
 
-## Supported User-Facing Helpers
+## Installed User-Facing Helpers
 
-- `setup_openfold3.sh`: prepares the OpenFold3 cache and checkpoints after `python -m pip install -e ".[openfold3]"`
-- `install_mmseqs_vendor.sh`: installs a vendored `mmseqs2` binary when you do not want to rely on conda-forge
-- `fetch_bias_training_data.py`: downloads CCD data and, optionally, MMseqs2 databases used for bias-data preparation
-- `build_bias_training_data.py`: builds public protein and ligand training-reference CSVs for the bias workflow
+After installing COFOLDER, run `cofolder-tools --help`. It provides:
+
+- `copy-examples`: copies the packaged runnable examples to a workspace
+- `setup-openfold3`: prepares the OpenFold3 cache and checkpoints
+- `install-mmseqs`: installs a verified vendored `mmseqs2` binary
+- `fetch-bias-training-data`: downloads CCD data and optional MMseqs2 databases
+- `build-bias-training-data`: builds protein and ligand training-reference CSVs
+
+The similarly named scripts in this directory are retained source-tree wrappers.
+They delegate to the packaged implementations and remain available for existing
+checkout-based workflows.
 
 ## Maintainer-Oriented Helper
 
@@ -23,4 +30,4 @@ Most users should:
 
 1. install COFOLDER
 2. use the `cofolder` CLI directly
-3. return to this folder only when they need optional OpenFold3 setup or bias-data preparation
+3. use `cofolder-tools` when they need examples, optional backend setup, or bias-data preparation
