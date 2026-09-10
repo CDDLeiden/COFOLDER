@@ -22,6 +22,7 @@ from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.input.config import OPENFOLD3_OPTIONS_SCHEMA, RunnerOptions
 from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.runners.base import BaseRunner
+from cofolder.modules.runners._command_reporting import command_report
 from cofolder.modules.runners.contracts import (
     RunnerCompanionArtifact,
     RunnerExecutionRequest,
@@ -237,21 +238,37 @@ def run_openfold3(
         f"--runner-yaml={runner_yaml_path}",
     ]
     cmd.extend(options.extra_args)
-    logger.info("Running: %s", " ".join(str(token) for token in cmd))
-    completed = subprocess.run(
-        cmd,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    report = command_report(cmd)
+    logger.info("Running: %s", " ".join(report.argv))
+    try:
+        completed = subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise subprocess.CalledProcessError(
+            exc.returncode,
+            list(report.argv),
+            output=report.redact_text(exc.stdout),
+            stderr=report.redact_text(exc.stderr),
+        ) from None
     if timings is not None:
         label = f"{label_prefix}.openfold3.total" if label_prefix else "openfold3.total"
         timings.record(label, perf_counter() - start_time, logger=logger)
-    if completed.stdout:
-        logger.info("%s", completed.stdout.strip())
-    if completed.stderr:
-        logger.info("%s", completed.stderr.strip())
-    return completed
+    safe_stdout = report.redact_text(completed.stdout)
+    safe_stderr = report.redact_text(completed.stderr)
+    if safe_stdout:
+        logger.info("%s", safe_stdout.strip())
+    if safe_stderr:
+        logger.info("%s", safe_stderr.strip())
+    return subprocess.CompletedProcess(
+        args=list(report.argv),
+        returncode=completed.returncode,
+        stdout=safe_stdout,
+        stderr=safe_stderr,
+    )
 
 
 class OpenFold3Runner(BaseRunner):

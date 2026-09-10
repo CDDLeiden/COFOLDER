@@ -143,9 +143,14 @@ class Command:
 
         for item in self.options.get("options", []):
             for key, value in item.items():
-                if key == "use_msa_server" or value in (None, "None", "False", False):
+                if (
+                    key == "use_msa_server"
+                    or value is None
+                    or value is False
+                    or value in ("None", "False")
+                ):
                     continue
-                if value in ("True", True):
+                if value is True or value == "True":
                     cmd.append(f"--{key}")
                 elif value == "multiprocessing.cpu_count()":
                     cmd.extend([f"--{key}", str(multiprocessing.cpu_count())])

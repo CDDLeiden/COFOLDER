@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cofolder.modules.input.command import Command
+from cofolder.modules.input.config import RunnerOptions
 from cofolder.modules.runners.boltz_runner import BoltzRunner
 from cofolder.modules.runners.contracts import RunnerInputCapabilities
 
@@ -14,6 +14,7 @@ class Boltz1Runner(BoltzRunner):
     backend_name = "boltz"
     backend_distribution = "boltz"
     model_name = "boltz1"
+    command_model_name = None
     capabilities = {
         "confidence_metrics",
     }
@@ -50,10 +51,8 @@ class Boltz1Runner(BoltzRunner):
             )
         return True, None
 
-    def load_options(self, options_path: Path) -> Command:
-        command = super().load_options(options_path)
-        self._set_command_option(command, "model", None)
-        return command
+    def load_options(self, options_path: Path) -> RunnerOptions:
+        return super().load_options(options_path)
 
 
 RUNNER = Boltz1Runner()

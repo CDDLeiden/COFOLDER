@@ -12,7 +12,6 @@ from cofolder.modules.contracts import (
     RunnerBackendIdentity,
     SeedOrigin,
 )
-from cofolder.modules.input.command import Command
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
@@ -33,6 +32,15 @@ class _MockSystem:
         if key == "properties":
             return self._data["properties"]
         return None
+
+
+def _typed_options(temp_dir):
+    options_path = temp_dir / "typed_options.yaml"
+    options_path.write_text(
+        "version: 1\nruntime:\n  cache_path: ~/.boltz\n  diffusion_samples: 1\nrunner: {}\n",
+        encoding="utf-8",
+    )
+    return BoltzCommunityRunner().load_options(options_path)
 
 
 def test_boltz_community_runner_accepts_installed_package_line():
@@ -67,7 +75,7 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
         seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),

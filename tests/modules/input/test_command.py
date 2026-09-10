@@ -109,6 +109,36 @@ class TestCommandSetCommand:
         # The actual implementation converts list to string representation
         assert "[0, 1]" in command_list[idx + 1] or "0,1" in command_list[idx + 1]
 
+    def test_set_command_does_not_treat_numeric_zero_or_one_as_booleans(self):
+        cmd = Command(
+            options={
+                "options": [
+                    {"recycling_steps": 0},
+                    {"devices": 1},
+                    {"write_full_pae": True},
+                    {"override": False},
+                ]
+            }
+        )
+        sys = System(system={"sequences": []})
+        cmd.out_dir = "/tmp/output"
+        cmd.system_path = "/tmp/system.yaml"
+
+        assert cmd.set_command(system=sys) == [
+            "boltz",
+            "predict",
+            "/tmp/system.yaml",
+            "--out_dir",
+            "/tmp/output",
+            "--seed",
+            "0",
+            "--recycling_steps",
+            "0",
+            "--devices",
+            "1",
+            "--write_full_pae",
+        ]
+
     def test_set_command_requests_only_missing_protein_msas(self):
         cmd = Command(options={"options": []})
         sys = System(

@@ -51,6 +51,24 @@ def _request_provenance(
     }
 
 
+def _typed_options(temp_dir, *, runner_options=None, diffusion_samples=1):
+    options_path = temp_dir / "typed_options.yaml"
+    options_path.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "runtime": {
+                    "cache_path": str(temp_dir / "cache"),
+                    "diffusion_samples": diffusion_samples,
+                },
+                "runner": runner_options or {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return Boltz2Runner().load_options(options_path)
+
+
 def _prepared_constrained_system(atom_name: str) -> System:
     return System(
         system={
@@ -78,7 +96,7 @@ def test_conformer_preparation_preserves_compatible_constraint(monkeypatch, temp
     system = _prepared_constrained_system("O3")
     original_constraints = json.loads(json.dumps(system.system["constraints"]))
     runner = Boltz2Runner()
-    options = Command(options={"options": [{"cache": str(cache)}]})
+    options = _typed_options(temp_dir)
     monkeypatch.setattr(
         "cofolder.modules.entities.ligand.handle_conformers",
         lambda **kwargs: {"L": "NEW"},
@@ -158,18 +176,19 @@ def test_parse_boltz_stage_timings_ignores_incomplete_msa_window():
     assert out["boltz.affinity_prediction"] == 5.0
 
 
-def test_msa_reuse_settings_include_generation_options_and_backend_version(monkeypatch):
+def test_msa_reuse_settings_include_generation_options_and_backend_version(
+    monkeypatch, temp_dir
+):
     runner = Boltz2Runner()
-    options = Command(
-        options={
-            "options": [
-                {"msa_server_url": "https://msa.example.test"},
-                {"msa_pairing_strategy": "complete"},
-                {"max_msa_seqs": 4096},
-                {"msa_server_password": "must-not-be-persisted"},
-                {"diffusion_samples": 2},
-            ]
-        }
+    options = _typed_options(
+        temp_dir,
+        diffusion_samples=2,
+        runner_options={
+            "msa_server_url": "https://msa.example.test",
+            "msa_pairing_strategy": "complete",
+            "max_msa_seqs": 4096,
+            "msa_server_password": "must-not-be-persisted",
+        },
     )
     monkeypatch.setattr(runner, "get_distribution_version", lambda name: "2.2.1")
 
@@ -208,7 +227,7 @@ def test_boltz_runner_writes_canonical_bundle(monkeypatch, temp_dir):
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
         **_request_provenance(),
@@ -289,7 +308,7 @@ def test_boltz_runner_reports_mixed_metric_outcomes_without_affinity_payload(mon
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
         **_request_provenance(
@@ -376,7 +395,7 @@ def test_boltz2_runner_rejects_boltz1_package_line():
     assert "cofolder[boltz2]" in message
 
 
-def test_boltz2_runner_load_options_forces_boltz2_model(temp_dir):
+def test_boltz2_runner_load_options_keeps_model_runner_owned(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(
         yaml.safe_dump(
@@ -389,6 +408,7 @@ def test_boltz2_runner_load_options_forces_boltz2_model(temp_dir):
         encoding="utf-8",
     )
 
-    command = Boltz2Runner().load_options(options_path)
+    options = Boltz2Runner().load_options(options_path)
 
-    assert command.find_value(key="model") == "boltz2"
+    assert options.find_value(key="model") is None
+    assert Boltz2Runner.model_name == "boltz2"
