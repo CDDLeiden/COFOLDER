@@ -95,6 +95,33 @@ _DEFINITIONS = [
         "avg_plddt",
     )
 ] + [
+    *[
+        _metric(
+            name,
+            "confidence_metrics",
+            MetricClass.CONFIDENCE,
+            direction=OptimizationDirection.MAXIMIZE,
+            valid_range=UNIT_INTERVAL,
+            scopes=("system",),
+        )
+        for name in (
+            "ligand_iptm",
+            "protein_iptm",
+            "complex_plddt",
+            "complex_iplddt",
+        )
+    ],
+    *[
+        _metric(
+            name,
+            "confidence_metrics",
+            MetricClass.CONFIDENCE,
+            direction=OptimizationDirection.MINIMIZE,
+            valid_range=NONNEGATIVE,
+            scopes=("system",),
+        )
+        for name in ("complex_pde", "complex_ipde", "complex_pae", "complex_ipae")
+    ],
     _metric(
         "gpde",
         "confidence_metrics",

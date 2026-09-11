@@ -200,7 +200,7 @@ def _write_openfold3_sample_outputs(
                 {
                     "ptm": 0.80,
                     "iptm": 0.70,
-                    "avg_plddt": 0.79,
+                    "avg_plddt": 79.0,
                     "gpde": 0.31,
                     "disorder": 0.14,
                     "has_clash": 0.0,
@@ -348,6 +348,7 @@ def test_openfold3_runner_prefers_ccd_over_smiles_in_query_json(monkeypatch, tem
         system_df.columns
     )
     assert "confidence_score" not in system_df.columns
+    assert system_df["avg_plddt"].tolist() == [0.79, 0.79]
     assert {"chain_ptm", "chain_pair_iptm_A_B", "bespoke_iptm_A_B"}.issubset(chain_df.columns)
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["confidence_metrics"].required_artifacts == (

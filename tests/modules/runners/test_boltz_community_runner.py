@@ -122,6 +122,8 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
                     "ptm": 0.8,
                     "iptm": 0.7,
                     "confidence_score": 0.9,
+                    "complex_pae": 1.2,
+                    "complex_ipae": 4.5,
                     "chains_ptm": {"0": 0.85, "1": 0.65},
                     "pair_chains_iptm": {"0": {"1": 0.55}, "1": {"0": 0.55}},
                 }
@@ -150,7 +152,13 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
 
     system_df = pd.read_csv(result.system_metrics_path)
     chain_df = pd.read_csv(result.chain_metrics_path)
-    assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
+    assert {
+        "ptm",
+        "iptm",
+        "confidence_score",
+        "complex_pae",
+        "complex_ipae",
+    }.issubset(system_df.columns)
     assert {"chains_ptm", "affinity_pred_value", "affinity_probability_binary", "pIC50"}.issubset(
         chain_df.columns
     )

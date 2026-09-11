@@ -141,7 +141,15 @@ def _installed_smoke(wheel: Path, workspace: Path) -> None:
     outside_checkout.mkdir()
 
     _run(
-        [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+        [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "--force-reinstall",
+            "--no-deps",
+            str(wheel),
+        ],
         cwd=outside_checkout,
     )
     metadata_check = "\n".join(

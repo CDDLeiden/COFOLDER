@@ -152,6 +152,12 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
                     "ptm": 0.8,
                     "iptm": 0.7,
                     "confidence_score": 0.9,
+                    "ligand_iptm": 0.72,
+                    "protein_iptm": 0.0,
+                    "complex_plddt": 0.91,
+                    "complex_iplddt": 0.82,
+                    "complex_pde": 0.4,
+                    "complex_ipde": 1.1,
                     "chains_ptm": {"0": 0.85, "1": 0.65},
                     "pair_chains_iptm": {"0": {"1": 0.55}, "1": {"0": 0.55}},
                 }
@@ -167,6 +173,15 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics"].state == "unsupported"
     assert result.metric_outcomes["affinity_metrics_ext"].state == "unsupported"
+    system_df = pd.read_csv(result.system_metrics_path)
+    assert {
+        "ligand_iptm",
+        "protein_iptm",
+        "complex_plddt",
+        "complex_iplddt",
+        "complex_pde",
+        "complex_ipde",
+    }.issubset(system_df.columns)
     assert {
         "affinity_pred_value",
         "affinity_probability_binary",

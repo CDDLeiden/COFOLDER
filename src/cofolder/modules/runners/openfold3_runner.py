@@ -683,7 +683,12 @@ class OpenFold3Runner(BaseRunner):
                 if key in {"chain_ptm", "chain_pair_iptm", "bespoke_iptm"}:
                     continue
                 if not isinstance(value, (dict, list)):
-                    system_row[key] = value
+                    # OpenFold3 emits avg_plddt on the conventional 0-100
+                    # pLDDT scale, while COFOLDER's public confidence contract
+                    # uses unit-interval values consistently across runners.
+                    system_row[key] = (
+                        float(value) / 100.0 if key == "avg_plddt" else value
+                    )
             system_rows.append(system_row)
 
             missing_scalar_fields = [

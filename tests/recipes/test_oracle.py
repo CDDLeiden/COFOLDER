@@ -16,6 +16,16 @@ from cofolder.recipes.oracle import (
 from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS
 
 
+@pytest.fixture(autouse=True)
+def _available_default_runner(monkeypatch):
+    """Keep Oracle unit tests independent of optional backend installation."""
+
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+        lambda self: (True, None),
+    )
+
+
 class TestOracleInit:
     def test_default_scoring_functions_remain_enabled(
         self,
