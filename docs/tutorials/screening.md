@@ -11,6 +11,7 @@ This tutorial demonstrates high-throughput virtual screening of a ligand library
 - Completed [Basic Tutorial](basic.md)
 - Compound library (CSV or SDF format)
 - Target protein structure or sequence
+- The `analysis` extra when using IFP clustering or the plotting examples below
 
 ## Scenario
 

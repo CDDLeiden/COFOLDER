@@ -8,10 +8,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.cluster.hierarchy import fcluster, linkage
-from scipy.spatial.distance import cdist, pdist
 
 from .reference_ifp import InteractionFingerprint, InteractionKey
+from cofolder.modules.utils._optional_dependencies import (
+    require_analysis_dependency,
+)
 
 
 @dataclass(frozen=True)
@@ -64,15 +65,26 @@ def cluster_binary_ifps(
     if features.ndim != 2 or features.shape != (len(fingerprints), width):
         raise ValueError("fingerprints must form a two-dimensional binary matrix")
 
+    hierarchy = require_analysis_dependency(
+        "scipy.cluster.hierarchy",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
+    distance = require_analysis_dependency(
+        "scipy.spatial.distance",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
+
     if len(features) == 1:
         raw_labels = np.array([1], dtype=int)
     else:
-        distances = pdist(features, metric="jaccard")
+        distances = distance.pdist(features, metric="jaccard")
         # Explicitly define the empty-set Jaccard distance as zero. This keeps
         # all-zero fingerprints as one reproducible "no contacts" pattern.
         distances = np.nan_to_num(distances, nan=0.0)
-        tree = linkage(distances, method="average", optimal_ordering=False)
-        raw_labels = fcluster(
+        tree = hierarchy.linkage(distances, method="average", optimal_ordering=False)
+        raw_labels = hierarchy.fcluster(
             tree,
             t=1.0 - float(similarity_threshold),
             criterion="distance",
@@ -166,11 +178,16 @@ def _cluster_medoid_and_mean_similarity(features: np.ndarray) -> tuple[int, floa
     if size == 1:
         return 0, 1.0
 
+    distance = require_analysis_dependency(
+        "scipy.spatial.distance",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
     distance_sums = np.zeros(size, dtype=float)
     block_size = 256
     for start in range(0, size, block_size):
         stop = min(start + block_size, size)
-        block = cdist(features[start:stop], features, metric="jaccard")
+        block = distance.cdist(features[start:stop], features, metric="jaccard")
         block = np.nan_to_num(block, nan=0.0)
         distance_sums[start:stop] = block.sum(axis=1)
 

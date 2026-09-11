@@ -49,10 +49,10 @@ SCREEN_MANUSCRIPT_COLUMNS = (
 )
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
 _BACKEND_INSTALL_COMMANDS = {
-    "boltz1": 'pip install "cofolder[acceptance,boltz1]"',
-    "boltz2": 'pip install "cofolder[acceptance,boltz2]"',
-    "boltz-community": 'pip install "cofolder[acceptance,boltz-community]"',
-    "openfold3": 'python -m pip install -e ".[acceptance,openfold3]"',
+    "boltz1": 'pip install "cofolder[acceptance,analysis,boltz1]"',
+    "boltz2": 'pip install "cofolder[acceptance,analysis,boltz2]"',
+    "boltz-community": 'pip install "cofolder[acceptance,analysis,boltz-community]"',
+    "openfold3": 'python -m pip install -e ".[acceptance,analysis,openfold3]"',
 }
 _BACKEND_ORACLE_METRICS = {
     "boltz1": "confidence_score",

@@ -13,24 +13,26 @@ authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
   {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "numpy",
     "pandas",
     "pyyaml",
     "biopython",
     "rdkit",
-    "matplotlib",
-    "seaborn",
-    "scipy",
-    "scikit-learn",
     "gemmi",
-    "prolif",
-    "pdb2pqr",
     "packaging",
 ]
 
 [project.optional-dependencies]
+analysis = [
+    "scipy",
+    "scikit-learn",
+    "prolif",
+    "pdb2pqr",
+    "matplotlib",
+    "seaborn",
+]
 boltz1 = [
     "boltz==1.0.0; python_version < '3.13'",
 ]

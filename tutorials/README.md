@@ -12,8 +12,7 @@ The notebooks complement the written tutorials in `docs/tutorials/`. A good rule
 Install the notebook runtime and the backend you want to use:
 
 ```bash
-python -m pip install -e ".[tutorials]"
-python -m pip install -e ".[boltz2]"
+python -m pip install -e ".[analysis,tutorials,boltz2]"
 marimo edit tutorials/bias.py
 ```
 
@@ -25,14 +24,14 @@ The backend system-input tutorials require a dedicated backend environment and a
 CUDA-capable machine. For example:
 
 ```bash
-python -m pip install -e ".[tutorials,boltz2]"
+python -m pip install -e ".[analysis,tutorials,boltz2]"
 marimo edit tutorials/boltz_system_inputs.py
 ```
 
 For OpenFold3, prepare its cache before launching the notebook:
 
 ```bash
-python -m pip install -e ".[tutorials,openfold3]"
+python -m pip install -e ".[analysis,tutorials,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 cofolder-tools setup-openfold3
 marimo edit tutorials/openfold3_system_inputs.py

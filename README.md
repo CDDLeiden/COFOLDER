@@ -9,7 +9,12 @@ The supported public entry points are:
 - `screen`: run validate-style workflows across a ligand library
 - `oracle`: return one scalar metric from a runner-backed run
 
-COFOLDER supports a backend-free base install for the standalone `bias` workflow, plus optional backend extras for prediction workflows. Structural-confidence outputs, validation metrics, and affinity-related outputs are treated as distinct concepts; structural confidence should not be described as a proxy for binding affinity.
+COFOLDER has a backend-free base install for configuration, input handling, resource
+access, and analysis-independent library paths. Install the `analysis` extra for
+clustering, affinity statistics, interaction processing, and plotting; prediction
+workflows additionally use one backend extra. Structural-confidence outputs,
+validation metrics, and affinity-related outputs are treated as distinct concepts;
+structural confidence should not be described as a proxy for binding affinity.
 
 ## Start Here
 
@@ -36,20 +41,21 @@ cd COFOLDER
 python -m pip install -e .
 ```
 
-Recommended prediction install with the default backend:
+Recommended analysis and prediction install with the default backend:
 
 ```bash
-python -m pip install -e ".[boltz2]"
+python -m pip install -e ".[analysis,boltz2]"
 ```
 
 OpenFold3 install:
 
 ```bash
-python -m pip install -e ".[openfold3]"
+python -m pip install -e ".[analysis,openfold3]"
 cofolder-tools setup-openfold3
 ```
 
-The `bias` workflow is part of the base package and does not require a co-folding backend.
+The `bias` workflow does not require a co-folding backend. Install `.[analysis]` for
+its complete plotting artifact set and other optional analysis features.
 
 Installed setup and data-preparation helpers are grouped under `cofolder-tools`.
 Run `cofolder-tools --help` to copy the bundled examples, prepare OpenFold3,

@@ -318,6 +318,16 @@ def extract_interaction_fingerprint(
 
 
 def _extract_prolif(path, ligand, receptor_chains, config):
+    from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
+
+    require_analysis_dependency(
+        "MDAnalysis",
+        feature="ProLIF interaction fingerprints",
+    )
+    require_analysis_dependency(
+        "prolif",
+        feature="ProLIF interaction fingerprints",
+    )
     # Resolve entities in the safe parent process before importing ProLIF in the
     # worker. This produces the same explicit selection diagnostics as distance IFPs.
     model = next(iter(_load_structure(path)), None)

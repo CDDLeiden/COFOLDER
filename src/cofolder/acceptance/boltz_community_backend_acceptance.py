@@ -89,7 +89,7 @@ def _(mo):
         Install command for a fresh environment:
 
         ```bash
-        pip install "cofolder[acceptance,boltz-community]"
+        pip install "cofolder[acceptance,analysis,boltz-community]"
         ```
 
         This notebook mirrors the `boltz2` happy-path expectations, but it relies on the community-maintained backend package line.

@@ -4,15 +4,31 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 import pandas as pd
-import seaborn as sns
 
 from cofolder.modules.analytics import dataset, stats
 from cofolder.modules.utils import helpers, write
+from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
 
 logger = logging.getLogger(__name__)
+
+
+def _load_plotting_dependencies():
+    plt = require_analysis_dependency(
+        "matplotlib.pyplot",
+        feature="Analysis plotting",
+        dependency_name="matplotlib",
+    )
+    patches = require_analysis_dependency(
+        "matplotlib.patches",
+        feature="Analysis plotting",
+        dependency_name="matplotlib",
+    )
+    sns = require_analysis_dependency(
+        "seaborn",
+        feature="Analysis plotting",
+    )
+    return plt, patches.Rectangle, sns
 
 
 def plot_affinity_correlation(
@@ -24,6 +40,7 @@ def plot_affinity_correlation(
     output_path: Optional[str] = None,
 ):
     """Create a correlation plot for predicted vs experimental affinities."""
+    plt, _, sns = _load_plotting_dependencies()
     df = dataset.prepare_affinity_dataframe(df, [pred_col, exp_col], censoring=censoring)
     df = helpers.drop_and_log_nans(df, [pred_col, exp_col], context="correlation plotting")
     if sample_size is not None and sample_size < len(df):
@@ -53,7 +70,7 @@ def plot_affinity_correlation(
         plt.show()
 
 
-def _save_figure(fig: plt.Figure, output_path: str | Path) -> Path:
+def _save_figure(fig, output_path: str | Path) -> Path:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, bbox_inches="tight")
@@ -102,6 +119,7 @@ def plot_reference_overlap_scatter(
     if plot_df.empty:
         return []
 
+    plt, Rectangle, _ = _load_plotting_dependencies()
     plot_df["source"] = plot_df.get("source", pd.Series(dtype=object)).fillna("unknown").astype(str)
 
     fig, ax = plt.subplots(figsize=(7.2, 7.2))

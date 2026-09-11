@@ -70,11 +70,29 @@ def test_default_dependencies_include_core_runtime_packages():
     pyproject = _load_pyproject()
     dependencies = pyproject["project"]["dependencies"]
 
-    assert "pandas" in dependencies
-    assert "pyyaml" in dependencies
-    assert "biopython" in dependencies
-    assert "scipy" in dependencies
-    assert "scikit-learn" in dependencies
+    assert dependencies == [
+        "numpy",
+        "pandas",
+        "pyyaml",
+        "biopython",
+        "rdkit",
+        "gemmi",
+        "packaging",
+    ]
+
+
+def test_analysis_dependencies_are_an_exact_optional_extra():
+    pyproject = _load_pyproject()
+
+    assert pyproject["project"]["requires-python"] == ">=3.11,<3.13"
+    assert pyproject["project"]["optional-dependencies"]["analysis"] == [
+        "scipy",
+        "scikit-learn",
+        "prolif",
+        "pdb2pqr",
+        "matplotlib",
+        "seaborn",
+    ]
 
 
 def test_backend_extras_use_supported_immutable_versions():
@@ -146,6 +164,11 @@ def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
 
     assert {(job["python-version"], job["lane"]) for job in matrix} == (
         expected_test_jobs
+    )
+    assert all(
+        "analysis" in job["extras"].split(",")
+        for job in matrix
+        if job["lane"] == "core"
     )
     for lane in ("core", "contracts-tutorial", "artifact", "acceptance"):
         assert lane in workflow

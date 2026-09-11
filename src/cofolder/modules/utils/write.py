@@ -2,12 +2,13 @@ import os
 import pandas as pd
 
 from pathlib import Path
-import matplotlib.pyplot as plt
 from rdkit import Chem
 import pickle
 import yaml
 
 import logging
+
+from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,11 @@ def save_plot(output_path: str | Path):
     - Parent directories are created automatically
     - The figure is always closed after saving
     """
+    plt = require_analysis_dependency(
+        "matplotlib.pyplot",
+        feature="Plot saving",
+        dependency_name="matplotlib",
+    )
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

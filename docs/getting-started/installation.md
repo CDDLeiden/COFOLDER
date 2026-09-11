@@ -24,8 +24,19 @@ pip install -e .
 This installs the base COFOLDER package and its core dependencies, including:
 
 - `rdkit` - For molecular structure handling
-- `matplotlib` - For plotting and visualization
-- `seaborn` - For enhanced visualizations
+- `numpy` and `pandas` - For core numerical and tabular data handling
+- `biopython` and `gemmi` - For sequence and structure input handling
+
+Install the analysis extra for IFP clustering, affinity statistics, ProLIF/pdb2pqr
+interaction processing, and plotting:
+
+```bash
+pip install -e ".[analysis]"
+```
+
+If one of these features is requested without its dependency, COFOLDER raises an
+error naming the feature and recommends installing `cofolder[analysis]`; it does not
+silently omit the requested metric or artifact.
 
 Backend runners are installed separately through optional extras:
 
@@ -34,7 +45,7 @@ Backend runners are installed separately through optional extras:
 pip install -e ".[boltz1]"
 
 # Boltz 2 runner
-pip install -e ".[boltz2]"
+pip install -e ".[analysis,boltz2]"
 
 # Boltz Community runner
 pip install -e ".[boltz-community]"
@@ -98,10 +109,10 @@ You should see output showing the version number.
 
 ### Standalone Bias Workflow
 
-The dedicated `cofolder bias` command is part of the base package. You do not need a
-cofolding backend runner just to inspect reference-overlap diagnostics.
+The dedicated `cofolder bias` command does not need a cofolding backend runner.
+Install `.[analysis]` for the complete reference-overlap plotting artifact set.
 
-Base-package-only bias usage works for:
+With the analysis extra installed, the backend-free bias workflow supports:
 
 - custom-only reference inputs
 - prebuilt public protein/ligand training CSVs
@@ -128,7 +139,7 @@ which mmseqs
 mmseqs --version
 ```
 
-Bias-only setup after installing the base package:
+Bias-only setup after installing `.[analysis]`:
 
 ```bash
 # 1) Optional: fetch CCD + mmseqs DB if you want to build public training CSVs
@@ -205,7 +216,7 @@ This installs:
 To run the interactive marimo tutorials:
 
 ```bash
-pip install -e ".[tutorials]"
+pip install -e ".[analysis,tutorials]"
 ```
 
 Then launch a tutorial notebook, for example:
@@ -219,19 +230,19 @@ marimo edit tutorials/bias.py
 For development work, install with all optional dependencies:
 
 ```bash
-pip install -e ".[docs,test,development]"
+pip install -e ".[analysis,docs,test,development]"
 ```
 
 Add the backend extra you need in the same environment, for example:
 
 ```bash
-pip install -e ".[boltz2]"
+pip install -e ".[analysis,boltz2]"
 ```
 
 If you are developing against OpenFold3 instead, keep the same development environment and install the matching COFOLDER backend extra plus the setup script:
 
 ```bash
-pip install -e ".[openfold3]"
+pip install -e ".[analysis,openfold3]"
 cofolder-tools setup-openfold3
 ```
 
@@ -252,6 +263,19 @@ If RDKit installation fails, try installing via conda:
 ```bash
 conda install -c conda-forge rdkit
 ```
+
+### Optional Analysis Dependency Errors
+
+If clustering, affinity correlation statistics, plotting, ProLIF, or pdb2pqr reports
+that an optional dependency is unavailable, install the complete supported analysis
+set:
+
+```bash
+python -m pip install -e ".[analysis]"
+```
+
+Combine it with exactly one backend extra when prediction is also required, for
+example `python -m pip install -e ".[analysis,boltz2]"`.
 
 ## Next Steps
 

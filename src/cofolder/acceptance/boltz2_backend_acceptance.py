@@ -90,7 +90,7 @@ def _(mo):
     Install command for a fresh environment:
 
     ```bash
-    pip install "cofolder[acceptance,boltz2]"
+    pip install "cofolder[acceptance,analysis,boltz2]"
     ```
 
     This manual lane is intentionally expensive and is **not** part of routine `pytest` or CI-default checks.

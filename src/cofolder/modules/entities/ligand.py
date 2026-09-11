@@ -6,6 +6,7 @@ by Boltz for ligand predictions.
 """
 import fcntl
 import hashlib
+import importlib
 import json
 import logging
 import os
@@ -19,7 +20,6 @@ from typing import TYPE_CHECKING, List, Optional, Union
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
-from boltz.data.parse.mmcif_with_constraints import parse_ccd_residue
 
 from cofolder.modules.entities import ligand
 from cofolder.modules.input import command
@@ -32,6 +32,19 @@ logger = logging.getLogger(__name__)
 
 _CCD_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _CCD_SPACE = len(_CCD_ALPHABET) ** 5
+
+
+def _load_parse_ccd_residue():
+    """Load the Boltz-only CCD parser at the operation boundary."""
+    try:
+        module = importlib.import_module("boltz.data.parse.mmcif_with_constraints")
+    except (ImportError, ModuleNotFoundError) as exc:
+        raise ImportError(
+            "Boltz CCD conversion requires a compatible Boltz backend. Install the "
+            "matching COFOLDER backend extra, for example "
+            "`pip install \"cofolder[boltz2]\"`."
+        ) from exc
+    return module.parse_ccd_residue
 
 
 def _base36_fixed5(value: int) -> str:
@@ -668,6 +681,7 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
 
     mol = _prepare_mol(mol)
 
+    parse_ccd_residue = _load_parse_ccd_residue()
     parsedResidue = parse_ccd_residue(resname, mol, 0)
 
     add_pickled_prop(mol, 'MOL_NAME', resname)

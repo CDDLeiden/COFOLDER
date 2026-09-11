@@ -20,7 +20,7 @@ Thank you for your interest in contributing to COFOLDER! This guide will help yo
 Install the supported test, tutorial, documentation, and development tools:
 
 ```bash
-python -m pip install -e ".[docs,test,tutorials,development]"
+python -m pip install -e ".[analysis,docs,test,tutorials,development]"
 ```
 
 If your work changes runner integrations, backend packaging, or the shared CLI workflows, use the backend-specific clean-install acceptance lane described in [Backend Acceptance Tutorial](tutorials/backend-acceptance.md). That lane is intentionally manual and expensive, so it complements routine tests instead of replacing them.
@@ -52,7 +52,7 @@ python scripts/run_test_lane.py acceptance
 
 Use `python scripts/run_test_lane.py all` to run their union. The lane runner fails
 before pytest starts if a supported `test_*.py` module has missing or overlapping
-ownership. Install `.[test]` for core tests, `.[test,tutorials]` for the combined
+ownership. Install `.[analysis,test]` for core tests, `.[test,tutorials]` for the combined
 contracts/tutorial lane, `.[test,development]` for artifact checks, and
 `.[test,acceptance]` for the lightweight acceptance-contract tests.
 

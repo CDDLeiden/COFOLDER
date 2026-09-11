@@ -1,5 +1,4 @@
 # Standard library
-import importlib
 import json
 import logging
 import re
@@ -24,6 +23,7 @@ from cofolder.modules.analytics.reference_ifp import (
     ReferenceIFPError,
     extract_interaction_fingerprint,
 )
+from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -31,12 +31,25 @@ logger = logging.getLogger(__name__)
 
 def _load_prolif_dependencies():
     """Load ProLIF helpers only for explicitly requested legacy operations."""
-    return importlib.import_module("MDAnalysis"), importlib.import_module("prolif")
+    return (
+        require_analysis_dependency(
+            "MDAnalysis",
+            feature="ProLIF interaction processing",
+        ),
+        require_analysis_dependency(
+            "prolif",
+            feature="ProLIF interaction processing",
+        ),
+    )
 
 
 def _run_pdb2pqr(args: list[str]) -> None:
     """Run pdb2pqr across the supported programmatic APIs."""
-    module = importlib.import_module("pdb2pqr.main")
+    module = require_analysis_dependency(
+        "pdb2pqr.main",
+        feature="PDB2PQR interaction preparation",
+        dependency_name="pdb2pqr",
+    )
 
     legacy_runner = getattr(module, "run_pdb2pqr", None)
     if legacy_runner is not None:

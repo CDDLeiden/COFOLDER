@@ -100,7 +100,7 @@ def _(mo):
     Recommended fresh-environment install path for this notebook:
 
     ```bash
-    python -m pip install -e ".[acceptance,openfold3]"
+    python -m pip install -e ".[acceptance,analysis,openfold3]"
     ```
 
     This is a dedicated OpenFold3 lane. Before running the expensive cells:

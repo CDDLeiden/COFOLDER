@@ -1,12 +1,11 @@
 import logging
 
 import pandas as pd
-from scipy.stats import kendalltau, pearsonr, spearmanr
-from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 
 from cofolder.modules.analytics import dataset
 from cofolder.modules.contracts import convert_metric_value
 from cofolder.modules.utils import helpers, write
+from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +164,17 @@ def calculate_affinity_correlations(
     >>> print(f"R² = {metrics['r2']:.3f}")
     R² = 0.982
     """
+    scipy_stats = require_analysis_dependency(
+        "scipy.stats",
+        feature="Affinity correlation statistics",
+        dependency_name="scipy",
+    )
+    sklearn_metrics = require_analysis_dependency(
+        "sklearn.metrics",
+        feature="Affinity correlation statistics",
+        dependency_name="scikit-learn",
+    )
+
     df = dataset.prepare_affinity_dataframe(
         df, [pred_col, exp_col], censoring=censoring
     )
@@ -176,11 +186,11 @@ def calculate_affinity_correlations(
     x = df[pred_col]
     y = df[exp_col]
     metrics = {
-        "r2": float(r2_score(y, x)),
-        "pearson": float(pearsonr(x, y)[0]),
-        "spearman": float(spearmanr(x, y)[0]),
-        "kendall": float(kendalltau(x, y)[0]),
-        "rmse": float(root_mean_squared_error(y, x)),
-        "mae": float(mean_absolute_error(y, x)),
+        "r2": float(sklearn_metrics.r2_score(y, x)),
+        "pearson": float(scipy_stats.pearsonr(x, y)[0]),
+        "spearman": float(scipy_stats.spearmanr(x, y)[0]),
+        "kendall": float(scipy_stats.kendalltau(x, y)[0]),
+        "rmse": float(sklearn_metrics.root_mean_squared_error(y, x)),
+        "mae": float(sklearn_metrics.mean_absolute_error(y, x)),
     }
     return metrics

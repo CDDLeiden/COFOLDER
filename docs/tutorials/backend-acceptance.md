@@ -49,7 +49,7 @@ The commands below assume you are in the repository root and want the current ch
 ```bash
 conda create -n cofolder-acceptance-boltz1 python=3.12
 conda activate cofolder-acceptance-boltz1
-python -m pip install -e ".[acceptance,boltz1]"
+python -m pip install -e ".[acceptance,analysis,boltz1]"
 python --version
 cofolder --help
 ```
@@ -61,7 +61,7 @@ If Python `3.12` is not available in your conda setup, use Python `3.11` instead
 ```bash
 conda create -n cofolder-acceptance-boltz2 python=3.12
 conda activate cofolder-acceptance-boltz2
-python -m pip install -e ".[acceptance,boltz2]"
+python -m pip install -e ".[acceptance,analysis,boltz2]"
 python --version
 cofolder --help
 ```
@@ -71,7 +71,7 @@ cofolder --help
 ```bash
 conda create -n cofolder-acceptance-boltz-community python=3.12
 conda activate cofolder-acceptance-boltz-community
-python -m pip install -e ".[acceptance,boltz-community]"
+python -m pip install -e ".[acceptance,analysis,boltz-community]"
 python --version
 cofolder --help
 ```
@@ -82,7 +82,7 @@ OpenFold3 now installs through a COFOLDER optional extra. Use a fresh environmen
 
 ```bash
 conda create -n cofolder-acceptance-openfold3 python=3.12
-python -m pip install -e ".[acceptance,openfold3]"
+python -m pip install -e ".[acceptance,analysis,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 cofolder-tools setup-openfold3
 python --version
@@ -117,17 +117,17 @@ marimo run src/cofolder/acceptance/input_contract_backend_acceptance.py
 
 If you prefer a non-editable install from the current checkout, replace:
 
-- `python -m pip install -e ".[acceptance,boltz1]"`
-- `python -m pip install -e ".[acceptance,boltz2]"`
-- `python -m pip install -e ".[acceptance,boltz-community]"`
-- `python -m pip install -e ".[acceptance,openfold3]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz1]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz2]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz-community]"`
+- `python -m pip install -e ".[acceptance,analysis,openfold3]"`
 
 with:
 
-- `python -m pip install ".[acceptance,boltz1]"`
-- `python -m pip install ".[acceptance,boltz2]"`
-- `python -m pip install ".[acceptance,boltz-community]"`
-- `python -m pip install ".[acceptance,openfold3]"`
+- `python -m pip install ".[acceptance,analysis,boltz1]"`
+- `python -m pip install ".[acceptance,analysis,boltz2]"`
+- `python -m pip install ".[acceptance,analysis,boltz-community]"`
+- `python -m pip install ".[acceptance,analysis,openfold3]"`
 
 To discard an acceptance environment completely:
 

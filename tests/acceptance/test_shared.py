@@ -22,11 +22,11 @@ class TestInstallAndRunnerSelection:
     def test_install_command_for_backend(self):
         assert (
             shared.install_command_for_backend("boltz2")
-            == 'pip install "cofolder[acceptance,boltz2]"'
+            == 'pip install "cofolder[acceptance,analysis,boltz2]"'
         )
         assert (
             shared.install_command_for_backend("openfold3")
-            == 'python -m pip install -e ".[acceptance,openfold3]"'
+            == 'python -m pip install -e ".[acceptance,analysis,openfold3]"'
         )
 
     @pytest.mark.parametrize(

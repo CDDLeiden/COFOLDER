@@ -93,7 +93,7 @@ def _(mo):
         Install command for a fresh environment:
 
         ```bash
-        pip install "cofolder[acceptance,boltz1]"
+        pip install "cofolder[acceptance,analysis,boltz1]"
         ```
 
         `boltz1` is intentionally confidence-only. In this notebook:

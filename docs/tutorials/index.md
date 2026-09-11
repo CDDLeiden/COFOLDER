@@ -37,7 +37,7 @@ These live in the repository root under `tutorials/`:
 Launch them with marimo:
 
 ```bash
-python -m pip install -e ".[tutorials]"
+python -m pip install -e ".[analysis,tutorials]"
 marimo edit tutorials/bias.py
 ```
 
@@ -53,7 +53,7 @@ actionable preflight failure without launching inference.
 Use a dedicated CUDA-capable environment for the selected backend:
 
 ```bash
-python -m pip install -e ".[tutorials,boltz2]"
+python -m pip install -e ".[analysis,tutorials,boltz2]"
 marimo edit tutorials/boltz_system_inputs.py
 ```
 
@@ -63,7 +63,7 @@ runner selector. Install only one Boltz package line in an environment.
 OpenFold3 additionally requires its downloaded cache and setup marker:
 
 ```bash
-python -m pip install -e ".[tutorials,openfold3]"
+python -m pip install -e ".[analysis,tutorials,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
 cofolder-tools setup-openfold3
 marimo edit tutorials/openfold3_system_inputs.py
