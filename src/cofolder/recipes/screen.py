@@ -100,6 +100,7 @@ from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import write
 from cofolder.modules.utils.helpers import resolve_seed_plan
 from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
+from cofolder.recipes._completion import report_completion
 from cofolder.recipes.validate import Validate
 
 logger = logging.getLogger(__name__)
@@ -507,6 +508,7 @@ class Screen:
             raise ValueError("--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE].")
         return LigandSelector(tokens[0], int(residue[:index]), residue[index:])
 
+    @report_completion(WorkflowKind.SCREEN)
     def run(self) -> pd.DataFrame:
         try:
             return self._run_impl()
@@ -1053,15 +1055,6 @@ class Screen:
             temporary_members_path.unlink(missing_ok=True)
         has_success = self._write_public_results(results_df, public_failures)
 
-        failures = sum(1 for r in records if r["status"] == "failed")
-        successes = len(records) - failures
-        self.logger.info(
-            "Screen complete: total=%d success=%d failed=%d public_results=%s",
-            len(records),
-            successes,
-            failures,
-            self.wrk_dir / "results",
-        )
         if not has_success:
             raise WorkflowExecutionError(
                 "No screened compound produced a usable result.",

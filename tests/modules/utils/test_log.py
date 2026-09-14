@@ -1,8 +1,21 @@
 """Tests for cofolder.modules.utils.log module."""
 import logging
+import re
 
+import pytest
 
 from cofolder.modules.utils.log import setup_root_logger
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logger():
+    """Keep logger configuration changes local to each test."""
+    logger = logging.getLogger()
+    handlers = list(logger.handlers)
+    level = logger.level
+    yield
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
 
 
 class TestSetupRootLogger:
@@ -93,3 +106,35 @@ class TestSetupRootLogger:
         assert log_file.exists()
         content = log_file.read_text()
         assert "Debug message" in content
+
+    def test_info_console_is_concise_and_file_is_detailed(
+        self, temp_dir, capsys
+    ):
+        logger = logging.getLogger()
+        logger.handlers.clear()
+        log_file = temp_dir / "path with spaces" / "cofolder.log"
+        log_file.parent.mkdir()
+
+        setup_root_logger(logging.INFO, log_file=log_file)
+        logger.info("Concise progress")
+
+        assert capsys.readouterr().out == "INFO | Concise progress\n"
+        file_text = log_file.read_text()
+        assert "INFO" in file_text
+        assert "test_log.py:" in file_text
+        assert "test_info_console_is_concise_and_file_is_detailed" in file_text
+        assert file_text.endswith("Concise progress\n")
+
+    def test_debug_console_uses_detailed_format(self, capsys):
+        logger = logging.getLogger()
+        logger.handlers.clear()
+
+        setup_root_logger(logging.DEBUG)
+        logger.debug("Detailed progress")
+
+        output = capsys.readouterr().out
+        assert re.search(
+            r"DEBUG\s+\| test_log\.py:\d+ \| "
+            r"test_debug_console_uses_detailed_format \| Detailed progress\n$",
+            output,
+        )

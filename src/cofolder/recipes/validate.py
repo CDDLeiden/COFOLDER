@@ -50,6 +50,7 @@ from cofolder.modules.runners.validators import validate_runner_bundle
 from cofolder.modules.utils import gather, helpers, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.recipes.bias import BiasAssessmentWorkflow
+from cofolder.recipes._completion import report_completion
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +364,7 @@ class Validate:
             )
         return adjusted
 
+    @report_completion(WorkflowKind.VALIDATE)
     def run(self):
         try:
             return self._run_impl()

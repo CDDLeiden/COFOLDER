@@ -26,6 +26,7 @@ from cofolder.modules.contracts import (
 from cofolder.modules.input import InputValidationError, system
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
+from cofolder.recipes._completion import report_completion
 
 logger = logging.getLogger(__name__)
 
@@ -748,6 +749,7 @@ class Bias:
                 "Database-backed bias paths cannot be combined with legacy public-reference paths/build mode."
             )
 
+    @report_completion(WorkflowKind.BIAS)
     def run(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         try:
             return self._run_impl()
@@ -864,9 +866,6 @@ class Bias:
                 artifacts=artifacts,
             )
             write_public_bundle(bundle, self.wrk_dir / "results")
-            self.logger.info(
-                "Standalone bias public outputs written to %s", self.wrk_dir / "results"
-            )
 
         self._log_timing_summary()
         return system_df, chain_df

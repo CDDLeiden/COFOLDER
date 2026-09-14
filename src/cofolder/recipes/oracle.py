@@ -54,6 +54,7 @@ from cofolder.recipes._metrics import (
     collect_qualified_metric_values,
     read_metric_frames,
 )
+from cofolder.recipes._completion import report_completion
 from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS, Validate
 
 logger = logging.getLogger(__name__)
@@ -439,6 +440,7 @@ class Oracle:
                 f"but enabled are {sorted(scoring)}."
             )
 
+    @report_completion(WorkflowKind.ORACLE)
     def run(self) -> float:
         try:
             return self._run_impl()

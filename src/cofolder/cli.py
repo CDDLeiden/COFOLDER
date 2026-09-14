@@ -601,7 +601,6 @@ class ValidateRecipe(BaseRecipe):
         logger.info("Starting COFOLDER validation pipeline.")
 
         validator.run()
-        logger.info("Validation pipeline completed.")
 
 
 class ScreenRecipe(BaseRecipe):
@@ -734,7 +733,6 @@ class ScreenRecipe(BaseRecipe):
         logger.info("Starting COFOLDER screening pipeline.")
 
         screener.run()
-        logger.info("Screening pipeline completed.")
 
 
 class OracleRecipe(BaseRecipe):
@@ -795,9 +793,7 @@ class OracleRecipe(BaseRecipe):
         logger = OracleRecipe.setup(args)
         logger.info("Starting COFOLDER oracle pipeline.")
 
-        value = oracle.run()
-        logger.info("Oracle value (%s, aggregate=%s): %s", args.output_metric, args.aggregate, value)
-        logger.info("Oracle pipeline completed.")
+        oracle.run()
 
 
 class BiasRecipe(BaseRecipe):
@@ -827,7 +823,6 @@ class BiasRecipe(BaseRecipe):
         logger.info("Starting COFOLDER standalone bias pipeline.")
 
         bias.run()
-        logger.info("Standalone bias pipeline completed.")
 
 
 RECIPES = [

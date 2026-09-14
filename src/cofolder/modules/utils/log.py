@@ -11,6 +11,9 @@ import weakref
 from pathlib import Path
 from typing import Optional
 
+CONCISE_FORMAT = "%(levelname)s | %(message)s"
+"""str: Concise format used for normal console progress."""
+
 DEFAULT_FORMAT = (
     "%(asctime)s | "
     "%(levelname)-8s | "
@@ -64,7 +67,10 @@ def setup_root_logger(
     """
     root = logging.getLogger()
 
-    formatter = logging.Formatter(DEFAULT_FORMAT)
+    detailed_formatter = logging.Formatter(DEFAULT_FORMAT)
+    console_formatter = logging.Formatter(
+        DEFAULT_FORMAT if level <= logging.DEBUG else CONCISE_FORMAT
+    )
 
     root.setLevel(level)
 
@@ -81,7 +87,7 @@ def setup_root_logger(
     if console is None:
         console = logging.StreamHandler(sys.stdout)
         root.addHandler(console)
-    console.setFormatter(formatter)
+    console.setFormatter(console_formatter)
 
     # Compatibility contract: tests may clear root.handlers before calling this
     # helper, but caplog-based assertions should still observe root logger
@@ -109,4 +115,4 @@ def setup_root_logger(
         if file_handler is None:
             file_handler = logging.FileHandler(log_path)
             root.addHandler(file_handler)
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(detailed_formatter)
