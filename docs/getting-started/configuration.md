@@ -1,5 +1,12 @@
 # Configuration
 
+Database-backed bias inputs and the exact release-cutoff policy are documented in
+[Providing bias training data](../user-guide/bias-training-data.md).
+All four recipes accept `bias_release_cutoff="whole"`, `bias_query_cache_path`,
+`custom_bias_reference_path`, and independent normalized
+`bias_protein_similarity_threshold` / `bias_ligand_similarity_threshold` values;
+matching CLI flags use `--` prefixes.
+
 ## System Configuration
 
 The system YAML file defines proteins, ligands, DNA, RNA, and optional constraints.

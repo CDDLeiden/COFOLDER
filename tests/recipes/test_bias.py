@@ -5,10 +5,39 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 import yaml
+import hashlib
+import json
 
 from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.modules.input.system import System
 from cofolder.recipes.bias import Bias, build_bias_dataframes
+from cofolder.modules.analytics.bias_database import (
+    BIAS_DATABASE_SCHEMA_VERSION, LIGAND_TABLE_NAME, PROTEIN_METADATA_NAME,
+    PROTEIN_SEQUENCE_INDEX_NAME,
+)
+
+
+def _database_bundle(root, kind, rows):
+    root.mkdir()
+    if kind == "protein":
+        (root / "mmseqs").mkdir()
+        (root / "mmseqs/db").write_text("fixture", encoding="utf-8")
+        pd.DataFrame(rows).to_csv(root / PROTEIN_METADATA_NAME, index=False)
+        pd.DataFrame([
+            {"pdb_id": row["pdb_id"], "target_id": f'{row["pdb_id"]}_A', "sequence": "AAAA"}
+            for row in rows
+        ]).to_csv(root / PROTEIN_SEQUENCE_INDEX_NAME, index=False)
+    else:
+        pd.DataFrame(rows).to_csv(root / LIGAND_TABLE_NAME, index=False)
+    files = {
+        str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob("*") if path.is_file()
+    }
+    (root / "manifest.json").write_text(json.dumps({
+        "schema_version": BIAS_DATABASE_SCHEMA_VERSION, "kind": kind, "files": files,
+        "source_snapshot": "2026-01-01T00:00:00Z",
+    }), encoding="utf-8")
+    return root
 
 
 class TestBuildBiasDataframes:
@@ -40,6 +69,54 @@ class TestBuildBiasDataframes:
 
 
 class TestBiasRun:
+    def test_database_backed_nonidentical_two_protein_two_ligand_story(
+        self, monkeypatch, temp_dir
+    ):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(yaml.safe_dump({"sequences": [
+            {"protein": {"id": "A", "sequence": "AAAA"}},
+            {"protein": {"id": "C", "sequence": "CCCC"}},
+            {"ligand": {"id": "B", "smiles": "CCO"}},
+            {"ligand": {"id": "D", "smiles": "c1ccccc1"}},
+        ]}), encoding="utf-8")
+        protein = _database_bundle(temp_dir / "protein", "protein", [
+            {"pdb_id": "1AAA", "release_date": "2020-01-01"},
+            {"pdb_id": "2BBB", "release_date": "2022-01-01"},
+        ])
+        ligand = _database_bundle(temp_dir / "ligand", "ligand", [
+            {"pdb_id": "1AAA", "release_date": "2020-01-01", "ligand_id": "ETH", "smiles": "CCO"},
+            {"pdb_id": "2BBB", "release_date": "2022-01-01", "ligand_id": "BEN", "smiles": "c1ccccc1"},
+        ])
+        calls = []
+
+        def fake_mmseqs(binary, fasta, target, workers, tmp, max_seqs):
+            sequence = "".join(line for line in fasta.read_text().splitlines() if not line.startswith(">"))
+            calls.append(sequence)
+            return pd.DataFrame([
+                {"target": "1AAA_A", "pident": 80.0 if sequence == "AAAA" else 30.0, "tseq": "AAAA"},
+                {"target": "2BBB_B", "pident": 30.0 if sequence == "AAAA" else 80.0, "tseq": "CCCC"},
+            ])
+
+        monkeypatch.setattr("cofolder.modules.analytics.build_bias_training_data._run_mmseqs", fake_mmseqs)
+        monkeypatch.setattr("cofolder.modules.analytics.bias_training._resolve_mmseqs_bin", lambda: "mmseqs")
+        monkeypatch.setattr("cofolder.modules.analytics.bias_database._mmseqs_version", lambda binary: "fixture")
+        bias = Bias(
+            wrk_dir=str(temp_dir / "run"), system_path=str(system_path),
+            bias_training_data_protein_path=str(protein),
+            bias_training_data_ligand_path=str(ligand),
+            bias_query_cache_path=str(temp_dir / "cache"), bias_release_cutoff="whole",
+        )
+        bias.run()
+        output = temp_dir / "run/results/bias_train"
+        assert calls == ["AAAA", "CCCC"]
+        assert all((output / name).is_file() for name in (
+            "bias_training_data_A__B.csv", "bias_training_data_A__D.csv",
+            "bias_training_data_C__B.csv", "bias_training_data_C__D.csv",
+            "bias_protein_pair_data_A__C.csv", "bias_ligand_pair_data_B__D.csv",
+        ))
+        combined = pd.read_csv(output / "bias_training_data.csv")
+        assert set(combined["query_pair_id"]) == {"A__B", "A__D", "C__B", "C__D"}
+
     def test_run_supports_custom_only_references_and_writes_summary(self, temp_dir):
         system_path = temp_dir / "system.yaml"
         system_path.write_text(

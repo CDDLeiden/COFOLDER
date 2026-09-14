@@ -1,5 +1,10 @@
 # Oracle recipe: Python API and file flow
 
+For database-backed bias inputs, see
+[Providing bias training data](../../user-guide/bias-training-data.md).
+The cache path is forwarded to candidate Validate runs; protein searches are shared
+and ligand entries use canonical molecular identity.
+
 This reference reconstructs the current `Oracle` recipe in
 `src/cofolder/recipes/oracle.py`. Oracle turns one candidate ligand and the output of
 one child `Validate` workflow into one finite scalar.

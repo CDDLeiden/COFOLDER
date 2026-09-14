@@ -139,7 +139,9 @@ which mmseqs
 mmseqs --version
 ```
 
-Bias-only setup after installing `.[analysis]`:
+Bias-only setup after installing `.[analysis]` is described in full in
+[Providing bias training data](../user-guide/bias-training-data.md). The commands
+below document the retained legacy CSV route:
 
 ```bash
 # 1) Optional: fetch CCD + mmseqs DB if you want to build public training CSVs

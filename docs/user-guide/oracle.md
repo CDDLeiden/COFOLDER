@@ -1,5 +1,9 @@
 # Oracle Command and Python API
 
+Bias-derived Oracle metrics use the source bundles described in
+[Providing bias training data](bias-training-data.md). Repeated candidates reuse the
+invariant protein search, while ligand reuse follows canonical molecular identity.
+
 The Oracle workflow runs `validate` for one query ligand in a fixed system and
 returns one finite scalar. The command line exposes standard single-metric calls;
 the Python API additionally supports weighted objectives, structure gates, and

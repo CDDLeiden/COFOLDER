@@ -42,13 +42,11 @@ from cofolder.modules.input import (
     system,
 )
 from cofolder.modules.input.ligand import (
-    LigandSelectionError,
     LigandSourceIdentity,
     replace_ligand_smiles,
     resolve_ligand_target,
     validate_smiles,
 )
-from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import get_runner
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import write
@@ -157,7 +155,14 @@ class Oracle:
         assess_bias: bool = False,
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
+        bias_training_data_protein_path: str | None = None,
+        bias_training_data_ligand_path: str | None = None,
+        bias_query_cache_path: str | None = None,
+        custom_bias_reference_path: str | None = None,
+        custom_protein_reference_path: str | None = None,
+        custom_ligand_reference_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_protein_similarity_threshold: float = 0.25,
         bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
@@ -201,7 +206,14 @@ class Oracle:
             "assess_bias": assess_bias,
             "protein_training_data_path": protein_training_data_path,
             "ligand_training_data_path": ligand_training_data_path,
+            "bias_training_data_protein_path": bias_training_data_protein_path,
+            "bias_training_data_ligand_path": bias_training_data_ligand_path,
+            "bias_query_cache_path": bias_query_cache_path,
+            "custom_bias_reference_path": custom_bias_reference_path,
+            "custom_protein_reference_path": custom_protein_reference_path,
+            "custom_ligand_reference_path": custom_ligand_reference_path,
             "bias_release_cutoff": bias_release_cutoff,
+            "bias_protein_similarity_threshold": bias_protein_similarity_threshold,
             "bias_ligand_similarity_threshold": bias_ligand_similarity_threshold,
             "bias_chains": bias_chains,
             "build_bias_training_data": build_bias_training_data,
@@ -215,6 +227,66 @@ class Oracle:
         self.base_system: dict[str, Any] = {}
         self.query_ligand_chain = self.ligand_chain
         self.logger = logging.getLogger("cofolder.oracle")
+
+    def preflight(self):
+        """Validate and describe the oracle request without executing it."""
+        from dataclasses import replace
+        from cofolder.recipes.preflight import PreflightReport, prediction_preflight
+
+        try:
+            self._validate_config()
+        except Exception as exc:
+            return PreflightReport(
+                workflow="oracle",
+                ready=False,
+                runner=self.runner,
+                output_dir=str(self.wrk_dir / "results"),
+                messages=(str(exc),),
+            )
+        report, system_obj, _options = prediction_preflight(
+            workflow="oracle",
+            system_path=self.system_path,
+            options_path=self.options_path,
+            runner_name=self.runner,
+            repeats=int(self.validate_kwargs["repeats"]),
+            output_dir=self.wrk_dir,
+            require_ligand=True,
+            assess_bias=bool(self.validate_kwargs["assess_bias"]),
+            use_bias_databases=bool(
+                self.validate_kwargs["bias_training_data_protein_path"]
+                or self.validate_kwargs["bias_training_data_ligand_path"]
+                or (
+                    self.validate_kwargs["protein_training_data_path"] is None
+                    and self.validate_kwargs["ligand_training_data_path"] is None
+                    and self.validate_kwargs["custom_bias_reference_path"] is None
+                    and self.validate_kwargs["custom_protein_reference_path"] is None
+                    and self.validate_kwargs["custom_ligand_reference_path"] is None
+                    and not self.validate_kwargs["build_bias_training_data"]
+                )
+            ),
+            protein_database_path=self.validate_kwargs["bias_training_data_protein_path"],
+            ligand_database_path=self.validate_kwargs["bias_training_data_ligand_path"],
+            release_cutoff=self.validate_kwargs["bias_release_cutoff"],
+            bias_chains=self.validate_kwargs["bias_chains"],
+            bias_query_cache_path=self.validate_kwargs["bias_query_cache_path"],
+            custom_bias_reference_path=self.validate_kwargs["custom_bias_reference_path"],
+            protein_similarity_threshold=self.validate_kwargs[
+                "bias_protein_similarity_threshold"
+            ],
+            ligand_similarity_threshold=self.validate_kwargs[
+                "bias_ligand_similarity_threshold"
+            ],
+        )
+        if not report.ready:
+            return report
+        try:
+            target = resolve_ligand_target(system_obj, self.ligand_chain)
+        except Exception as exc:
+            return replace(report, ready=False, messages=report.messages + (str(exc),))
+        return replace(
+            report,
+            messages=report.messages + (f"selected_ligand_chain={target.chain_ids[0]}",),
+        )
 
     @staticmethod
     def _normalize_components(
@@ -433,24 +505,8 @@ class Oracle:
             ),
         )
         self.base_system = validated.system.system
-        if self.ligand_chain is None:
-            ligand_entries = {
-                chain.sequence_index
-                for chain in iter_system_chains(validated.system)
-                if chain.entity_type == "ligand"
-            }
-            if len(ligand_entries) != 1:
-                raise LigandSelectionError(
-                    "--ligand_chain is required when the system contains multiple ligand entities.",
-                    source_path=self.system_path,
-                )
-            selected = next(
-                chain
-                for chain in iter_system_chains(validated.system)
-                if chain.sequence_index == next(iter(ligand_entries))
-            )
-            self.ligand_chain = selected.chain_id
         target = resolve_ligand_target(validated.system, self.ligand_chain)
+        self.ligand_chain = target.chain_ids[0]
         self.query_ligand_chain = self.ligand_chain
         normalized_ligand = validate_smiles(
             smiles,

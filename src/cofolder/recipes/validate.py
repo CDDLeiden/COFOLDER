@@ -94,7 +94,14 @@ class Validate:
         assess_bias: bool = False,
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
+        bias_training_data_protein_path: str | None = None,
+        bias_training_data_ligand_path: str | None = None,
+        bias_query_cache_path: str | None = None,
+        custom_bias_reference_path: str | None = None,
+        custom_protein_reference_path: str | None = None,
+        custom_ligand_reference_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_protein_similarity_threshold: float = 0.25,
         bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
@@ -130,7 +137,24 @@ class Validate:
         self.ligand_training_data_path = (
             Path(ligand_training_data_path) if ligand_training_data_path else None
         )
+        self.bias_training_data_protein_path = (
+            Path(bias_training_data_protein_path)
+            if bias_training_data_protein_path
+            else None
+        )
+        self.bias_training_data_ligand_path = (
+            Path(bias_training_data_ligand_path)
+            if bias_training_data_ligand_path
+            else None
+        )
+        self.bias_query_cache_path = Path(bias_query_cache_path) if bias_query_cache_path else None
+        self.custom_bias_reference_path = Path(custom_bias_reference_path) if custom_bias_reference_path else None
+        self.custom_protein_reference_path = Path(custom_protein_reference_path) if custom_protein_reference_path else None
+        self.custom_ligand_reference_path = Path(custom_ligand_reference_path) if custom_ligand_reference_path else None
         self.bias_release_cutoff = bias_release_cutoff
+        self.bias_protein_similarity_threshold = float(
+            bias_protein_similarity_threshold
+        )
         self.bias_ligand_similarity_threshold = float(bias_ligand_similarity_threshold)
         self.build_bias_training_data = build_bias_training_data
         self.bias_training_components_cif = (
@@ -193,7 +217,14 @@ class Validate:
                 "assess_bias": self.assess_bias,
                 "protein_training_data_path": self.protein_training_data_path,
                 "ligand_training_data_path": self.ligand_training_data_path,
+                "bias_training_data_protein_path": self.bias_training_data_protein_path,
+                "bias_training_data_ligand_path": self.bias_training_data_ligand_path,
+                "bias_query_cache_path": self.bias_query_cache_path,
+                "custom_bias_reference_path": self.custom_bias_reference_path,
+                "custom_protein_reference_path": self.custom_protein_reference_path,
+                "custom_ligand_reference_path": self.custom_ligand_reference_path,
                 "bias_release_cutoff": self.bias_release_cutoff,
+                "bias_protein_similarity_threshold": self.bias_protein_similarity_threshold,
                 "bias_ligand_similarity_threshold": self.bias_ligand_similarity_threshold,
                 "bias_chains": sorted(self.bias_chains) if self.bias_chains else None,
                 "build_bias_training_data": self.build_bias_training_data,
@@ -208,6 +239,41 @@ class Validate:
 
         self.timings = DebugTimingCollector(logger=self.logger)
         self._failure_stage = FailureStage.INPUT_VALIDATION
+
+    def preflight(self):
+        """Validate and describe this workflow without executing it."""
+        from cofolder.recipes.preflight import prediction_preflight
+
+        report, _system_obj, _options = prediction_preflight(
+            workflow="validate",
+            system_path=self.system_path,
+            options_path=self.options_path,
+            runner_name=self.runner_name,
+            repeats=self.repeats,
+            output_dir=self.wrk_dir,
+            assess_bias=self.assess_bias,
+            use_bias_databases=bool(
+                self.bias_training_data_protein_path
+                or self.bias_training_data_ligand_path
+                or (
+                    self.protein_training_data_path is None
+                    and self.ligand_training_data_path is None
+                    and self.custom_bias_reference_path is None
+                    and self.custom_protein_reference_path is None
+                    and self.custom_ligand_reference_path is None
+                    and not self.build_bias_training_data
+                )
+            ),
+            protein_database_path=self.bias_training_data_protein_path,
+            ligand_database_path=self.bias_training_data_ligand_path,
+            release_cutoff=self.bias_release_cutoff,
+            bias_chains=self.bias_chains,
+            bias_query_cache_path=self.bias_query_cache_path,
+            custom_bias_reference_path=self.custom_bias_reference_path,
+            protein_similarity_threshold=self.bias_protein_similarity_threshold,
+            ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
+        )
+        return report
 
     def _log_timing_summary(self) -> None:
         self.timings.log_summary(logger=self.logger)
@@ -1038,7 +1104,14 @@ class Validate:
             sys_obj=self.sys,
             protein_training_data_path=self.protein_training_data_path,
             ligand_training_data_path=self.ligand_training_data_path,
+            bias_training_data_protein_path=self.bias_training_data_protein_path,
+            bias_training_data_ligand_path=self.bias_training_data_ligand_path,
+            bias_query_cache_path=self.bias_query_cache_path,
+            custom_bias_reference_path=self.custom_bias_reference_path,
+            custom_protein_reference_path=self.custom_protein_reference_path,
+            custom_ligand_reference_path=self.custom_ligand_reference_path,
             bias_release_cutoff=self.bias_release_cutoff,
+            bias_protein_similarity_threshold=self.bias_protein_similarity_threshold,
             bias_ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
             bias_chains=self.bias_chains,
             build_bias_training_data=self.build_bias_training_data,

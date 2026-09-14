@@ -205,7 +205,26 @@ def prepare_ligand(
     return PreparedLigand(ligand, mode, mol, destination)
 
 
-def resolve_ligand_target(system_obj: System | dict[str, Any], chain_id: str) -> LigandTarget:
+def resolve_ligand_target(
+    system_obj: System | dict[str, Any], chain_id: str | None = None
+) -> LigandTarget:
+    if chain_id is None or not str(chain_id).strip():
+        ligand_indices = {
+            chain.sequence_index
+            for chain in iter_system_chains(system_obj)
+            if chain.entity_type == "ligand"
+        }
+        if len(ligand_indices) != 1:
+            raise LigandSelectionError(
+                "--ligand_chain is required when the system contains multiple ligand entities."
+            )
+        index = next(iter(ligand_indices))
+        chain_ids = tuple(
+            chain.chain_id
+            for chain in iter_system_chains(system_obj)
+            if chain.sequence_index == index
+        )
+        return LigandTarget(f"entity:{index}", index, chain_ids)
     matches = [
         chain
         for chain in iter_system_chains(system_obj)

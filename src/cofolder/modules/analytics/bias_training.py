@@ -51,6 +51,7 @@ def run_build_bias_training_data(
     output_protein_csv: Path,
     output_ligand_csv: Path,
     release_cutoff: str,
+    protein_similarity_threshold: float = 25.0,
     ligand_similarity_threshold: float = 0.35,
     overwrite: bool = True,
     skip_bias_csv: bool = True,
@@ -93,6 +94,8 @@ def run_build_bias_training_data(
             str(release_cutoff),
             "--ligand_similarity_threshold",
             str(threshold),
+            "--protein_similarity_threshold",
+            str(float(protein_similarity_threshold)),
         ]
         if overwrite:
             cmd.append("--overwrite")

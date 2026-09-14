@@ -78,6 +78,7 @@ nav:
   - User Guide:
       - Overview: user-guide/overview.md
       - Bias: user-guide/bias.md
+      - Bias training data: user-guide/bias-training-data.md
       - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md

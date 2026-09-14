@@ -1,5 +1,11 @@
 # Bias recipe: Python API and file flow
 
+The current database-backed provisioning interface is documented in
+[Providing bias training data](../../user-guide/bias-training-data.md).
+The recipe accepts `bias_release_cutoff="whole"`, a shared
+`bias_query_cache_path`, a prepared `custom_bias_reference_path`, and independent
+normalized protein/ligand similarity thresholds.
+
 This reference reconstructs the standalone `Bias` recipe and its reusable
 `BiasAssessmentWorkflow` from `src/cofolder/recipes/bias.py`.
 

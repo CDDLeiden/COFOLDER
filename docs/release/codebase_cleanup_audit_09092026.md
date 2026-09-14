@@ -272,15 +272,15 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 ### Plan control block
 
 ```yaml
-plan_version: 2
+plan_version: 3
 overall_status: IN_PROGRESS
 active_phase: S5
-active_task: S5.1
-last_completed_task: S4.5
-next_action: "Start S5.1 by adding the easier CLI journey and its preflight, unique-ligand, bias-field, contradiction, and bundled-example regressions."
+active_task: S5.2
+last_completed_task: S5.1
+next_action: "Implement the S5.2 shared MMseqs executable resolver with documented precedence, rejection diagnostics, and source/installed/space-containing-path coverage."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
-last_updated: 2026-09-11
+last_updated: 2026-09-14
 updated_by: Codex
 ```
 
@@ -532,6 +532,99 @@ linked gated task, never as incidental cleanup.
 
 ### Task ledger
 
+#### S5.1 reopened user-story verification and cache design
+
+S5.1 was reopened on 2026-09-14 because its earlier unit, documentation and artifact
+checks did not establish the complete training-data journey requested by the user.
+The existing S5.1 working-tree implementation was retained and extended. The
+reopened work is complete with the evidence in the ledger and work log below; S5.2
+is now the active task.
+
+Current capability assessment:
+
+| Scenario | How it works now | Current limit / S5.1 decision |
+|---|---|---|
+| One protein plus one ligand | Prepare one protein and one ligand source bundle, then run Bias/Validate/Screen/Oracle with `--assess_bias` and a selected `--bias_release_cutoff`. Both query chains receive their own reference rows and mixed-pair artifacts. | Supported in principle and by smaller component tests; add one end-to-end, no-network fixture that asserts chain identities, strict cutoff, metrics and artifact names. |
+| Two non-identical proteins plus two non-identical ligands | One source-bundle pair is searched for every distinct selected protein sequence and canonical ligand. Outputs preserve `query_chain_id`; downstream bias analytics produces pair-specific mixed, protein-protein and ligand-ligand datasets. | The present database test proves two distinct protein searches but only one distinct ligand shared by two chains. Add an explicit 2P/2L fixture with two non-identical ligand chemotypes and prove there is no cross-chain contamination or accidental query collapse. |
+| PDB comparison before 2023-06-01 | Reuse one immutable source snapshot and supply the exact date through `--bias_release_cutoff`. Both protein metadata and ligand occurrences use the strict rule `release_date < 2023-06-01`. | Retain a separate result directory and record the exact comparison cutoff and source snapshot. The date is not presented as a backend training cutoff. |
+| Whole prepared PDB snapshot | Use a cutoff later than every release date represented by the prepared snapshot. | There is no explicit `whole`/unbounded selector, and a guessed future date is an opaque workaround. Add a documented `whole snapshot` mode or a manifest-derived inclusive snapshot boundary, with manifest provenance and tests, while retaining exact-date mode. |
+| PDB slice supplemented with a custom crystal-structure set | Database-backed public sources can be combined with `--custom_protein_reference_path` and `--custom_ligand_reference_path`. Custom rows are appended as `source=custom` and are not removed by the public PDB cutoff, which matches supplementation semantics. A shared `pdb_id`, `source_structure_path` or `source_reference_path` can associate protein and ligand sides of a complex. | Partly possible: the workflow accepts derived protein CSV (`sequence` required) plus ligand CSV/SDF (`smiles` required), but it cannot ingest a directory/list of raw PDB/mmCIF protein-ligand complexes and build both sides automatically. Add a preparation command for a custom complex manifest/directory, stable complex identity/provenance, duplicate policy, extraction diagnostics and a generated supplement bundle or paired reference files. Document that custom structures are supplements, not members of the date-filtered public slice, unless a future explicit custom cutoff policy is selected. |
+
+Required comparison layout and provenance:
+
+```text
+<assessment_root>/
+├── pre-2023-06-01/
+├── whole-snapshot/
+├── pre-2023-06-01-plus-custom/
+└── custom-only/
+```
+
+Each scenario must have its own result directory and record: exact cutoff policy,
+source-bundle fingerprints/snapshot dates, custom-set fingerprint when present,
+selected query chains and query hashes. A small documented matrix runner/config
+should run these four scenarios without requiring four hand-written commands. It must
+call the same public recipes rather than introduce a separate scientific path.
+
+Current cache behavior is narrower than the intended behavior:
+
+- A source bundle itself is reusable and read-only across systems, Screen compounds,
+  Oracle candidates and cutoffs.
+- During one reference-materialization call, identical protein sequences share one
+  MMseqs invocation and identical canonical ligand molecules share one fingerprint
+  calculation. Distinct 2P/2L queries are intentionally computed separately.
+- `<wrk_dir>/results/bias_train/reference_manifest.json` reuses the derived protein
+  and ligand CSVs only when the complete request matches: both bundle fingerprints,
+  all protein/ligand query hashes and chain IDs, cutoff, ligand threshold and selected
+  chains. This safely reuses an identical rerun in the same output directory.
+- Screen places every compound under a separate execution directory and invokes
+  Validate there. Its invariant protein query is therefore searched again for every
+  compound. Oracle writes under `oracle_run`; an identical candidate rerun can reuse
+  its references, but changing the ligand changes the complete manifest and causes
+  the unchanged protein side to be searched again. Independent systems/work
+  directories do not share derived searches. Files under `_protein_search` are
+  working files, not a validated persistent cross-run cache.
+- Consequently the requested protein-similarity reuse in Screen/Oracle and between
+  systems is **not yet satisfied**. Tests must count MMseqs calls; the presence of
+  similarly named files is not sufficient evidence of reuse.
+
+Streamline this with a content-addressed, concurrency-safe bias query cache separate
+from result directories. Protein cache keys must include the protein source-bundle
+fingerprint, normalized sequence hash, MMseqs version/search parameters and cache
+schema; store raw hits before release-date filtering so one search can serve the
+pre-2023-06-01 and whole-snapshot comparisons. Ligand cache keys must include the ligand-bundle
+fingerprint, canonical molecule/fingerprint parameters and cache schema; likewise
+apply cutoff and reporting threshold after loading reusable raw similarities. Cache
+writes must be atomic and locked for concurrent Screen/Oracle workers, validate
+checksums/schema before reuse, preserve `query_chain_id` only when materializing a
+run, and expose hit/miss/rebuild provenance in `reference_manifest.json`. Provide a
+documented shared-cache location/override and an explicit safe invalidation command;
+never use only a chain ID, output directory or cutoff as a cache identity.
+
+S5.1 acceptance for these stories:
+
+1. Run mocked/no-network 1P/1L and genuinely non-identical 2P/2L fixtures through
+   standalone Bias and the bias path used by Validate; assert all expected pair
+   artifacts, chain-qualified metrics and exact source/query provenance.
+2. Exercise strict pre-2023-06-01 and whole-snapshot scenarios against one fixed
+   bundle; prove strict boundary behavior, monotonic eligible reference sets,
+   separate result retention and raw-search reuse across the two policies.
+3. Exercise pre-2023-06-01 plus a two-complex custom supplement and custom-only;
+   prove public/custom attribution, paired complex identity and unchanged public
+   cutoff semantics. Include raw PDB/mmCIF custom-complex preparation coverage.
+4. In Screen, assess at least two different ligands against an invariant protein and
+   prove one shared protein search rather than one per compound. In Oracle, prove
+   repeated and different candidates reuse the invariant protein search while
+   ligand searches are reused only for matching canonical molecules.
+5. Run a second system sharing one protein and one ligand with the first; prove cache
+   hits for shared query components and misses for non-identical components. Also
+   test stale bundle fingerprints, parameter/schema changes, corrupt entries and two
+   concurrent writers.
+6. Document the scenario matrix, exact cutoff versus backend-training-cutoff
+   distinction, custom input schema/preparation, output comparison, shared-cache
+   identity/lifetime/invalidation, and Screen/Oracle behavior. Preflight must report
+   scenario sources and cache readiness without searching, inference or mutation.
+
 Evidence fields start as `—`. Replace them with concise test results, artifact paths,
 or a work-log reference as tasks finish.
 
@@ -558,8 +651,8 @@ or a work-log reference as tasks finish.
 | S4.3 | Safe dependency bounds/provenance | Bound Boltz2 to supported major 2 and replace moving Community provenance with a tested immutable source/release; add explanatory failures for unsupported backend/Python combinations without applying R08 | **DONE** | Boltz2 is bounded to `>=2.0.0,<3`, Community is pinned to PyPI `2.10.12`, unsupported Python/backend versions fail explicitly; 42 focused and all 568 supported tests plus artifact verification pass without applying R08. |
 | S4.4 | R08-dependent environment changes | Apply the approved exact `>=3.11,<3.13` bound and six-package base→`analysis` move after adding lazy feature boundaries and installation guidance | **DONE** | Exact Python/base/analysis metadata applied; fresh-process blocked-import regression covers analysis and Boltz packages; 115 focused and 580 full supported tests, four lanes, artifact verification, Ruff, diff and seven CLI/module parity cases pass. |
 | S4.5 | Environment verification | Fresh 3.11/3.12 base installs, full supported test environment without Streamlit, optional-analysis guidance, and four separate backend availability/smoke environments pass or have resource-specific blockers recorded | **DONE** | Fresh wheel SHA-256 `967cb43f45133d868580b588d0399516e4b7e862a164256e5e67b1e263e847cd`; Python 3.11.16/3.12.14 base smokes and both 580-test full matrices passed without Streamlit; isolated real inference passed for Boltz 1.0.0, Boltz 2.2.1, Community 2.10.12 and OpenFold3 0.5.0. Evidence: `/tmp/cofolder-s4.5.uUjsHm`. |
-| S5.1 | Easier CLI journey | Group help without removing flags; add shared preflight-only validation, unique-ligand inference, explicit bias input/output fields, contradiction checks and bundled-example path | **NOT_STARTED** | — |
-| S5.2 | Shared executable discovery | Implement one tested MMseqs resolver with documented precedence, executable rejection reasons, space-safe paths, source and installed layouts; preserve all lookup routes | **NOT_STARTED** | — |
+| S5.1 | Easier CLI journey and bias training-data scenarios | Group help without removing flags; add shared preflight-only validation, unique-ligand inference, database-backed bias sources, contradiction checks, provisioning documentation and bundled-example path. Verify 1P/1L and non-identical 2P/2L through the pre-2023-06-01, whole-snapshot, pre-2023-06-01-plus-custom and custom-only scenarios; implement component-level shared cache reuse for Bias/Validate/Screen/Oracle and cross-system runs as specified above | **DONE** | 609-test full lane passed. Database-backed Validate 1P/1L and standalone 2P/2L, the exact four-scenario runner, raw PDB/mmCIF custom preparation, shared component cache/corruption/concurrency/invalidation, and offline MMseqs backfill/plot boundaries are covered. Strict docs, Ruff, diff and sdist-to-wheel artifact verification pass; real local MMseqs version `01683a607f83878e95436632d73e1d7d9ae30955` returned `mmseqs_pident` plotting value `0.000 < 0.25`. |
+| S5.2 | Shared executable discovery | Implement one tested MMseqs resolver with documented precedence, executable rejection reasons, space-safe paths, source and installed layouts; preserve all lookup routes | **IN_PROGRESS** | Begin from the three existing resolution sites identified in the audit; do not alter the S5.1 cache identity or installed helper contracts. |
 | S5.3 | Progress and result summaries | Add concise console versus detailed debug/file formatting and shared completion summaries for success, partial/total failure and unavailable Oracle metrics; preserve output files and stream contracts | **NOT_STARTED** | — |
 | S5.4 | Usability verification | Test console/module parity, no-service preflight, ambiguity failures, resolver precedence, paths with spaces and canonical result/manifest pointers | **NOT_STARTED** | — |
 | S6.1 | Workflow shared internals | Extract planning/lifecycle, diagnostics and public-result assembly in small diffs; preserve public recipe classes/signatures and failure/identity semantics | **NOT_STARTED** | — |
@@ -592,7 +685,11 @@ or a work-log reference as tasks finish.
 - **S4:** reproducible project-owned checks exist, supported environments are stated
   honestly, and no R08 interface change slipped into dependency cleanup.
 - **S5:** a basic CLI/Python user can preflight bundled inputs and find results, while advanced
-  controls, stream behavior and executable lookup routes remain available.
+  controls, stream behavior and executable lookup routes remain available. The
+  1P/1L and non-identical 2P/2L bias matrices work for exact dated and whole-snapshot
+  PDB sources with/without custom crystal-complex supplements, and content-addressed
+  component searches are demonstrably reused across cutoffs, Screen/Oracle
+  candidates and systems without losing chain identity or provenance.
 - **S6:** module boundaries improve without changing public workflows, scientific
   semantics, outputs or network behavior; compatibility facades remain unless
   specifically approved.
@@ -655,6 +752,9 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-10 | S4.3 | `3b971ae`; working tree | `pyproject.toml`, Boltz-family runner availability checks, focused runner/packaging tests, installation guide, this audit | Focused packaging/Boltz runner tests: 42 passed; four lanes: 489 core, 22 contracts/tutorial, 15 artifact, 42 acceptance (568 total); full supported lane: 568 passed; `python scripts/verify_release_artifacts.py`, Ruff and `git diff --check` passed | Bounded Boltz2 to major 2, replaced moving Community Git provenance with exact PyPI 2.10.12, and added pre-discovery Python 3.13 diagnostics for Boltz1/2 plus exact Community validation. R08 remained unapplied; actual backend installs/inference remain S4.5. Advance to S4.4. |
 | 2026-09-11 | S4.4 | `4f71d2b`; working tree | Optional-dependency boundaries, R08 metadata, supported CI/acceptance install hints, installation/tutorial guidance, packaging and analysis regressions, this audit | Focused dependency/analytics/packaging/acceptance selection: 115 passed; lanes: 500 core, 22 contracts/tutorial, 16 artifact, 42 acceptance; full supported lane: 580 passed; `python scripts/verify_release_artifacts.py`, Ruff, `git diff --check` and seven console/module parity cases passed | Applied only approved R08: Python `>=3.11,<3.13`, exact seven-package base and six-package `analysis` extra. Optional feature use now raises installation guidance; base-safe imports also required deferring the existing Boltz-only CCD parser import. No capability removed and no clean environment/backend result claimed. Advance to S4.5. |
 | 2026-09-11 | S4.5 | `0aa5aa0`; working tree after verification fixes | pandas censor-sign preservation, artifact verifier isolation, Oracle optional-backend test isolation, backend metric catalog/normalizers and regressions, this audit | Final wheel SHA-256 `967cb43f45133d868580b588d0399516e4b7e862a164256e5e67b1e263e847cd`; fresh Python 3.11.16 and 3.12.14 base installs passed imports/version/two entry points/example copy/config and input validation with all analysis deps absent and actionable `cofolder[analysis]` guidance. Both full installs proved Streamlit absent and independently passed 500 core + 22 contracts/tutorial + 16 artifact + 42 acceptance tests, Ruff and sdist-to-wheel installed verification. Separate Python 3.12 environments passed `pip check`, discovery, availability, options and one-sample/repeat real GPU validation: Boltz 1.0.0 (45 metric records), Boltz 2.2.1 (55), Community 2.10.12 (57), OpenFold3 0.5.0 (43); all manifests report one success/zero failures. Complete inventories, commands, GPU data, logs and outputs: `/tmp/cofolder-s4.5.uUjsHm`. | Fresh execution exposed and resolved four release-boundary defects rather than weakening checks: pandas 3 nullable censor signs, Oracle unit coupling to Boltz2, artifact verifier same-version install reuse, and real backend confidence fields/scales (including OpenFold3 0-100 pLDDT). OpenFold setup downloaded its required default checkpoint and CCD database successfully; shared `/home/remco/.boltz` and `/home/remco/.openfold3` caches retained. S4 exit satisfied; advance to S5.1. |
+| 2026-09-11 | S5.1 | `cbf429e`; working tree | CLI and four recipes; bias database/materialization and query-scoping analytics; shared preflight and ligand resolution; fetch tool; Bias/Validate/Screen/Oracle/install/configuration/quickstart/Python documentation; focused regressions; this audit | `python scripts/run_test_lane.py all`: 587 passed in 34.65s (one third-party deprecation warning); focused fetch/bundle regressions: 7 passed; Ruff and `git diff --check` passed; `python -m mkdocs build --strict` passed; `python scripts/verify_release_artifacts.py` passed sdist-to-wheel inventory, external install, entry-point/help and example-copy checks. No live RCSB/MMseqs fetch or inference was used by tests. | New source bundles are the default while explicit legacy CSV/build inputs retain legacy mode; mixing routes is rejected. Preparation supports already-built expanded sources and has bounded retries, batched persistent RCSB checkpoints, checksummed manifests, validation-only mode and atomic publication. Workflow preflight is offline/non-mutating; Screen and Oracle share exact-one-ligand inference. S5 remains active; advance to S5.2 shared executable discovery. |
+| 2026-09-14 | S5.1-REOPEN | `cbf429e`; existing S5.1 working tree preserved | This audit only | Reconciled the requested 1P/1L, non-identical 2P/2L, dated/whole PDB, custom-complex and Screen/Oracle reuse stories against the current implementation. No tests were rerun and no implementation was changed during this plan correction. | The earlier S5.1 checks remain evidence but were insufficient for completion. Source bundles and exact identical-output reruns are reusable; component-level derived searches are not shared across Screen rows, changed Oracle candidates or systems. Set S5.1 back to IN_PROGRESS and S4.5 as last completed; complete the six acceptance groups before S5.2. |
+| 2026-09-14 | S5.1-REOPEN-COMPLETE | `cbf429e`; working tree | Bias database/materialization/cache, all four recipes and CLI/preflight, custom-complex/matrix/cache tools, packaged examples, user/Python docs and regressions | `python scripts/run_test_lane.py all`: 609 passed in 24.37s (one third-party deprecation warning); Ruff and `git diff --check` passed; strict MkDocs and `python scripts/verify_release_artifacts.py` passed. Installed real MMseqs `01683a607f83878e95436632d73e1d7d9ae30955` ran the `createdb/search/convertalis` backfill adapter offline and produced `sequence_similarity=0.000`, plot value `0.000 < 0.25`, method `mmseqs_pident`. | Implemented only the requested pre-2023-06-01, whole, pre-2023-06-01-plus-custom and custom-only matrix. Protein and ligand thresholds are independently configurable on the 0–1 scale and applied after raw-cache reuse. No live RCSB call, download, backend inference, commit or tag was performed. Advance to S5.2. |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

@@ -9,6 +9,8 @@ EXPECTED_NAMES = {
     "4HJO.cif",
     "4HJO.pdb",
     "README.md",
+    "bias_matrix.yaml",
+    "custom_bias_complexes.yaml",
     "ifp_clustering_demo.py",
     "ligand_screen.csv",
     "options.yaml",

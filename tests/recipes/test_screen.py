@@ -217,24 +217,35 @@ class TestScreenInit:
             library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
+            bias_query_cache_path=str(temp_dir / "shared-bias-cache"),
         )
 
         assert screener.ligand_chain == "B"
         assert screener.smiles_column == "smiles"
         assert screener.smiles_column == "smiles"
 
-    def test_missing_ligand_selector_raises(
+    def test_unique_ligand_selector_is_inferred_during_preflight(
         self, sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
     ):
-        with pytest.raises(WorkflowExecutionError, match="--ligand_chain is required"):
-            Screen(
+        work_dir = temp_dir / "preflight-work"
+        with patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ):
+            screen = Screen(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 library=str(sample_csv_file),
                 smiles_column="smiles",
                 col_id="compound_id",
-            ).run()
+            )
+            screen.wrk_dir = work_dir
+            report = screen.preflight()
+
+        assert report.ready
+        assert screen.ligand_chain == "B"
+        assert not work_dir.exists()
 
     def test_missing_library_raises(
         self, sample_system_yaml, sample_options_yaml, temp_dir
@@ -666,6 +677,7 @@ class TestScreenRun:
             library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
+            bias_query_cache_path=str(temp_dir / "shared-bias-cache"),
         )
 
         merged = screener.run()
@@ -673,6 +685,10 @@ class TestScreenRun:
         first_call_kwargs = mock_validate_cls.call_args_list[0].kwargs
         assert first_call_kwargs["runner"] == "boltz2"
         assert first_call_kwargs["scoring_functions"] is None
+        assert {
+            call.kwargs["bias_query_cache_path"]
+            for call in mock_validate_cls.call_args_list
+        } == {str(temp_dir / "shared-bias-cache")}
         assert mock_validator.run.call_count == 2
 
         assert merged["status"].tolist() == ["success", "success"]

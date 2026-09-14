@@ -1,5 +1,10 @@
 # Validate recipe: Python API and file flow
 
+For the database-backed `assess_bias` inputs, see
+[Providing bias training data](../../user-guide/bias-training-data.md).
+These inputs include `whole` snapshot selection, the shared query cache, and a
+prepared custom-complex supplement bundle.
+
 This is a code-oriented reference for reconstructing the current `Validate` recipe
 without going through the CLI. It describes the implementation as it exists in
 `src/cofolder/recipes/validate.py`; it is not a promise that private helper names

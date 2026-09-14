@@ -1,6 +1,7 @@
 """Tests for cofolder.recipes.validate module."""
 
 import json
+import hashlib
 import logging
 from dataclasses import replace
 from pathlib import Path
@@ -1104,6 +1105,118 @@ class TestValidateRun:
         assert "TIMER SUMMARY | scores.bias_metrics.total" in caplog.text
         assert "TIMER SUMMARY | scores.bias_metrics.protein_similarity" in caplog.text
         assert "TIMER SUMMARY | scores.bias_metrics.ligand_similarity" in caplog.text
+
+    def test_database_backed_one_protein_one_ligand_bias_path(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        from cofolder.modules.analytics.bias_database import (
+            BIAS_DATABASE_SCHEMA_VERSION,
+            LIGAND_TABLE_NAME,
+            PROTEIN_METADATA_NAME,
+            PROTEIN_SEQUENCE_INDEX_NAME,
+        )
+
+        _patch_validate_pipeline(monkeypatch, system_name="database_bias")
+        system_path = temp_dir / "database_bias.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def bundle(name, kind, frame):
+            root = temp_dir / name
+            root.mkdir()
+            if kind == "protein":
+                (root / "mmseqs").mkdir()
+                (root / "mmseqs/db").write_text("fixture", encoding="utf-8")
+                frame.to_csv(root / PROTEIN_METADATA_NAME, index=False)
+                pd.DataFrame(
+                    [
+                        {
+                            "pdb_id": "1ABC",
+                            "target_id": "1ABC_A",
+                            "sequence": "MKRAAT",
+                        }
+                    ]
+                ).to_csv(root / PROTEIN_SEQUENCE_INDEX_NAME, index=False)
+            else:
+                frame.to_csv(root / LIGAND_TABLE_NAME, index=False)
+            files = {
+                str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in root.rglob("*")
+                if path.is_file()
+            }
+            (root / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": BIAS_DATABASE_SCHEMA_VERSION,
+                        "kind": kind,
+                        "files": files,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return root
+
+        protein = bundle(
+            "protein-db",
+            "protein",
+            pd.DataFrame([{"pdb_id": "1ABC", "release_date": "2023-05-31"}]),
+        )
+        ligand = bundle(
+            "ligand-db",
+            "ligand",
+            pd.DataFrame(
+                [
+                    {
+                        "pdb_id": "1ABC",
+                        "release_date": "2023-05-31",
+                        "ligand_id": "ETH",
+                        "smiles": "CCO",
+                    }
+                ]
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.build_bias_training_data._run_mmseqs",
+            lambda *args: pd.DataFrame(
+                [{"target": "1ABC_A", "pident": 80.0, "tseq": "MKRAAT"}]
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias_training._resolve_mmseqs_bin",
+            lambda: "mmseqs",
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias_database._mmseqs_version",
+            lambda binary: "fixture",
+        )
+        validator = Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            assess_bias=True,
+            bias_training_data_protein_path=str(protein),
+            bias_training_data_ligand_path=str(ligand),
+            bias_query_cache_path=str(temp_dir / "cache"),
+            bias_release_cutoff="2023-06-01",
+        )
+        validator.run()
+
+        output = temp_dir / "run/results/bias_train"
+        mixed = pd.read_csv(output / "bias_training_data_A__B.csv")
+        assert mixed["pairing_status"].tolist() == ["paired"]
+        manifest = json.loads((output / "reference_manifest.json").read_text())
+        assert manifest["request"]["release_policy"]["cutoff"] == "2023-06-01"
+        assert set(manifest["request"]["queries"]) == {"protein", "ligand"}
 
     def test_assess_bias_writes_shared_bias_training_artifacts(
         self,

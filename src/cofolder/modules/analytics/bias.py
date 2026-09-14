@@ -23,6 +23,11 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import rdFingerprintGenerator
 
 from cofolder.modules.analytics.bias_training import _resolve_mmseqs_bin
+from cofolder.modules.analytics.bias_database import (
+    PROTEIN_SIMILARITY_CUTOFF,
+    PROTEIN_SIMILARITY_PERCENT_CUTOFF,
+    parse_bias_release_policy,
+)
 from cofolder.modules.analytics.plots import plot_bias_reference_overlap, plot_reference_overlap_scatter
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -39,6 +44,8 @@ FASTA_URL = "https://www.rcsb.org/fasta/entry/{pdb_id}/download"
 PROVENANCE_COLUMNS = [
     "source",
     "dataset_name",
+    "complex_id",
+    "source_component_id",
     "source_structure_path",
     "source_reference_path",
 ]
@@ -54,9 +61,9 @@ LIGAND_BASE_COLUMNS = ["pdb_id", "release_date", "ligand_id", "smiles", "ecfp_si
 CUSTOM_PROTEIN_REQUIRED_COLUMNS = {"sequence"}
 CUSTOM_LIGAND_REQUIRED_COLUMNS = {"smiles"}
 REFERENCE_PATH_COLUMNS = ("source_structure_path", "source_reference_path")
-BIAS_PROTEIN_VIEW_MIN_SIMILARITY = 25.0
+BIAS_PROTEIN_VIEW_MIN_SIMILARITY = PROTEIN_SIMILARITY_PERCENT_CUTOFF
 BIAS_LIGAND_VIEW_MIN_SIMILARITY = 0.35
-BIAS_PLOT_SEQUENCE_THRESHOLD = 0.25
+BIAS_PLOT_SEQUENCE_THRESHOLD = PROTEIN_SIMILARITY_CUTOFF
 BIAS_PLOT_LIGAND_THRESHOLD = 0.35
 BIAS_PLOT_FILE_STEM = "bias_reference_overlap_scatter"
 BIAS_PROTEIN_PAIR_FILE_STEM = "bias_protein_pair_scatter"
@@ -78,6 +85,7 @@ BIAS_TRAINING_DATA_COLUMNS = [
     "pairing_status",
     "source",
     "dataset_name",
+    "complex_id",
     "pdb_id",
     "protein_pdb_id",
     "ligand_pdb_id",
@@ -422,14 +430,18 @@ def _smiles_from_components_cif(ccd_id: str, components_cif_path: Path | None) -
     return _components_cif_smiles_index(_path_cache_token(components_cif_path)).get(target_id)
 
 
-def _load_public_protein_training(path: Path, cutoff: date, top_n: int = 100) -> pd.DataFrame:
+def _load_public_protein_training(path: Path, cutoff: date | None, top_n: int = 100) -> pd.DataFrame:
     df = pd.read_csv(path)
     required = {"pdb_id", "release_date", "sequence"}
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Protein training data missing required columns: {sorted(missing)}")
 
-    release_mask = df["release_date"].map(lambda x: _is_before_cutoff(x, cutoff)).fillna(False).astype(bool)
+    release_mask = (
+        pd.Series(True, index=df.index)
+        if cutoff is None
+        else df["release_date"].map(lambda x: _is_before_cutoff(x, cutoff)).fillna(False).astype(bool)
+    )
     out = df.loc[release_mask, :].copy()
     if "sequence" not in out.columns:
         out = out.reindex(columns=df.columns)
@@ -507,7 +519,7 @@ def _read_ligand_training_from_sdf(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _load_public_ligand_training(path: Path, cutoff: date) -> pd.DataFrame:
+def _load_public_ligand_training(path: Path, cutoff: date | None) -> pd.DataFrame:
     if path.suffix.lower() == ".sdf":
         df = _read_ligand_training_from_sdf(path)
     else:
@@ -524,7 +536,11 @@ def _load_public_ligand_training(path: Path, cutoff: date) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Ligand training data missing required columns: {sorted(missing)}")
 
-    release_mask = df["release_date"].map(lambda x: _is_before_cutoff(x, cutoff)).fillna(False).astype(bool)
+    release_mask = (
+        pd.Series(True, index=df.index)
+        if cutoff is None
+        else df["release_date"].map(lambda x: _is_before_cutoff(x, cutoff)).fillna(False).astype(bool)
+    )
     out = df.loc[release_mask, :].copy()
     return _finalize_reference_frame(
         out,
@@ -572,7 +588,7 @@ def _concat_reference_frames(frames: list[pd.DataFrame], *, is_ligand: bool) -> 
 
 def _load_ligand_training(
     path: Path,
-    cutoff: date,
+    cutoff: date | None,
     *,
     custom_reference_path: Path | None = None,
 ) -> pd.DataFrame:
@@ -586,7 +602,7 @@ def _load_ligand_training(
 
 def _load_protein_training(
     path: Path,
-    cutoff: date,
+    cutoff: date | None,
     top_n: int = 100,
     *,
     custom_reference_path: Path | None = None,
@@ -897,6 +913,15 @@ def _best_ligand_hit(query_smiles: str, ligands_df: pd.DataFrame) -> float | Non
     return best_sim
 
 
+def _reference_rows_for_query(frame: pd.DataFrame, chain_id: str) -> pd.DataFrame:
+    """Select chain-specific rows plus reusable rows without a query identity."""
+    if "query_chain_id" not in frame.columns:
+        return frame.copy()
+    identities = frame["query_chain_id"].fillna("").astype(str).str.strip().str.upper()
+    selected = identities.eq(str(chain_id).strip().upper()) | identities.eq("")
+    return frame.loc[selected].copy()
+
+
 def _protein_similarity_series(query_seq: str, proteins_df: pd.DataFrame) -> pd.Series:
     if proteins_df.empty:
         return pd.Series(dtype=float)
@@ -1186,7 +1211,7 @@ def _build_protein_training_view(
     for chain_id, query_seq in protein_queries.items():
         if not query_seq:
             continue
-        sub = proteins_df.copy()
+        sub = _reference_rows_for_query(proteins_df, chain_id)
         sub["sequence_similarity"] = _protein_similarity_series(str(query_seq), sub)
         sub["sequence_similarity_pairwise"] = _protein_pairwise_similarity_series(
             str(query_seq), sub
@@ -1297,7 +1322,7 @@ def _build_ligand_training_views(
             views[chain_id] = _order_ligand_training_columns(empty_view)
             continue
 
-        sub = ligands_df.copy()
+        sub = _reference_rows_for_query(ligands_df, chain_id)
         sub["ecfp_similarity"] = _ligand_similarity_series(query_smiles, sub, mol_id=mol_id)
         sub = sub.dropna(subset=["ecfp_similarity"]).copy()
         sub = sub.sort_values("ecfp_similarity", ascending=False, na_position="last")
@@ -1320,6 +1345,11 @@ def _reference_key_from_row(row: pd.Series, *, is_ligand: bool) -> str:
     pdb_id = row.get("pdb_id")
     if pd.notna(pdb_id) and str(pdb_id).strip() and source == "public":
         return f"{source}:pdb:{_norm_id(pdb_id)}"
+
+    complex_id = row.get("complex_id")
+    if pd.notna(complex_id) and str(complex_id).strip():
+        dataset = str(row.get("dataset_name") or "custom").strip()
+        return f"{source}:complex:{dataset}:{str(complex_id).strip()}"
 
     for column in REFERENCE_PATH_COLUMNS:
         value = row.get(column)
@@ -2541,6 +2571,12 @@ def _bias_training_row_from_sources(
                 ligand_row.get("dataset_name_ligand") if ligand_row is not None else None,
             ]
         ),
+        "complex_id": _collapse_pair_value(
+            [
+                protein_row.get("complex_id_protein") if protein_row is not None else None,
+                ligand_row.get("complex_id_ligand") if ligand_row is not None else None,
+            ]
+        ),
         "pdb_id": _collapse_pair_value(
             [
                 protein_row.get("pdb_id_protein") if protein_row is not None else None,
@@ -3088,14 +3124,16 @@ def _write_bias_plot_artifacts(
     bias_training_df: pd.DataFrame,
     output_dir: Path,
     file_stem: str,
+    sequence_threshold: float = BIAS_PLOT_SEQUENCE_THRESHOLD,
+    ligand_threshold: float = BIAS_PLOT_LIGAND_THRESHOLD,
 ) -> list[Path]:
     skipped_plot_path = output_dir / f"{file_stem}.skipped.txt"
     plot_paths = plot_bias_reference_overlap(
         bias_training_df,
         output_dir=output_dir,
         file_stem=file_stem,
-        sequence_threshold=BIAS_PLOT_SEQUENCE_THRESHOLD,
-        ligand_threshold=BIAS_PLOT_LIGAND_THRESHOLD,
+        sequence_threshold=sequence_threshold,
+        ligand_threshold=ligand_threshold,
     )
     if plot_paths:
         if skipped_plot_path.exists():
@@ -3114,9 +3152,12 @@ def _write_same_type_plot_artifacts(
     output_dir: Path,
     file_stem: str,
     component_type: str,
+    threshold: float | None = None,
 ) -> list[Path]:
     skipped_plot_path = output_dir / f"{file_stem}.skipped.txt"
-    threshold = _component_threshold(component_type)
+    threshold = (
+        _component_threshold(component_type) if threshold is None else float(threshold)
+    )
     component_label = "Protein" if component_type == "protein" else "Ligand"
     plot_paths = plot_reference_overlap_scatter(
         pair_df,
@@ -3583,6 +3624,8 @@ def apply_bias_metrics(
     release_cutoff: str = "2023-06-01",
     bias_chains: set[str] | list[str] | None = None,
     protein_top_n: int = 100,
+    protein_similarity_threshold: float = BIAS_PLOT_SEQUENCE_THRESHOLD,
+    ligand_similarity_threshold: float = BIAS_PLOT_LIGAND_THRESHOLD,
     boltz_cache_path: Path | str | None = None,
     output_dir: Path | str | None = None,
     logger: logging.Logger | None = None,
@@ -3594,7 +3637,8 @@ def apply_bias_metrics(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    cutoff = date.fromisoformat(str(release_cutoff))
+    release_policy = parse_bias_release_policy(release_cutoff)
+    cutoff = release_policy.cutoff
     protein_training_path = (
         Path(protein_training_data_path) if protein_training_data_path is not None else None
     )
@@ -3623,8 +3667,8 @@ def apply_bias_metrics(
         Path(components_cif_path).expanduser() if components_cif_path is not None else None
     )
     logger.info(
-        "Bias cutoff applied (< %s): protein_rows=%d ligand_rows=%d",
-        cutoff.isoformat(),
+        "Bias release policy applied (%s): protein_rows=%d ligand_rows=%d",
+        release_policy.label,
         len(proteins_df),
         len(ligands_df),
     )
@@ -3679,11 +3723,12 @@ def apply_bias_metrics(
     with protein_timer:
         for chain_id, query_seq in protein_queries.items():
             normalized_chain_id = str(chain_id).strip().upper()
+            query_references = _reference_rows_for_query(proteins_df, chain_id)
             protein_best[normalized_chain_id] = (
-                _best_protein_hit(query_seq, proteins_df) if query_seq else None
+                _best_protein_hit(query_seq, query_references) if query_seq else None
             )
             protein_pairwise_best[normalized_chain_id] = (
-                _best_pairwise_protein_hit(query_seq, proteins_df)
+                _best_pairwise_protein_hit(query_seq, query_references)
                 if query_seq
                 else None
             )
@@ -3696,8 +3741,11 @@ def apply_bias_metrics(
     )
     with ligand_timer:
         for chain_id, query_smiles in ligand_queries.items():
+            query_references = _reference_rows_for_query(ligands_df, chain_id)
             ligand_best[str(chain_id).strip().upper()] = (
-                _best_ligand_hit(query_smiles, ligands_df) if query_smiles else None
+                _best_ligand_hit(query_smiles, query_references)
+                if query_smiles
+                else None
             )
 
     if "bias_prot_sim_train" not in chain_df.columns:
@@ -3794,6 +3842,8 @@ def apply_bias_metrics(
             bias_training_df=bias_training_df,
             output_dir=output_root,
             file_stem=BIAS_PLOT_FILE_STEM,
+            sequence_threshold=protein_similarity_threshold,
+            ligand_threshold=ligand_similarity_threshold,
         )
         for pair_artifact in pair_artifacts:
             pair_df = pair_artifact["dataframe"]
@@ -3806,6 +3856,8 @@ def apply_bias_metrics(
                     bias_training_df=pair_df,
                     output_dir=output_root,
                     file_stem=str(pair_artifact["plot_file_stem"]),
+                    sequence_threshold=protein_similarity_threshold,
+                    ligand_threshold=ligand_similarity_threshold,
                 )
             else:
                 _write_same_type_plot_artifacts(
@@ -3813,6 +3865,11 @@ def apply_bias_metrics(
                     output_dir=output_root,
                     file_stem=str(pair_artifact["plot_file_stem"]),
                     component_type="protein" if pair_artifact["pair_type"] == "protein_pair" else "ligand",
+                    threshold=(
+                        protein_similarity_threshold
+                        if pair_artifact["pair_type"] == "protein_pair"
+                        else ligand_similarity_threshold
+                    ),
                 )
         _materialize_reference_landscape_summary(
             chain_df=output_chain_df,

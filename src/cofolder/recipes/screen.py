@@ -141,7 +141,14 @@ class Screen:
         assess_bias: bool = False,
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
+        bias_training_data_protein_path: str | None = None,
+        bias_training_data_ligand_path: str | None = None,
+        bias_query_cache_path: str | None = None,
+        custom_bias_reference_path: str | None = None,
+        custom_protein_reference_path: str | None = None,
+        custom_ligand_reference_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_protein_similarity_threshold: float = 0.25,
         bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
@@ -213,7 +220,14 @@ class Screen:
             "assess_bias": assess_bias,
             "protein_training_data_path": protein_training_data_path,
             "ligand_training_data_path": ligand_training_data_path,
+            "bias_training_data_protein_path": bias_training_data_protein_path,
+            "bias_training_data_ligand_path": bias_training_data_ligand_path,
+            "bias_query_cache_path": bias_query_cache_path,
+            "custom_bias_reference_path": custom_bias_reference_path,
+            "custom_protein_reference_path": custom_protein_reference_path,
+            "custom_ligand_reference_path": custom_ligand_reference_path,
             "bias_release_cutoff": bias_release_cutoff,
+            "bias_protein_similarity_threshold": bias_protein_similarity_threshold,
             "bias_ligand_similarity_threshold": bias_ligand_similarity_threshold,
             "bias_chains": bias_chains,
             "build_bias_training_data": build_bias_training_data,
@@ -238,6 +252,68 @@ class Screen:
         )
         self.msa_reuse_settings = {}
         self.logger = logging.getLogger("cofolder.screen")
+
+    def preflight(self):
+        """Validate and describe the screen without searches or inference."""
+        from cofolder.recipes.preflight import prediction_preflight
+
+        try:
+            self._validate_config()
+        except Exception as exc:
+            from cofolder.recipes.preflight import PreflightReport
+
+            return PreflightReport(
+                workflow="screen",
+                ready=False,
+                runner=self.runner,
+                output_dir=str(self.wrk_dir / "results"),
+                messages=(str(exc),),
+            )
+        report, system_obj, _options = prediction_preflight(
+            workflow="screen",
+            system_path=self.system_path,
+            options_path=self.options_path,
+            runner_name=self.runner,
+            repeats=int(self.validate_kwargs["repeats"]),
+            output_dir=self.wrk_dir,
+            require_ligand=True,
+            assess_bias=bool(self.validate_kwargs["assess_bias"]),
+            use_bias_databases=bool(
+                self.validate_kwargs["bias_training_data_protein_path"]
+                or self.validate_kwargs["bias_training_data_ligand_path"]
+                or (
+                    self.validate_kwargs["protein_training_data_path"] is None
+                    and self.validate_kwargs["ligand_training_data_path"] is None
+                    and self.validate_kwargs["custom_bias_reference_path"] is None
+                    and self.validate_kwargs["custom_protein_reference_path"] is None
+                    and self.validate_kwargs["custom_ligand_reference_path"] is None
+                    and not self.validate_kwargs["build_bias_training_data"]
+                )
+            ),
+            protein_database_path=self.validate_kwargs["bias_training_data_protein_path"],
+            ligand_database_path=self.validate_kwargs["bias_training_data_ligand_path"],
+            release_cutoff=self.validate_kwargs["bias_release_cutoff"],
+            bias_chains=self.validate_kwargs["bias_chains"],
+            bias_query_cache_path=self.validate_kwargs["bias_query_cache_path"],
+            custom_bias_reference_path=self.validate_kwargs["custom_bias_reference_path"],
+            protein_similarity_threshold=self.validate_kwargs[
+                "bias_protein_similarity_threshold"
+            ],
+            ligand_similarity_threshold=self.validate_kwargs[
+                "bias_ligand_similarity_threshold"
+            ],
+        )
+        if not report.ready:
+            return report
+        try:
+            target = resolve_ligand_target(system_obj, self.ligand_chain or None)
+        except Exception as exc:
+            return replace(report, ready=False, messages=report.messages + (str(exc),))
+        self.ligand_chain = target.chain_ids[0]
+        return replace(
+            report,
+            messages=report.messages + (f"selected_ligand_chain={self.ligand_chain}",),
+        )
 
     def _build_execution_plan(self, options_obj: Any) -> RunnerExecutionPlan:
         """Resolve immutable runner, seed, repeat, model, and sample axes once."""
@@ -294,9 +370,6 @@ class Screen:
             raise ValueError(f"--library does not exist: {self.library}")
         if not self.library.is_file():
             raise ValueError(f"--library is not a file: {self.library}")
-        if not self.ligand_chain:
-            raise ValueError("--ligand_chain is required.")
-
         inferred = self.library_format
         if inferred is None:
             inferred = {
@@ -537,8 +610,9 @@ class Screen:
         self.base_system_obj = validated.system
         self.base_system = self.base_system_obj.system
         self.ligand_target = resolve_ligand_target(
-            self.base_system_obj, self.ligand_chain
+            self.base_system_obj, self.ligand_chain or None
         )
+        self.ligand_chain = self.ligand_target.chain_ids[0]
         self._prepare_reference_ifp()
         if self.reusable_msa_dir is not None:
             self.msa_reuse_settings = self.runner_impl.msa_reuse_settings(options_obj)

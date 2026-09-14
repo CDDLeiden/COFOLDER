@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,7 +23,7 @@ from cofolder.modules.contracts import (
     failure_from_exception,
     write_public_bundle,
 )
-from cofolder.modules.input import system
+from cofolder.modules.input import InputValidationError, system
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 
@@ -174,10 +173,15 @@ class BiasAssessmentWorkflow:
         protein_training_data_path: Path | None,
         ligand_training_data_path: Path | None,
         bias_release_cutoff: str,
+        bias_protein_similarity_threshold: float,
         bias_ligand_similarity_threshold: float,
         bias_chains: set[str] | list[str] | None,
         build_bias_training_data: bool,
         bias_training_components_cif: Path | None,
+        bias_training_data_protein_path: Path | None = None,
+        bias_training_data_ligand_path: Path | None = None,
+        bias_query_cache_path: Path | None = None,
+        custom_bias_reference_path: Path | None = None,
         custom_protein_reference_path: Path | None = None,
         custom_ligand_reference_path: Path | None = None,
         logger: logging.Logger | None = None,
@@ -190,9 +194,16 @@ class BiasAssessmentWorkflow:
         self.sys = sys_obj
         self.protein_training_data_path = protein_training_data_path
         self.ligand_training_data_path = ligand_training_data_path
+        self.bias_training_data_protein_path = bias_training_data_protein_path
+        self.bias_training_data_ligand_path = bias_training_data_ligand_path
+        self.bias_query_cache_path = bias_query_cache_path
+        self.custom_bias_reference_path = custom_bias_reference_path
         self.custom_protein_reference_path = custom_protein_reference_path
         self.custom_ligand_reference_path = custom_ligand_reference_path
         self.bias_release_cutoff = str(bias_release_cutoff)
+        self.bias_protein_similarity_threshold = float(
+            bias_protein_similarity_threshold
+        )
         self.bias_ligand_similarity_threshold = float(bias_ligand_similarity_threshold)
         self.bias_chains = normalize_bias_chains(bias_chains)
         self.build_bias_training_data = bool(build_bias_training_data)
@@ -211,12 +222,17 @@ class BiasAssessmentWorkflow:
         return self.timings.measure(label, logger=self.logger)
 
     def _validate_release_cutoff(self) -> None:
-        try:
-            date.fromisoformat(self.bias_release_cutoff)
-        except ValueError as exc:
-            raise ValueError(
-                "--bias_release_cutoff must be a valid ISO date (YYYY-MM-DD)."
-            ) from exc
+        from cofolder.modules.analytics.bias_database import parse_bias_release_policy
+
+        parse_bias_release_policy(self.bias_release_cutoff)
+        for name, value in (
+            ("protein", self.bias_protein_similarity_threshold),
+            ("ligand", self.bias_ligand_similarity_threshold),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(
+                    f"Bias {name} similarity threshold must be between 0 and 1."
+                )
 
     def _resolve_components_cif_path(self) -> Path | None:
         if self.bias_training_components_cif is not None:
@@ -239,6 +255,79 @@ class BiasAssessmentWorkflow:
 
         protein_metrics_path = self.protein_training_data_path
         ligand_metrics_path = self.ligand_training_data_path
+        custom_protein_reference_path = self.custom_protein_reference_path
+        custom_ligand_reference_path = self.custom_ligand_reference_path
+        custom_fingerprint = None
+        if self.custom_bias_reference_path is not None:
+            from cofolder.modules.analytics.bias_database import validate_custom_bias_reference_bundle
+
+            if self.custom_protein_reference_path or self.custom_ligand_reference_path:
+                raise ValueError(
+                    "--custom_bias_reference_path cannot be combined with paired custom reference paths."
+                )
+            custom_bundle = validate_custom_bias_reference_bundle(
+                self.custom_bias_reference_path
+            )
+            custom_protein_reference_path = custom_bundle.protein_path
+            custom_ligand_reference_path = custom_bundle.ligand_path
+            custom_fingerprint = custom_bundle.fingerprint
+
+        database_mode = bool(
+            self.bias_training_data_protein_path
+            or self.bias_training_data_ligand_path
+            or (
+                self.protein_training_data_path is None
+                and self.ligand_training_data_path is None
+                and custom_protein_reference_path is None
+                and custom_ligand_reference_path is None
+                and not self.build_bias_training_data
+            )
+        )
+        if database_mode:
+            if self.protein_training_data_path or self.ligand_training_data_path or self.build_bias_training_data:
+                raise ValueError(
+                    "Database-backed bias paths cannot be combined with legacy "
+                    "--protein_training_data_path, --ligand_training_data_path, or "
+                    "--build_bias_training_data."
+                )
+            from cofolder.modules.analytics.bias_database import (
+                DEFAULT_LIGAND_DATABASE,
+                DEFAULT_PROTEIN_DATABASE,
+                materialize_bias_references,
+                validate_bias_database_bundle,
+            )
+
+            entity_types = set(chain_df.get("ENTITY_TYPE", pd.Series(dtype=str)).astype(str))
+            protein_bundle = (
+                validate_bias_database_bundle(
+                    self.bias_training_data_protein_path or DEFAULT_PROTEIN_DATABASE,
+                    "protein",
+                )
+                if "protein" in entity_types
+                else None
+            )
+            ligand_bundle = (
+                validate_bias_database_bundle(
+                    self.bias_training_data_ligand_path or DEFAULT_LIGAND_DATABASE,
+                    "ligand",
+                )
+                if "ligand" in entity_types
+                else None
+            )
+            references = materialize_bias_references(
+                system_obj=self.sys,
+                protein_bundle=protein_bundle,
+                ligand_bundle=ligand_bundle,
+                output_dir=self.output_dir,
+                release_cutoff=self.bias_release_cutoff,
+                protein_similarity_threshold=self.bias_protein_similarity_threshold,
+                ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
+                selected_chains=self.bias_chains,
+                query_cache_path=self.bias_query_cache_path,
+                custom_fingerprint=custom_fingerprint,
+            )
+            protein_metrics_path = references.protein_path
+            ligand_metrics_path = references.ligand_path
 
         if self.build_bias_training_data:
             protein_metrics_path, ligand_metrics_path = self._build_training_data(
@@ -280,10 +369,10 @@ class BiasAssessmentWorkflow:
             and ligand_metrics_path.is_file()
         )
         has_protein_source = (
-            has_protein_file or self.custom_protein_reference_path is not None
+            has_protein_file or custom_protein_reference_path is not None
         )
         has_ligand_source = (
-            has_ligand_file or self.custom_ligand_reference_path is not None
+            has_ligand_file or custom_ligand_reference_path is not None
         )
 
         missing_sources: list[str] = []
@@ -300,11 +389,13 @@ class BiasAssessmentWorkflow:
                     sys_obj=self.sys,
                     protein_training_data_path=protein_metrics_path,
                     ligand_training_data_path=ligand_metrics_path,
-                    custom_protein_reference_path=self.custom_protein_reference_path,
-                    custom_ligand_reference_path=self.custom_ligand_reference_path,
+                    custom_protein_reference_path=custom_protein_reference_path,
+                    custom_ligand_reference_path=custom_ligand_reference_path,
                     release_cutoff=self.bias_release_cutoff,
                     bias_chains=self.bias_chains,
                     protein_top_n=100,
+                    protein_similarity_threshold=self.bias_protein_similarity_threshold,
+                    ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
                     boltz_cache_path=boltz_cache_path or "~/.boltz",
                     components_cif_path=self._resolve_components_cif_path(),
                     output_dir=self.output_dir,
@@ -317,7 +408,7 @@ class BiasAssessmentWorkflow:
             "Bias assessment is missing required reference sources for the selected query entities: "
             f"{', '.join(missing_sources)}. "
             f"Resolved public protein={protein_metrics_path} public ligand={ligand_metrics_path} "
-            f"custom protein={self.custom_protein_reference_path} custom ligand={self.custom_ligand_reference_path}."
+            f"custom protein={custom_protein_reference_path} custom ligand={custom_ligand_reference_path}."
         )
         if self.strict_training_data:
             raise ValueError(message)
@@ -413,6 +504,9 @@ class BiasAssessmentWorkflow:
                 output_protein_csv=build_protein_training_path,
                 output_ligand_csv=ligand_metrics_path,
                 release_cutoff=self.bias_release_cutoff,
+                protein_similarity_threshold=(
+                    self.bias_protein_similarity_threshold * 100.0
+                ),
                 ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
                 overwrite=True,
                 skip_bias_csv=True,
@@ -439,9 +533,14 @@ class Bias:
         system_path: str,
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
+        bias_training_data_protein_path: str | None = None,
+        bias_training_data_ligand_path: str | None = None,
+        bias_query_cache_path: str | None = None,
+        custom_bias_reference_path: str | None = None,
         custom_protein_reference_path: str | None = None,
         custom_ligand_reference_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_protein_similarity_threshold: float = 0.25,
         bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
@@ -456,6 +555,22 @@ class Bias:
         self.ligand_training_data_path = (
             Path(ligand_training_data_path) if ligand_training_data_path else None
         )
+        self.bias_training_data_protein_path = (
+            Path(bias_training_data_protein_path)
+            if bias_training_data_protein_path
+            else None
+        )
+        self.bias_training_data_ligand_path = (
+            Path(bias_training_data_ligand_path)
+            if bias_training_data_ligand_path
+            else None
+        )
+        self.bias_query_cache_path = (
+            Path(bias_query_cache_path) if bias_query_cache_path else None
+        )
+        self.custom_bias_reference_path = (
+            Path(custom_bias_reference_path) if custom_bias_reference_path else None
+        )
         self.custom_protein_reference_path = (
             Path(custom_protein_reference_path)
             if custom_protein_reference_path
@@ -465,6 +580,9 @@ class Bias:
             Path(custom_ligand_reference_path) if custom_ligand_reference_path else None
         )
         self.bias_release_cutoff = str(bias_release_cutoff)
+        self.bias_protein_similarity_threshold = float(
+            bias_protein_similarity_threshold
+        )
         self.bias_ligand_similarity_threshold = float(bias_ligand_similarity_threshold)
         self.bias_chains = normalize_bias_chains(bias_chains)
         self.build_bias_training_data = bool(build_bias_training_data)
@@ -483,6 +601,153 @@ class Bias:
     def _log_timing_summary(self) -> None:
         self.timings.log_summary(logger=self.logger)
 
+    def preflight(self):
+        """Validate the standalone bias request without searches or writes."""
+        from cofolder.modules.analytics.bias_database import (
+            bias_query_cache_readiness,
+            DEFAULT_LIGAND_DATABASE,
+            DEFAULT_PROTEIN_DATABASE,
+            _selected_queries,
+            parse_bias_release_policy,
+            validate_custom_bias_reference_bundle,
+            validate_bias_database_bundle,
+        )
+        from cofolder.modules.input.system import iter_system_chains
+        from cofolder.recipes.preflight import PreflightReport
+
+        try:
+            self._validate_source_mode()
+            policy = parse_bias_release_policy(self.bias_release_cutoff)
+            for name, value in (
+                ("protein", self.bias_protein_similarity_threshold),
+                ("ligand", self.bias_ligand_similarity_threshold),
+            ):
+                if not 0.0 <= value <= 1.0:
+                    raise ValueError(
+                        f"Bias {name} similarity threshold must be between 0 and 1."
+                    )
+            sources: list[str] = []
+            protein_bundle = None
+            ligand_bundle = None
+            database_mode = not (
+                self.protein_training_data_path
+                or self.ligand_training_data_path
+                or self.custom_protein_reference_path
+                or self.custom_ligand_reference_path
+                or self.custom_bias_reference_path
+                or self.build_bias_training_data
+            ) or bool(
+                self.bias_training_data_protein_path
+                or self.bias_training_data_ligand_path
+            )
+            entity_types = {
+                chain.entity_type
+                for chain in iter_system_chains(self.sys)
+                if not self.bias_chains
+                or chain.chain_id.strip().upper() in self.bias_chains
+            }
+            if database_mode and "protein" in entity_types:
+                protein_bundle = validate_bias_database_bundle(
+                    self.bias_training_data_protein_path or DEFAULT_PROTEIN_DATABASE,
+                    "protein",
+                )
+                sources.append(
+                    f"protein:{protein_bundle.root}:{protein_bundle.fingerprint}"
+                )
+            if database_mode and "ligand" in entity_types:
+                ligand_bundle = validate_bias_database_bundle(
+                    self.bias_training_data_ligand_path or DEFAULT_LIGAND_DATABASE,
+                    "ligand",
+                )
+                sources.append(
+                    f"ligand:{ligand_bundle.root}:{ligand_bundle.fingerprint}"
+                )
+            if self.custom_bias_reference_path:
+                custom = validate_custom_bias_reference_bundle(self.custom_bias_reference_path)
+                sources.append(f"custom:{custom.root}:{custom.fingerprint}")
+            cache_root, cache_ready, cache_state = bias_query_cache_readiness(
+                self.bias_query_cache_path
+            )
+            ligand_smiles_by_id: dict[str, str] = {}
+            if ligand_bundle is not None:
+                source = pd.read_csv(ligand_bundle.data_path)
+                if {"ligand_id", "smiles"} <= set(source.columns):
+                    ligand_smiles_by_id = {
+                        str(row["ligand_id"]).upper(): str(row["smiles"])
+                        for _, row in source.dropna(
+                            subset=["ligand_id", "smiles"]
+                        ).iterrows()
+                    }
+            proteins, ligands = _selected_queries(
+                self.sys, self.bias_chains, ligand_smiles_by_id
+            )
+            import hashlib
+            from rdkit import Chem
+
+            query_hashes = [
+                f"protein:{chain}:{hashlib.sha256(''.join(sequence.split()).upper().encode()).hexdigest()}"
+                for chain, sequence in sorted(proteins.items())
+            ]
+            for chain, smiles in sorted(ligands.items()):
+                molecule = Chem.MolFromSmiles(smiles)
+                canonical = (
+                    Chem.MolToSmiles(molecule, isomericSmiles=True)
+                    if molecule
+                    else smiles
+                )
+                query_hashes.append(
+                    f"ligand:{chain}:{hashlib.sha256(canonical.encode()).hexdigest()}"
+                )
+            return PreflightReport(
+                workflow="bias",
+                ready=True,
+                selected_chains=tuple(
+                    sorted(chain.chain_id for chain in iter_system_chains(self.sys))
+                ),
+                database_sources=tuple(sources),
+                release_cutoff=self.bias_release_cutoff,
+                release_policy=policy.mode,
+                query_hashes=tuple(query_hashes),
+                bias_query_cache=f"{cache_root} ({cache_state})",
+                bias_cache_ready=cache_ready,
+                expected_bias_backfill=bool(
+                    protein_bundle is not None
+                    and protein_bundle.sequence_index_path is not None
+                    and proteins
+                    and ligands
+                ),
+                protein_similarity_threshold=self.bias_protein_similarity_threshold,
+                ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
+                output_dir=str(self.wrk_dir / "results"),
+            )
+        except Exception as exc:
+            return PreflightReport(
+                workflow="bias",
+                ready=False,
+                release_cutoff=self.bias_release_cutoff,
+                output_dir=str(self.wrk_dir / "results"),
+                messages=(str(exc),),
+            )
+
+    def _validate_source_mode(self) -> None:
+        if self.custom_bias_reference_path and (
+            self.custom_protein_reference_path or self.custom_ligand_reference_path
+        ):
+            raise ValueError(
+                "--custom_bias_reference_path cannot be combined with paired custom reference paths."
+            )
+        if (
+            self.bias_training_data_protein_path
+            or self.bias_training_data_ligand_path
+        ) and (
+            self.protein_training_data_path
+            or self.ligand_training_data_path
+            or self.build_bias_training_data
+        ):
+            raise ValueError(
+                "Database-backed bias paths cannot be combined with legacy public-reference paths/build mode."
+            )
+
     def run(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         try:
             return self._run_impl()
@@ -497,7 +762,12 @@ class Bias:
             failure = failure_from_exception(
                 exc,
                 identity=identity,
-                stage=FailureStage.ANALYTICS,
+                stage=(
+                    FailureStage.INPUT_VALIDATION
+                    if isinstance(exc, InputValidationError)
+                    or "database" in str(exc).lower()
+                    else FailureStage.ANALYTICS
+                ),
                 error_code="bias_analytics_failed",
             )
             output_dir = self.wrk_dir / "results"
@@ -518,6 +788,7 @@ class Bias:
 
     def _run_impl(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         with self._debug_timer("bias.total"):
+            self._validate_source_mode()
             self.wrk_dir.mkdir(parents=True, exist_ok=True)
             output_dir = self.wrk_dir / "results" / "bias_train"
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -540,9 +811,14 @@ class Bias:
                 sys_obj=self.sys,
                 protein_training_data_path=self.protein_training_data_path,
                 ligand_training_data_path=self.ligand_training_data_path,
+                bias_training_data_protein_path=self.bias_training_data_protein_path,
+                bias_training_data_ligand_path=self.bias_training_data_ligand_path,
+                bias_query_cache_path=self.bias_query_cache_path,
+                custom_bias_reference_path=self.custom_bias_reference_path,
                 custom_protein_reference_path=self.custom_protein_reference_path,
                 custom_ligand_reference_path=self.custom_ligand_reference_path,
                 bias_release_cutoff=self.bias_release_cutoff,
+                bias_protein_similarity_threshold=self.bias_protein_similarity_threshold,
                 bias_ligand_similarity_threshold=self.bias_ligand_similarity_threshold,
                 bias_chains=self.bias_chains,
                 build_bias_training_data=self.build_bias_training_data,
@@ -564,6 +840,9 @@ class Bias:
                 for path in (
                     self.protein_training_data_path,
                     self.ligand_training_data_path,
+                    self.bias_training_data_protein_path,
+                    self.bias_training_data_ligand_path,
+                    self.custom_bias_reference_path,
                     self.custom_protein_reference_path,
                     self.custom_ligand_reference_path,
                 )

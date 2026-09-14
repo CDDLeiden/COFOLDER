@@ -1,5 +1,9 @@
 # Screen Command
 
+For bias assessment during screening, see
+[Providing bias training data](bias-training-data.md). Screen rows automatically
+reuse invariant protein searches through the shared query cache.
+
 The `screen` command runs **`validate` once per valid source record** in a CSV,
 SDF, or MOL library. Malformed structure records are retained as failures while
 valid records continue.

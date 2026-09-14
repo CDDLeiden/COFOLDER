@@ -208,6 +208,41 @@ class TestValidateRecipe:
 
         assert args.runner == "boltz2"
 
+    def test_help_groups_and_database_preflight_arguments(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        cli.ValidateRecipe.add_arguments(parser)
+        help_text = parser.format_help()
+        assert "required inputs:" in help_text
+        assert "execution:" in help_text
+        assert "scoring and evidence:" in help_text
+        assert "bias training data:" in help_text
+        assert "--bias_training_data_protein_path" in help_text
+        assert "--bias_training_data_ligand_path" in help_text
+        assert "--preflight_only" in help_text
+
+    def test_preflight_does_not_create_work_directory(
+        self, sample_system_yaml, sample_options_yaml, temp_dir, capsys
+    ):
+        destination = temp_dir / "preflight-output"
+        with patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ):
+            result = cli.main(
+                [
+                    "validate",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "-w", str(destination),
+                    "--preflight_only",
+                ]
+            )
+        assert result == 0
+        assert "preflight=ready" in capsys.readouterr().out
+        assert not destination.exists()
+
     def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Mock()
         validate_cls = Mock(return_value=validator)
@@ -465,10 +500,18 @@ class TestBiasRecipe:
         assert bias_cls.call_args.kwargs["ligand_training_data_path"] == str(ligand_output)
         bias_runner.run.assert_called_once()
 
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "--bias_protein_similarity_threshold",
+            "--bias_ligand_similarity_threshold",
+        ],
+    )
     def test_main_rejects_non_numeric_bias_threshold_before_recipe_load(
         self,
         sample_system_yaml,
         temp_dir,
+        flag,
     ):
         protein_ref = temp_dir / "protein_training.csv"
         ligand_ref = temp_dir / "ligand_training.csv"
@@ -488,7 +531,7 @@ class TestBiasRecipe:
             "-s", str(sample_system_yaml),
             "--protein_training_data_path", str(protein_ref),
             "--ligand_training_data_path", str(ligand_ref),
-            "--bias_ligand_similarity_threshold", "not-a-number",
+            flag, "not-a-number",
             "-w", str(temp_dir),
         ]
 
@@ -499,11 +542,19 @@ class TestBiasRecipe:
         assert exc_info.value.code == 2
         mock_loader.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "--bias_protein_similarity_threshold",
+            "--bias_ligand_similarity_threshold",
+        ],
+    )
     @pytest.mark.parametrize("threshold", ["-0.01", "1.01"])
     def test_main_rejects_out_of_range_bias_threshold_before_recipe_load(
         self,
         sample_system_yaml,
         temp_dir,
+        flag,
         threshold,
     ):
         protein_ref = temp_dir / "protein_training.csv"
@@ -524,7 +575,7 @@ class TestBiasRecipe:
             "-s", str(sample_system_yaml),
             "--protein_training_data_path", str(protein_ref),
             "--ligand_training_data_path", str(ligand_ref),
-            "--bias_ligand_similarity_threshold", threshold,
+            flag, threshold,
             "-w", str(temp_dir),
         ]
 

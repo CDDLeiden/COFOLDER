@@ -1,5 +1,9 @@
 # Validate Command
 
+For `--assess_bias`, prepare and select source bundles as described in
+[Providing bias training data](bias-training-data.md), including the `whole` policy,
+shared query cache, and prepared custom-complex supplements.
+
 The `validate` command performs co-folding of a single protein-ligand system.
 
 ## Basic Usage

@@ -14,6 +14,9 @@ Use these files when you want to copy a working starting point before editing it
 - `system_covalent.yaml`: example of a more specialized system definition
 - `system_nucleic_acid.yaml`: protein/DNA/RNA/ligand system with a pocket constraint
 - `4HJO.pdb` and `4HJO.cif`: structure fixtures that support examples and manual inspection
+- `custom_bias_complexes.yaml`: explicit selectors for preparing a custom supplement
+- `bias_matrix.yaml`: the pre-2023-06-01, whole-snapshot,
+  pre-2023-06-01-plus-custom, and custom-only comparison runs
 
 ## Recommended Use
 
@@ -24,6 +27,13 @@ Start with:
 3. one of the quick commands from the root `README.md` or `docs/getting-started/quickstart.md`
 
 Then move to `system_screen.yaml` and `ligand_screen.csv` when you want to explore `screen`.
+
+Prepare and compare bias references with:
+
+```bash
+cofolder-tools prepare-bias-custom-complexes custom_bias_complexes.yaml --output_root custom-bias
+cofolder-tools run-bias-matrix bias_matrix.yaml
+```
 
 The copyable no-reference IFP clustering workflow is:
 

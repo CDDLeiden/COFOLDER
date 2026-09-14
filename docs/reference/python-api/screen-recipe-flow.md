@@ -1,5 +1,10 @@
 # Screen recipe: Python API and file flow
 
+For database-backed bias inputs, see
+[Providing bias training data](../../user-guide/bias-training-data.md).
+The cache path is forwarded to every child Validate run so invariant protein
+searches are reused across compounds.
+
 This reference reconstructs the current `Screen` recipe in
 `src/cofolder/recipes/screen.py`. `Screen` is a library-expansion and aggregation
 layer around `Validate`; it is not a separate prediction implementation.

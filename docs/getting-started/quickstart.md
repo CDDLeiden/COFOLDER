@@ -1,5 +1,19 @@
 # Quick Start Guide
 
+Copy the packaged inputs and inspect a complete Screen plan without running a
+backend or service:
+
+```bash
+cofolder-tools copy-examples ./cofolder-example
+cofolder screen --preflight_only \
+  --system_path ./cofolder-example/system_screen.yaml \
+  --options_path ./cofolder-example/options.yaml \
+  --library ./cofolder-example/ligand_screen.csv \
+  --col_id Name --smiles_column SMILES
+```
+
+The example contains one ligand entity, so `--ligand_chain` is inferred.
+
 This guide will walk you through your first COFOLDER workflow.
 
 ## Basic Workflow

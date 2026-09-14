@@ -181,6 +181,7 @@ class TestOracleRun:
             input_smiles="CCO",
             output_metric="affinity_pred_value",
             scoring_functions=["affinity_metrics"],
+            bias_query_cache_path=str(temp_dir / "shared-bias-cache"),
         )
 
         run_dir = temp_dir / "oracle_run" / "results"
@@ -192,6 +193,9 @@ class TestOracleRun:
         oracle.run()
 
         assert mock_validate_cls.call_args.kwargs["runner"] == "boltz2"
+        assert mock_validate_cls.call_args.kwargs["bias_query_cache_path"] == str(
+            temp_dir / "shared-bias-cache"
+        )
         mock_validator.run.assert_called_once()
 
     @patch("cofolder.recipes.oracle.Validate")

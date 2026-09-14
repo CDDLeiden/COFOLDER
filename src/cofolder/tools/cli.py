@@ -15,8 +15,11 @@ COMMANDS = {
     "copy-examples": "Copy the packaged runnable examples to a workspace.",
     "setup-openfold3": "Prepare the OpenFold3 cache and checkpoints.",
     "install-mmseqs": "Install a verified vendored MMseqs2 executable.",
-    "fetch-bias-training-data": "Fetch CCD and optional MMseqs2 reference data.",
+    "fetch-bias-training-data": "Prepare validated protein and ligand bias databases.",
     "build-bias-training-data": "Build bias-training reference tables.",
+    "prepare-bias-custom-complexes": "Prepare paired references from selected PDB/mmCIF complexes.",
+    "run-bias-matrix": "Run the dated/whole public and custom bias comparison matrix.",
+    "bias-query-cache": "Inspect or safely invalidate the shared bias-query cache.",
 }
 
 MODULES = {
@@ -24,6 +27,9 @@ MODULES = {
     "install-mmseqs": "cofolder.tools.install_mmseqs",
     "fetch-bias-training-data": "cofolder.tools.fetch_bias_training_data",
     "build-bias-training-data": "cofolder.tools.build_bias_training_data",
+    "prepare-bias-custom-complexes": "cofolder.tools.prepare_bias_custom_complexes",
+    "run-bias-matrix": "cofolder.tools.run_bias_matrix",
+    "bias-query-cache": "cofolder.tools.bias_query_cache",
 }
 
 

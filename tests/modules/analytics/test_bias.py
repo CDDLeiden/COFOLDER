@@ -819,7 +819,7 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
     )
     monkeypatch.setattr(
         "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
-        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}]
+        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
@@ -851,7 +851,7 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
     assert protein_seed["sequence_similarity"] == 94.1
     assert protein_seed["ecfp_similarity"] == 0.05
     ligand_seed = result[result["pdb_id"] == "1XM1"].iloc[0]
-    assert ligand_seed["sequence_similarity"] == 61.0
+    assert ligand_seed["sequence_similarity"] == 12.5
     assert ligand_seed["ecfp_similarity"] == 0.91
 
 
@@ -1040,7 +1040,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
     )
     monkeypatch.setattr(
         "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
-        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}]
+        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
@@ -1063,7 +1063,10 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
     assert zod["ecfp_similarity"] == 0.11
     xm1 = enriched[enriched["pdb_id"] == "1XM1"].iloc[0]
     assert xm1["protein_pdb_id"] == "1XM1"
-    assert xm1["sequence_similarity"] == 61.0
+    assert xm1["sequence_similarity"] == 12.5
+    assert xm1["plot_sequence_similarity"] == 0.125
+    assert pd.isna(xm1["sequence_similarity_pairwise"])
+    assert xm1["sequence_similarity_method"] == "mmseqs_pident"
 
 
 def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(monkeypatch):
@@ -1684,6 +1687,15 @@ def test_plot_bias_reference_overlap_keeps_one_sided_threshold_hits_and_removes_
                     "plot_ecfp_similarity": 0.34,
                 },
                 {
+                    "reference_label": "mmseqs-backfilled",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "query_protein_chain_id": "A",
+                    "query_ligand_chain_id": "B",
+                    "plot_sequence_similarity": 0.125,
+                    "plot_ecfp_similarity": 0.38,
+                },
+                {
                     "reference_label": "exact-thresholds",
                     "pairing_status": "paired",
                     "source": "public",
@@ -1721,6 +1733,7 @@ def test_plot_bias_reference_overlap_keeps_one_sided_threshold_hits_and_removes_
         (0.35, 0.26),
         (0.36, 0.25),
         (0.38, 0.0),
+        (0.38, 0.12),
     }
     assert captured["legend"] is None
     assert captured["texts"] == []
