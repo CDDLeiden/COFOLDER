@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import csv
-import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from time import perf_counter
 
+from cofolder.modules.utils.executables import resolve_mmseqs_executable
 from cofolder.modules.utils.timing import DebugTimingCollector
 
 
@@ -20,29 +19,7 @@ _PROTEIN_STAGE_MARKERS = (
 )
 
 def _resolve_mmseqs_bin() -> str | None:
-    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
-    candidates = []
-    if explicit_env:
-        candidates.append(explicit_env)
-    candidates.extend(
-        [
-            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[4] / "vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[4] / "vendor/mmseqs/mmseqs"),
-        ]
-    )
-    from_path = shutil.which("mmseqs")
-    if from_path:
-        candidates.append(from_path)
-
-    for cand in candidates:
-        p = Path(cand).expanduser()
-        if p.exists() and p.is_file():
-            return str(p)
-        found = shutil.which(cand)
-        if found:
-            return found
-    return None
+    return resolve_mmseqs_executable().path
 
 
 def run_build_bias_training_data(

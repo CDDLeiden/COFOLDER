@@ -284,3 +284,10 @@ If preparation reports a missing MMseqs executable, use
 `cofolder-tools install-mmseqs` or set `COFOLDER_MMSEQS_BIN`. Incomplete downloads,
 missing release metadata, stale checksums, wrong bundle kinds, and unsupported schema
 versions are rejected with the affected file and a preparation command.
+
+MMseqs discovery uses the same policy in preparation and analysis: an explicit
+`--mmseqs_bin` path or command name, `COFOLDER_MMSEQS_BIN`, the managed
+`~/.cofolder/vendor/mmseqs/bin/mmseqs` installation, checkout-local vendor paths when
+applicable, then `mmseqs` on `PATH`. Candidates must be regular executable files.
+When MMseqs is required but none qualifies, the error lists rejected candidates and
+their reasons; successful selections are available in debug logs.

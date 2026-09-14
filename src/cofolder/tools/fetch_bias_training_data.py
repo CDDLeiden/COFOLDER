@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 from gzip import decompress
 import hashlib
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -29,6 +28,7 @@ from cofolder.modules.analytics.bias_database import (
     normalize_pdb_id,
     validate_bias_database_bundle,
 )
+from cofolder.modules.utils.executables import resolve_mmseqs_executable
 
 
 CCD_GZ_URL = "https://files.wwpdb.org/pub/pdb/data/monomers/components.cif.gz"
@@ -38,33 +38,7 @@ CORE_NONPOLY_URL = "https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{pdb_id
 
 
 def _resolve_mmseqs_bin(mmseqs_bin: str | None = None) -> str | None:
-    candidates: list[str] = []
-    if mmseqs_bin:
-        candidates.append(str(mmseqs_bin))
-    candidates.extend(
-        [
-            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[3] / "vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[3] / "vendor/mmseqs/mmseqs"),
-        ]
-    )
-    from_env = shutil.which("mmseqs")
-    if from_env:
-        candidates.append(from_env)
-    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
-    if explicit_env:
-        candidates.insert(0, explicit_env)
-
-    for candidate in candidates:
-        if not candidate:
-            continue
-        path = Path(candidate).expanduser()
-        if path.exists() and path.is_file():
-            return str(path)
-        found = shutil.which(candidate)
-        if found:
-            return found
-    return None
+    return resolve_mmseqs_executable(mmseqs_bin).path
 
 
 def _fetch_bytes(url: str, timeout: int) -> bytes:
@@ -272,9 +246,10 @@ def _run_mmseqs_databases(
 ) -> None:
     mmseqs_command = _resolve_mmseqs_bin(mmseqs_bin)
     if mmseqs_command is None:
+        diagnostics = resolve_mmseqs_executable(mmseqs_bin).diagnostic_text()
         raise RuntimeError(
             "mmseqs binary not found in PATH. Install MMseqs2, pass --mmseqs_bin, "
-            "or disable with --skip_mmseqs."
+            f"or disable with --skip_mmseqs. Attempted: {diagnostics}."
         )
 
     tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -296,7 +271,11 @@ def _extract_mmseqs_sequence_index(
     """Export a relocatable PDB sequence index from a prepared MMseqs database."""
     executable = _resolve_mmseqs_bin(mmseqs_bin)
     if executable is None:
-        raise RuntimeError("MMseqs2 is required to build the offline PDB sequence index.")
+        diagnostics = resolve_mmseqs_executable(mmseqs_bin).diagnostic_text()
+        raise RuntimeError(
+            "MMseqs2 is required to build the offline PDB sequence index. "
+            f"Attempted: {diagnostics}."
+        )
     fasta = temporary_root / "pdb_sequences.fasta"
     subprocess.run(
         [executable, "convert2fasta", str(mmseqs_db), str(fasta)], check=True
@@ -337,7 +316,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--overwrite", action="store_true", help="Re-download/rewrite files if they already exist.")
     parser.add_argument("--skip_mmseqs", action="store_true", help="Skip MMseqs2 database download step.")
     parser.add_argument("--mmseqs_db_name", type=str, default="PDB", help="MMseqs2 database name to download (e.g. PDB, UniRef50, UniRef90).")
-    parser.add_argument("--mmseqs_bin", type=str, default=None, help="Path to mmseqs executable (optional). If omitted, resolve from PATH.")
+    parser.add_argument(
+        "--mmseqs_bin",
+        type=str,
+        default=None,
+        help=(
+            "MMseqs executable path or command name (highest precedence; otherwise "
+            "use COFOLDER_MMSEQS_BIN, managed vendor paths, then PATH)."
+        ),
+    )
     parser.add_argument("--mmseqs_output_db", type=Path, default=None, help="Output DB path for `mmseqs databases`. Defaults to <output_root>/mmseqs/<db_name_lower>/db.")
     parser.add_argument("--mmseqs_tmp_dir", type=Path, default=None, help="Temporary directory for MMseqs2. Defaults to <output_root>/mmseqs/tmp.")
     parser.add_argument(

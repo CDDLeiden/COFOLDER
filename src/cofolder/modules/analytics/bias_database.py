@@ -22,6 +22,7 @@ from rdkit import rdBase
 from rdkit.Chem import rdFingerprintGenerator
 
 from cofolder.modules.input.system import System, iter_system_chains
+from cofolder.modules.utils.executables import resolve_mmseqs_executable
 
 
 BIAS_DATABASE_SCHEMA_VERSION = 2
@@ -443,9 +444,11 @@ def _protein_references(
     metadata = metadata[metadata["release_date"].map(policy.includes)]
     mmseqs = _resolve_mmseqs_bin()
     if mmseqs is None:
+        diagnostics = resolve_mmseqs_executable().diagnostic_text()
         raise RuntimeError(
             "MMseqs2 is required to search the protein bias database. "
-            "Run `cofolder-tools install-mmseqs` or set COFOLDER_MMSEQS_BIN."
+            "Run `cofolder-tools install-mmseqs` or set COFOLDER_MMSEQS_BIN. "
+            f"Attempted: {diagnostics}."
         )
     rows: list[pd.DataFrame] = []
     local: dict[str, tuple[pd.DataFrame, str, str]] = {}

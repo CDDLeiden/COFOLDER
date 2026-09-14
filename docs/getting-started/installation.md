@@ -132,6 +132,12 @@ cofolder-tools install-mmseqs
 export COFOLDER_MMSEQS_BIN="$HOME/.cofolder/vendor/mmseqs/bin/mmseqs"
 ```
 
+COFOLDER accepts only a regular, executable MMseqs file. Resolution checks an
+explicit `--mmseqs_bin` value first, then `COFOLDER_MMSEQS_BIN`, the managed user
+installation above, checkout-local `vendor/mmseqs` locations when running from a
+source checkout, and finally `mmseqs` on `PATH`. Missing or non-executable candidates
+are included in required-command diagnostics.
+
 Verify:
 
 ```bash

@@ -38,6 +38,8 @@ from rdkit import RDLogger
 import yaml
 import gemmi
 
+from cofolder.modules.utils.executables import resolve_mmseqs_executable
+
 SEARCH_URL = "https://search.rcsb.org/rcsbsearch/v2/query"
 CORE_ENTRY_URL = "https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
 CORE_NONPOLY_URL = "https://data.rcsb.org/rest/v1/core/nonpolymer_entity/{pdb_id}/{entity_id}"
@@ -546,37 +548,11 @@ def _guess_mmseqs_db_from_components(components_cif: Path) -> Path:
 
 
 def _resolve_mmseqs_bin(mmseqs_bin: str | None = None) -> str | None:
-    candidates: list[str] = []
-    if mmseqs_bin:
-        candidates.append(str(mmseqs_bin))
-    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
-    if explicit_env:
-        candidates.insert(0, explicit_env)
-    candidates.extend(
-        [
-            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[1] / "vendor/mmseqs/mmseqs"),
-        ]
-    )
-    from_path = shutil.which("mmseqs")
-    if from_path:
-        candidates.append(from_path)
-
-    for cand in candidates:
-        if not cand:
-            continue
-        p = Path(cand).expanduser()
-        if p.exists() and p.is_file():
-            return str(p)
-        found = shutil.which(cand)
-        if found:
-            return found
-    return None
+    return resolve_mmseqs_executable(mmseqs_bin).path
 
 
 def _run_mmseqs(
-    mmseqs_bin: str,
+    mmseqs_bin: str | None,
     query_fasta: Path,
     target_db: Path,
     workers: int,
@@ -585,8 +561,10 @@ def _run_mmseqs(
 ) -> pd.DataFrame:
     resolved_mmseqs = _resolve_mmseqs_bin(mmseqs_bin)
     if resolved_mmseqs is None:
+        diagnostics = resolve_mmseqs_executable(mmseqs_bin).diagnostic_text()
         raise RuntimeError(
-            f"mmseqs binary not found: {mmseqs_bin}. Provide --mmseqs_bin with full path."
+            f"mmseqs binary not found: {mmseqs_bin}. Provide --mmseqs_bin with full "
+            f"path. Attempted: {diagnostics}."
         )
 
     tmp_root.mkdir(parents=True, exist_ok=True)
@@ -738,8 +716,11 @@ def main(
     parser.add_argument(
         "--mmseqs_bin",
         type=str,
-        default="mmseqs",
-        help="MMseqs executable name or full path.",
+        default=None,
+        help=(
+            "MMseqs executable path or command name (highest precedence; otherwise "
+            "use COFOLDER_MMSEQS_BIN, managed vendor paths, then PATH)."
+        ),
     )
     parser.add_argument(
         "--mmseqs_max_seqs",
