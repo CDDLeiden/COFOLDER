@@ -1,11 +1,39 @@
 """Tests for cofolder.cli module."""
 import logging
+from pathlib import Path
 import runpy
+import shutil
+import socket
+import subprocess
+import sys
+import urllib.request
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+import yaml
 
 from cofolder import cli
+from cofolder.resources.examples import copy_examples
+
+
+def _installed_console_command() -> list[str]:
+    executable = shutil.which("cofolder", path=str(Path(sys.executable).parent))
+    assert executable is not None
+    return [executable]
+
+
+def _module_command() -> list[str]:
+    return [sys.executable, "-m", "cofolder"]
+
+
+def _run_entrypoint(command: list[str], argv: list[str], cwd: Path):
+    return subprocess.run(
+        [*command, *argv],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def test_module_entrypoint_propagates_main_exit_code():
@@ -128,6 +156,198 @@ class TestCLIMain:
 
         bias_cls.assert_called_once()
         bias_runner.run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_exit"),
+    [
+        (["--help"], 0),
+        (["--version"], 0),
+        (["validate", "--help"], 0),
+        (["screen", "--help"], 0),
+        (["oracle", "--help"], 0),
+        (["bias", "--help"], 0),
+        (["unknown-command"], 2),
+    ],
+)
+def test_console_and_module_entrypoints_have_identical_cli_behavior(
+    argv, expected_exit, temp_dir
+):
+    console = _run_entrypoint(_installed_console_command(), argv, temp_dir)
+    module = _run_entrypoint(_module_command(), argv, temp_dir)
+
+    assert console.returncode == module.returncode == expected_exit
+    assert console.stdout == module.stdout
+    assert console.stderr == module.stderr
+
+
+def test_copied_example_preflight_matches_console_and_module_without_writes(temp_dir):
+    examples = copy_examples(temp_dir / "copied examples")
+    output = temp_dir / "output with spaces"
+    argv = [
+        "validate",
+        "-s",
+        str(examples / "system.yaml"),
+        "-o",
+        str(examples / "options.yaml"),
+        "-w",
+        str(output),
+        "--preflight_only",
+    ]
+
+    console = _run_entrypoint(_installed_console_command(), argv, temp_dir)
+    module = _run_entrypoint(_module_command(), argv, temp_dir)
+
+    assert console.returncode == module.returncode
+    assert console.returncode in {0, 2}
+    assert console.stdout == module.stdout
+    assert console.stderr == module.stderr
+    assert "preflight=" in console.stdout
+    assert f"output_dir={output / 'results'}" in console.stdout
+    assert not output.exists()
+
+
+def test_all_cli_preflights_are_no_service_and_non_mutating(
+    sample_system_yaml,
+    sample_options_yaml,
+    sample_csv_file,
+    temp_dir,
+    capsys,
+):
+    protein_reference = temp_dir / "protein references.csv"
+    protein_reference.write_text(
+        "pdb_id,release_date,sequence\n1ABC,2022-01-01,MKRAAT\n",
+        encoding="utf-8",
+    )
+    ligand_reference = temp_dir / "ligand references.csv"
+    ligand_reference.write_text(
+        "pdb_id,release_date,ligand_id,smiles\n1ABC,2022-01-01,ETH,CCO\n",
+        encoding="utf-8",
+    )
+    cache = temp_dir / "shared cache that must remain absent"
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("preflight attempted a service or subprocess call")
+
+    commands = {
+        "validate": [],
+        "screen": [
+            "-c",
+            str(sample_csv_file),
+            "--col_id",
+            "compound_id",
+            "--smiles_column",
+            "smiles",
+        ],
+        "oracle": [
+            "--input_smiles",
+            "CCO",
+            "--output_metric",
+            "confidence_score",
+        ],
+        "bias": [
+            "--protein_training_data_path",
+            str(protein_reference),
+            "--ligand_training_data_path",
+            str(ligand_reference),
+            "--bias_query_cache_path",
+            str(cache),
+        ],
+    }
+
+    with (
+        patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ),
+        patch("cofolder.recipes.validate.Validate.run", side_effect=forbidden),
+        patch("cofolder.recipes.screen.Screen.run", side_effect=forbidden),
+        patch("cofolder.recipes.oracle.Oracle.run", side_effect=forbidden),
+        patch("cofolder.recipes.bias.Bias.run", side_effect=forbidden),
+        patch(
+            "cofolder.modules.analytics.bias_database.materialize_bias_references",
+            side_effect=forbidden,
+        ),
+        patch.object(subprocess, "run", side_effect=forbidden),
+        patch.object(socket, "create_connection", side_effect=forbidden),
+        patch.object(urllib.request, "urlopen", side_effect=forbidden),
+    ):
+        for workflow, extra in commands.items():
+            output = temp_dir / f"{workflow} output with spaces"
+            common = ["-s", str(sample_system_yaml), "-w", str(output)]
+            if workflow != "bias":
+                common.extend(["-o", str(sample_options_yaml)])
+            result = cli.main([workflow, *common, *extra, "--preflight_only"])
+            captured = capsys.readouterr()
+
+            assert result == 0
+            assert f"workflow={workflow}" in captured.out
+            assert f"output_dir={output / 'results'}" in captured.out
+            assert captured.err == ""
+            assert not output.exists()
+            if workflow in {"screen", "oracle"}:
+                assert "selected_ligand_chain=B" in captured.out
+
+    assert not cache.exists()
+
+
+@pytest.mark.parametrize(
+    ("workflow", "extra"),
+    [
+        (
+            "screen",
+            ["-c", "{library}", "--col_id", "compound_id", "--smiles_column", "smiles"],
+        ),
+        (
+            "oracle",
+            ["--input_smiles", "CCO", "--output_metric", "confidence_score"],
+        ),
+    ],
+)
+def test_cli_preflight_rejects_ambiguous_ligands_before_writes(
+    workflow,
+    extra,
+    sample_system_yaml,
+    sample_options_yaml,
+    sample_csv_file,
+    temp_dir,
+    capsys,
+):
+    system = yaml.safe_load(sample_system_yaml.read_text(encoding="utf-8"))
+    system["sequences"].append(
+        {"ligand": {"id": "C", "smiles": "CCN", "ccd": "EAM"}}
+    )
+    ambiguous_system = temp_dir / "ambiguous system.yaml"
+    ambiguous_system.write_text(yaml.safe_dump(system), encoding="utf-8")
+    output = temp_dir / f"ambiguous {workflow} output"
+    resolved_extra = [
+        str(sample_csv_file) if value == "{library}" else value for value in extra
+    ]
+
+    with patch(
+        "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+        return_value=(True, None),
+    ):
+        result = cli.main(
+            [
+                workflow,
+                "-s",
+                str(ambiguous_system),
+                "-o",
+                str(sample_options_yaml),
+                "-w",
+                str(output),
+                *resolved_extra,
+                "--preflight_only",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "preflight=not-ready" in captured.out
+    assert "--ligand_chain is required when the system contains multiple ligand entities" in captured.out
+    assert captured.err == ""
+    assert not output.exists()
 
 class TestValidateRecipe:
     """Tests for ValidateRecipe class."""

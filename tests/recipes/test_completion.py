@@ -163,6 +163,7 @@ def test_failed_oracle_summary_reports_unavailable_value(temp_dir, caplog):
 
     assert "workflow=oracle status=failed total=1 success=0 failed=1" in caplog.text
     assert f"primary_table={(temp_dir / 'results/failures.csv').resolve()}" in caplog.text
+    assert f"manifest={(temp_dir / 'results/manifest.json').resolve()}" in caplog.text
     assert "Oracle result | metric=affinity_pred_value aggregate=mean value=unavailable" in caplog.text
 
 
@@ -188,6 +189,8 @@ def test_successful_oracle_summary_reports_scalar(temp_dir, caplog):
         assert Recipe(temp_dir).run() == 0.625
 
     assert "workflow=oracle status=success total=1 success=1 failed=0" in caplog.text
+    assert f"primary_table={(temp_dir / 'results/metrics.csv').resolve()}" in caplog.text
+    assert f"manifest={(temp_dir / 'results/manifest.json').resolve()}" in caplog.text
     assert "Oracle result | metric=affinity_pred_value aggregate=median value=0.625" in caplog.text
 
 
