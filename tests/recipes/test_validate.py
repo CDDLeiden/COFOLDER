@@ -1519,11 +1519,11 @@ class TestValidateRun:
         temp_dir,
     ):
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
             lambda **kwargs: [],
         )
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
             lambda **kwargs: [],
         )
         _patch_validate_pipeline(monkeypatch, system_name="bias_outputs")

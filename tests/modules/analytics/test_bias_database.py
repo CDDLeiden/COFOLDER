@@ -400,7 +400,7 @@ def test_materialization_backfills_ligand_only_pdb_offline_and_reuses_cache(
     monkeypatch.setattr(bias_database, "_mmseqs_version", lambda binary: "test-version")
     monkeypatch.setattr(bias_database, "_run_mmseqs_backfill", backfill)
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._entry_fasta_sequences",
+        "cofolder.modules.analytics.bias._enrichment._entry_fasta_sequences",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network fallback must not run")),
     )
     system = System(system={"sequences": [

@@ -648,11 +648,11 @@ class TestBiasRun:
         self, temp_dir, monkeypatch
     ):
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
             lambda **kwargs: [],
         )
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
             lambda **kwargs: [],
         )
 

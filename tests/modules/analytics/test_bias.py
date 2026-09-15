@@ -3,6 +3,8 @@
 from datetime import date
 import logging
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 
 import pandas as pd
@@ -10,6 +12,8 @@ import pytest
 
 from cofolder.modules.analytics import bias as bias_module
 from cofolder.modules.analytics import plots as plots_module
+from cofolder.modules.analytics.bias import _references as bias_references
+from cofolder.modules.analytics.bias import _similarity as bias_similarity
 from cofolder.modules.analytics.bias import (
     BIAS_TRAINING_DATA_COLUMNS,
     _build_bias_training_dataset,
@@ -29,6 +33,41 @@ class _MockSystem:
         if key == "sequences":
             return self._sequences
         return None
+
+
+def test_bias_package_imports_have_no_execution_side_effects(temp_dir):
+    modules = (
+        "cofolder.modules.analytics.bias",
+        "cofolder.modules.analytics.bias._common",
+        "cofolder.modules.analytics.bias._references",
+        "cofolder.modules.analytics.bias._similarity",
+        "cofolder.modules.analytics.bias._datasets",
+        "cofolder.modules.analytics.bias._enrichment",
+        "cofolder.modules.analytics.bias._artifacts",
+        "cofolder.modules.analytics.bias._workflow",
+    )
+    code = f"""
+import sys
+
+def deny(event, args):
+    if event in {{'subprocess.Popen', 'socket.connect'}}:
+        raise RuntimeError(event)
+
+sys.addaudithook(deny)
+for module in {modules!r}:
+    __import__(module)
+"""
+    before = tuple(temp_dir.iterdir())
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert tuple(temp_dir.iterdir()) == before
 
 
 def test_apply_bias_metrics_basic(temp_dir):
@@ -225,7 +264,7 @@ def test_smiles_from_components_cif_reuses_cached_document(monkeypatch, temp_dir
     )
 
     read_calls = 0
-    original_read_file = bias_module.gemmi.cif.read_file
+    original_read_file = bias_references.gemmi.cif.read_file
 
     def _counting_read_file(path):
         nonlocal read_calls
@@ -233,7 +272,7 @@ def test_smiles_from_components_cif_reuses_cached_document(monkeypatch, temp_dir
         return original_read_file(path)
 
     bias_module._components_cif_smiles_index.cache_clear()
-    monkeypatch.setattr(bias_module.gemmi.cif, "read_file", _counting_read_file)
+    monkeypatch.setattr(bias_references.gemmi.cif, "read_file", _counting_read_file)
 
     assert bias_module._smiles_from_components_cif("MG", components_cif) == "[Mg+2]"
     assert bias_module._smiles_from_components_cif("K", components_cif) == "[K+]"
@@ -812,19 +851,19 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg+2]", "ecfp_similarity": 0.05}]
         if kwargs["pdb_id"] == "5ZOD"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
 
@@ -928,7 +967,7 @@ def test_same_type_pair_dataset_uses_other_ligands_from_same_pdb(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         _fake_pdb_ligand_rows,
     )
 
@@ -1033,19 +1072,19 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg++]", "ecfp_similarity": 0.11}]
         if kwargs["pdb_id"] == "5ZOD"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
 
@@ -1121,7 +1160,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("MMseqs fallback should not run")),
     )
 
@@ -1182,7 +1221,7 @@ def test_enrich_mixed_bias_dataset_expands_each_protein_over_all_recovered_ligan
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [
             {"ligand_id": "LIG_1", "smiles": "CCO", "ecfp_similarity": 0.81},
             {"ligand_id": "LIG_2", "smiles": "CCN", "ecfp_similarity": 0.72},
@@ -1259,7 +1298,7 @@ def test_enrich_mixed_bias_dataset_expands_each_ligand_over_all_recovered_protei
         ]
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: (_ for _ in ()).throw(
             AssertionError("MMseqs fallback should not run")
         ),
@@ -1323,7 +1362,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_and_keeps_ligand_only
         ]
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "",
     )
 
@@ -1379,11 +1418,11 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_on_threshold_drift(
         ]
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}],
     )
 
@@ -1443,7 +1482,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_writes_progress_checkpoints
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "L1", "smiles": "CCO", "ecfp_similarity": 0.12}],
     )
 
@@ -1515,7 +1554,7 @@ def test_enrich_same_type_ligand_pair_dataset_writes_progress_checkpoints(
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg+2]", "ecfp_similarity": 0.2}],
     )
 
@@ -1890,7 +1929,7 @@ def test_training_views_use_strict_manuscript_thresholds(monkeypatch):
         ]
     )
     monkeypatch.setattr(
-        bias_module,
+        bias_similarity,
         "_ligand_similarity_series",
         lambda *args, **kwargs: pd.Series([0.35, 0.36], index=ligands_df.index),
     )
