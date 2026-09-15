@@ -97,14 +97,24 @@ def test_conformer_preparation_preserves_compatible_constraint(monkeypatch, temp
     original_constraints = json.loads(json.dumps(system.system["constraints"]))
     runner = Boltz2Runner()
     options = _typed_options(temp_dir)
+    captured = {}
+
+    def fake_prepare(system_obj, **kwargs):
+        captured["system_obj"] = system_obj
+        captured.update(kwargs)
+        return {"L": "NEW"}
+
     monkeypatch.setattr(
-        "cofolder.modules.entities.ligand.handle_conformers",
-        lambda **kwargs: {"L": "NEW"},
+        "cofolder.modules.runners.boltz_runner.prepare_ligand_conformers",
+        fake_prepare,
     )
 
     prepared = runner.prepare_system(system, options, temp_dir, "3D", None, None)
     runner.validate_system(prepared.system_obj, options, check_atom_names=True)
 
+    assert captured["system_obj"] is system
+    assert captured["cache_path"] == temp_dir / "cache"
+    assert captured["conformers"] == "3D"
     assert prepared.system_obj.system["constraints"] == original_constraints
 
 

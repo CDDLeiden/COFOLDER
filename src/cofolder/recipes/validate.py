@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
+from cofolder.modules.analytics import aggregation as gather
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.contracts import (
@@ -41,7 +42,7 @@ from cofolder.modules.runners.msa import (
     unresolved_protein_sequences,
 )
 from cofolder.modules.runners.validators import validate_runner_bundle
-from cofolder.modules.utils import gather, helpers, write
+from cofolder.modules.utils import helpers, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.recipes.bias import BiasAssessmentWorkflow
 from cofolder.recipes._completion import report_completion

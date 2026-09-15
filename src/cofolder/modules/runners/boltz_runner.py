@@ -17,6 +17,7 @@ from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners._boltz_command import build_boltz_command
 from cofolder.modules.runners._command_reporting import command_report
+from cofolder.modules.runners._ligand_preparation import prepare_ligand_conformers
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
@@ -259,11 +260,9 @@ class BoltzRunner(BaseRunner):
         )
 
         if conformers:
-            from cofolder.modules.entities import ligand
-
-            ligand.handle_conformers(
-                sys_obj=system_obj,
-                opt_obj=options_obj,
+            prepare_ligand_conformers(
+                system_obj,
+                cache_path=options_obj.runtime.cache_path or "~/.boltz",
                 wrk_dir=wrk_dir,
                 conformers=conformers,
                 sdf_file=sdf_file,
