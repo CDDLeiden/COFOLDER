@@ -4,9 +4,11 @@ This module provides the Command class for managing Boltz command-line
 options and building subprocess commands for predictions.
 """
 
-import multiprocessing
 import logging
-import os
+import multiprocessing
+import tempfile
+from pathlib import Path
+
 from cofolder.modules.utils import read, write
 
 logger = logging.getLogger(__name__)
@@ -29,28 +31,81 @@ def download_cache(path: str):
     Uses fast settings (minimal recycling and sampling steps) to reduce time.
     """
 
-    tmp_dir = "./tmp"
-    os.makedirs(tmp_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="cofolder-boltz-cache-") as tmp:
+        tmp_dir = Path(tmp)
+        fasta_path = tmp_dir / "setup.fasta"
+        write.write_fasta(fasta_path, sequence="A", header="A|protein|")
 
-    fasta_path = os.path.join(tmp_dir, "tmp.fasta")
-    # Write a single "A" residue
-    write.write_fasta(fasta_path, sequence="A", header="A|protein|")
+        cmd = [
+            "boltz", "predict",
+            str(fasta_path),
+            "--cache", str(path),
+            "--out_dir", str(tmp_dir),
+            "--use_msa_server",
+            "--recycling_steps", "1",
+            "--sampling_steps", "10"
+        ]
 
-    # Build the command
-    cmd = [
-        "boltz", "predict",
-        fasta_path,
-        "--cache", path,
-        "--out_dir", tmp_dir,
-        "--use_msa_server",
-        "--recycling_steps", "1",
-        "--sampling_steps", "10"
-    ]
+        from cofolder.modules.runners.boltz_runner import run_boltz
 
-    # Run the command
-    from cofolder.modules.runners.boltz_runner import run_boltz
+        run_boltz(cmd)
 
-    run_boltz(cmd)
+
+_BOLTZ2_BUILTIN_CCD_MARKERS = ("ALA.pkl", "GLY.pkl")
+
+
+def _missing_boltz2_cache_components(path: str | Path) -> tuple[str, ...]:
+    """Return missing or empty components of the default Boltz2 cache."""
+    cache_path = Path(path)
+    missing = []
+    for filename in ("boltz2_conf.ckpt", "mols.tar"):
+        candidate = cache_path / filename
+        if not candidate.is_file() or candidate.stat().st_size == 0:
+            missing.append(filename)
+
+    mols_dir = cache_path / "mols"
+    if not mols_dir.is_dir():
+        missing.append("mols/")
+    else:
+        for filename in _BOLTZ2_BUILTIN_CCD_MARKERS:
+            candidate = mols_dir / filename
+            if not candidate.is_file() or candidate.stat().st_size == 0:
+                missing.append(f"mols/{filename}")
+    return tuple(missing)
+
+
+def _ensure_boltz2_cache(path: str | Path) -> None:
+    """Initialize an incomplete default Boltz2 cache exactly once."""
+    import fcntl
+
+    cache_path = Path(path)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    lock_path = cache_path / ".cofolder_setup.lock"
+    with lock_path.open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        missing = _missing_boltz2_cache_components(cache_path)
+        if not missing:
+            return
+
+        # Upstream extraction checks directory existence. Removing only an empty
+        # directory lets it repair the unreachable-branch artifact without touching
+        # any valid or custom CCD files.
+        mols_dir = cache_path / "mols"
+        if mols_dir.is_dir() and not any(mols_dir.iterdir()):
+            mols_dir.rmdir()
+
+        logger.info(
+            "Boltz2 cache at %s is incomplete (%s); running default setup.",
+            cache_path,
+            ", ".join(missing),
+        )
+        download_cache(cache_path)
+        missing = _missing_boltz2_cache_components(cache_path)
+        if missing:
+            raise RuntimeError(
+                "Boltz2 cache setup did not produce required components at "
+                f"{cache_path}: {', '.join(missing)}"
+            )
 
 class Command:
     """Manage Boltz command-line options and build prediction commands.

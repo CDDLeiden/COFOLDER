@@ -585,47 +585,53 @@ def cache_mols_from_sdf(file_path: str, property_id: str, on_conflict: str = 'ov
 
     Notes
     -----
-    - Automatically downloads default Boltz cache if it doesn't exist
+    - Automatically prepares the default Boltz2 cache when required components
+      are missing or empty
     - Duplicate IDs in the SDF file cause an error before processing
     - Logs statistics on success, failure, and skipped molecules
     - Failed conversions are logged but don't stop the batch process
     """
     file_path = os.path.expanduser(file_path)
     cache = os.path.expanduser(cache)
-    mols_dir = os.path.join(cache, "mols")
-    os.makedirs(mols_dir, exist_ok=True)
-
-    if not os.path.exists(cache):
-        logger.info(f"Cache path {cache} does not exist. Downloading default cache...")
-        command.download_cache(cache)
-
+    if on_conflict not in {"use_cache", "overwrite"}:
+        raise ValueError(f"Invalid on_conflict mode: {on_conflict}")
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f"Input file not found: {file_path}")
 
-    # Pre-check for duplicate IDs
-    ids = []
+    # Fully validate the source before creating cache artifacts or running setup.
     suppl = read.read_sdf(file_path)
-    for mol in suppl:
-        if mol is not None and mol.HasProp(property_id):
-            ids.append(mol.GetProp(property_id))
+    if not suppl:
+        raise ValueError(f"SDF contains no valid molecule records: {file_path}")
+    missing_ids = [
+        index
+        for index, mol in enumerate(suppl)
+        if not mol.HasProp(property_id) or not mol.GetProp(property_id).strip()
+    ]
+    if missing_ids:
+        raise ValueError(
+            f"SDF records {missing_ids} are missing required property "
+            f"'{property_id}'"
+        )
+    ids = [mol.GetProp(property_id) for mol in suppl]
     duplicates = [i for i, c in Counter(ids).items() if c > 1]
     if duplicates:
         raise ValueError(f"Duplicate molecule IDs found in SDF: {duplicates}")
 
+    command._ensure_boltz2_cache(cache)
+    mols_dir = Path(cache) / "mols"
+
     # Existing cache
-    cached_ids = {f.stem for f in Path(mols_dir).glob("*.pkl")}
+    cached_ids = {f.stem for f in mols_dir.glob("*.pkl")}
     overlap_ids = set(ids) & cached_ids
     if overlap_ids:
         logger.info(f"Found {len(overlap_ids)} overlapping IDs with cache: {sorted(list(overlap_ids))[:10]}...")
 
-    # Re-iterate to process molecules
-    suppl = read.read_sdf(file_path)
     n_success, n_fail, n_skipped = 0, 0, 0
     for mol in suppl:
         if mol is None:
             continue
         mol_id = mol.GetProp(property_id)
-        mol_file = Path(mols_dir) / f"{mol_id}.pkl"
+        mol_file = mols_dir / f"{mol_id}.pkl"
 
         if mol_file.exists():
             if on_conflict == "use_cache":
@@ -634,11 +640,9 @@ def cache_mols_from_sdf(file_path: str, property_id: str, on_conflict: str = 'ov
                 continue
             elif on_conflict == "overwrite":
                 logger.info(f"Overwriting cached CCD for {mol_id}")
-            else:
-                raise ValueError(f"Invalid on_conflict mode: {on_conflict}")
 
         try:
-            mol_to_ccd(mol_id, mol)
+            mol_to_ccd(mol_id, mol, boltz_path=cache)
             n_success += 1
         except Exception as e:
             logger.error(f"Failed to process ID {mol_id}: {e}")

@@ -1,8 +1,48 @@
 """Tests for cofolder.modules.input.command module."""
+from pathlib import Path
+
 import pytest
 
+from cofolder.modules.input import command
 from cofolder.modules.input.command import Command
 from cofolder.modules.input.system import System
+
+
+def test_download_cache_uses_a_unique_cleaned_workspace(monkeypatch):
+    workspaces = []
+
+    def fake_run_boltz(argv):
+        fasta_path = Path(argv[2])
+        output_path = Path(argv[argv.index("--out_dir") + 1])
+        assert fasta_path.read_text(encoding="utf-8") == ">A|protein|\nA\n"
+        assert output_path == fasta_path.parent
+        workspaces.append(fasta_path.parent)
+
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz_runner.run_boltz", fake_run_boltz
+    )
+
+    command.download_cache("/cache with spaces")
+    command.download_cache("/cache with spaces")
+
+    assert len(set(workspaces)) == 2
+    assert all(not workspace.exists() for workspace in workspaces)
+
+
+def test_download_cache_cleans_workspace_after_failure(monkeypatch):
+    workspaces = []
+
+    def fail(argv):
+        workspaces.append(Path(argv[2]).parent)
+        raise RuntimeError("setup failed")
+
+    monkeypatch.setattr("cofolder.modules.runners.boltz_runner.run_boltz", fail)
+
+    with pytest.raises(RuntimeError, match="setup failed"):
+        command.download_cache("/cache")
+
+    assert len(workspaces) == 1
+    assert not workspaces[0].exists()
 
 
 class TestCommandInit:

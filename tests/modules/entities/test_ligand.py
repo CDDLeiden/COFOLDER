@@ -1,5 +1,10 @@
 """Tests for cofolder.modules.entities.ligand module."""
 
+from concurrent.futures import ThreadPoolExecutor
+import pickle
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -218,24 +223,267 @@ class TestIterateSdfRecords:
 class TestMolToCcd:
     """Tests for mol_to_ccd function."""
 
-    def test_mol_to_ccd(self, temp_dir):
-        """Test converting molecule to CCD format."""
-        mol = Chem.MolFromSmiles("CCO")
-        AllChem.EmbedMolecule(mol)
+    def test_mol_to_ccd_preserves_structure_stereochemistry_and_atom_names(
+        self, monkeypatch, temp_dir
+    ):
+        """Test conversion without requiring an installed Boltz backend."""
+        mol = Chem.MolFromSmiles("C[C@H](O)F")
+        AllChem.Compute2DCoords(mol)
+        parsed = SimpleNamespace(
+            rdkit_bounds_constraints=[],
+            chiral_atom_constraints=[],
+            stereo_bond_constraints=[],
+            planar_ring_5_constraints=[],
+            planar_ring_6_constraints=[],
+            planar_bond_constraints=[],
+        )
+        monkeypatch.setattr(
+            ligand, "_load_parse_ccd_residue", lambda: lambda *args: parsed
+        )
 
-        # This function interacts with Boltz's CCD system
-        # We'll test that it doesn't raise an error
-        try:
-            ligand.mol_to_ccd(
-                resname="ETH",
-                mol=mol,
-                boltz_path=str(temp_dir),
-                on_conflict="overwrite"
+        ligand.mol_to_ccd(resname="CHF", mol=mol, boltz_path=temp_dir)
+
+        with (temp_dir / "mols" / "CHF.pkl").open("rb") as stream:
+            cached = pickle.load(stream)
+        assert Chem.MolToSmiles(cached, isomericSmiles=True) == "C[C@H](O)F"
+        assert cached.GetNumAtoms() == mol.GetNumAtoms()
+        assert cached.GetNumBonds() == mol.GetNumBonds()
+        assert [atom.GetProp("name") for atom in cached.GetAtoms()] == [
+            "C1",
+            "C2",
+            "O3",
+            "F4",
+        ]
+
+
+def _write_cache_sdf(path: Path, records: list[tuple[str | None, str]]) -> None:
+    writer = Chem.SDWriter(str(path))
+    for identifier, smiles in records:
+        mol = Chem.MolFromSmiles(smiles)
+        if identifier is not None:
+            mol.SetProp("ID", identifier)
+        writer.write(mol)
+    writer.close()
+
+
+def _complete_boltz2_cache(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "boltz2_conf.ckpt").write_bytes(b"checkpoint")
+    (path / "mols.tar").write_bytes(b"archive")
+    mols = path / "mols"
+    mols.mkdir(exist_ok=True)
+    (mols / "ALA.pkl").write_bytes(b"alanine")
+    (mols / "GLY.pkl").write_bytes(b"glycine")
+
+
+@pytest.mark.parametrize("mode", ["invalid", "keep"])
+def test_cache_mols_rejects_invalid_conflict_mode_before_writes(
+    monkeypatch, temp_dir, mode
+):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO")])
+    monkeypatch.setattr(
+        ligand.command,
+        "download_cache",
+        lambda path: (_ for _ in ()).throw(AssertionError("unexpected setup")),
+    )
+
+    with pytest.raises(ValueError, match="Invalid on_conflict mode"):
+        ligand.cache_mols_from_sdf(sdf_path, "ID", mode, cache_path)
+
+    assert not cache_path.exists()
+
+
+def test_cache_mols_validates_source_before_cache_writes(monkeypatch, temp_dir):
+    cache_path = temp_dir / "cache"
+    setup_calls = []
+    monkeypatch.setattr(
+        ligand.command, "download_cache", lambda path: setup_calls.append(path)
+    )
+
+    with pytest.raises(FileNotFoundError, match="Input file not found"):
+        ligand.cache_mols_from_sdf(temp_dir / "missing.sdf", "ID", cache=cache_path)
+    assert not cache_path.exists()
+
+    missing_id = temp_dir / "missing-id.sdf"
+    _write_cache_sdf(missing_id, [(None, "CCO")])
+    with pytest.raises(ValueError, match="missing required property 'ID'"):
+        ligand.cache_mols_from_sdf(missing_id, "ID", cache=cache_path)
+    assert not cache_path.exists()
+
+    invalid_sdf = temp_dir / "invalid.sdf"
+    invalid_sdf.write_text("not an SDF", encoding="utf-8")
+    with pytest.raises(ValueError, match="no valid molecule records"):
+        ligand.cache_mols_from_sdf(invalid_sdf, "ID", cache=cache_path)
+    assert not cache_path.exists()
+
+    duplicates = temp_dir / "duplicates.sdf"
+    _write_cache_sdf(duplicates, [("ETH", "CCO"), ("ETH", "CCN")])
+    with pytest.raises(ValueError, match="Duplicate molecule IDs.*ETH"):
+        ligand.cache_mols_from_sdf(duplicates, "ID", cache=cache_path)
+    assert not cache_path.exists()
+    assert setup_calls == []
+
+
+@pytest.mark.parametrize(
+    ("missing_component", "empty"),
+    [
+        (None, False),
+        ("boltz2_conf.ckpt", False),
+        ("mols.tar", False),
+        ("mols/ALA.pkl", False),
+        ("boltz2_conf.ckpt", True),
+        ("mols.tar", True),
+        ("mols/ALA.pkl", True),
+    ],
+)
+def test_cache_mols_initializes_empty_and_partial_caches(
+    monkeypatch, temp_dir, missing_component, empty
+):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO")])
+    if missing_component is not None:
+        _complete_boltz2_cache(cache_path)
+        component = cache_path / missing_component
+        if empty:
+            component.write_bytes(b"")
+        else:
+            component.unlink()
+    setup_calls = []
+    converted = []
+
+    def fake_setup(path):
+        setup_calls.append(Path(path))
+        _complete_boltz2_cache(Path(path))
+
+    monkeypatch.setattr(ligand.command, "download_cache", fake_setup)
+    monkeypatch.setattr(
+        ligand,
+        "mol_to_ccd",
+        lambda resname, mol, boltz_path: converted.append(
+            (resname, Chem.MolToSmiles(mol), Path(boltz_path))
+        ),
+    )
+
+    ligand.cache_mols_from_sdf(sdf_path, "ID", cache=cache_path)
+
+    assert setup_calls == [cache_path]
+    assert converted == [("ETH", "CCO", cache_path)]
+
+
+def test_cache_mols_repairs_empty_mols_directory(monkeypatch, temp_dir):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO")])
+    cache_path.mkdir()
+    (cache_path / "mols").mkdir()
+
+    def fake_setup(path):
+        assert not (Path(path) / "mols").exists()
+        _complete_boltz2_cache(Path(path))
+
+    monkeypatch.setattr(ligand.command, "download_cache", fake_setup)
+    monkeypatch.setattr(ligand, "mol_to_ccd", lambda *args, **kwargs: None)
+
+    ligand.cache_mols_from_sdf(sdf_path, "ID", cache=cache_path)
+
+
+def test_cache_mols_reuses_complete_cache_and_preserves_conflict_modes(
+    monkeypatch, temp_dir
+):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO"), ("ETN", "CCN")])
+    _complete_boltz2_cache(cache_path)
+    (cache_path / "mols" / "ETH.pkl").write_bytes(b"existing")
+    converted = []
+    monkeypatch.setattr(
+        ligand.command,
+        "download_cache",
+        lambda path: (_ for _ in ()).throw(AssertionError("unexpected setup")),
+    )
+    monkeypatch.setattr(
+        ligand,
+        "mol_to_ccd",
+        lambda resname, mol, boltz_path: converted.append(
+            (resname, Path(boltz_path))
+        ),
+    )
+
+    ligand.cache_mols_from_sdf(
+        sdf_path, "ID", on_conflict="use_cache", cache=cache_path
+    )
+    assert converted == [("ETN", cache_path)]
+
+    converted.clear()
+    ligand.cache_mols_from_sdf(
+        sdf_path, "ID", on_conflict="overwrite", cache=cache_path
+    )
+    assert converted == [("ETH", cache_path), ("ETN", cache_path)]
+
+
+def test_cache_mols_rejects_setup_that_leaves_cache_incomplete(
+    monkeypatch, temp_dir
+):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO")])
+    monkeypatch.setattr(ligand.command, "download_cache", lambda path: None)
+
+    with pytest.raises(RuntimeError, match="Boltz2 cache setup did not produce"):
+        ligand.cache_mols_from_sdf(sdf_path, "ID", cache=cache_path)
+
+
+def test_cache_mols_serializes_concurrent_cache_setup(monkeypatch, temp_dir):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("ETH", "CCO")])
+    setup_calls = []
+
+    def fake_setup(path):
+        setup_calls.append(Path(path))
+        _complete_boltz2_cache(Path(path))
+
+    monkeypatch.setattr(ligand.command, "download_cache", fake_setup)
+    monkeypatch.setattr(ligand, "mol_to_ccd", lambda *args, **kwargs: None)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                ligand.cache_mols_from_sdf, sdf_path, "ID", "overwrite", cache_path
             )
-        except Exception:
-            # The actual CCD conversion might fail without Boltz installed
-            # We just want to make sure the function is callable
-            pass
+            for _ in range(2)
+        ]
+        for future in futures:
+            future.result()
+
+    assert setup_calls == [cache_path]
+
+
+def test_cache_mols_keeps_per_molecule_conversion_failures_isolated(
+    monkeypatch, temp_dir, caplog
+):
+    sdf_path = temp_dir / "ligands.sdf"
+    cache_path = temp_dir / "cache"
+    _write_cache_sdf(sdf_path, [("BAD", "CCO"), ("GOOD", "CCN")])
+    _complete_boltz2_cache(cache_path)
+    attempted = []
+
+    def convert(resname, mol, boltz_path):
+        attempted.append(resname)
+        if resname == "BAD":
+            raise RuntimeError("conversion failed")
+
+    monkeypatch.setattr(ligand, "mol_to_ccd", convert)
+
+    with caplog.at_level("INFO"):
+        ligand.cache_mols_from_sdf(sdf_path, "ID", cache=cache_path)
+
+    assert attempted == ["BAD", "GOOD"]
+    assert "Failed to process ID BAD: conversion failed" in caplog.text
+    assert "Success: 1, Failed: 1, Skipped: 0" in caplog.text
 # Shared ligand-input contract -------------------------------------------------
 
 
