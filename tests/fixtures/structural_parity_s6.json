@@ -1,0 +1,207 @@
+{
+  "bias": {
+    "artifacts": ["bias_train"],
+    "chain_ids": ["A", "C", "B", "D"],
+    "checkpoint_calls": [
+      ["A__B", 1, 1, "bias_training_data_A__B.csv"],
+      ["A__D", 1, 1, "bias_training_data_A__D.csv"],
+      ["C__B", 1, 1, "bias_training_data_C__B.csv"],
+      ["C__D", 1, 1, "bias_training_data_C__D.csv"],
+      ["B__D", 2, 2, "bias_ligand_pair_data_B__D.csv"]
+    ],
+    "computed_values": [
+      ["bias_lig_sim_train", 1.0],
+      ["bias_lig_sim_train_max", 1.0],
+      ["bias_prot_sim_train", 100.0],
+      ["bias_prot_sim_train_max", 100.0],
+      ["bias_prot_sim_train_pairwise", 100.0],
+      ["bias_prot_sim_train_pairwise", 25.0],
+      ["bias_prot_sim_train_pairwise_max", 100.0]
+    ],
+    "digest": "6245cbe7ea625e2022e7e9315db6fb4542519bd124924de9db457e5214116a11",
+    "files": [
+      "bias_train/bias_ligand_pair_data_B__D.csv",
+      "bias_train/bias_ligand_pair_scatter_B__D.pdf",
+      "bias_train/bias_ligand_pair_scatter_B__D.png",
+      "bias_train/bias_protein_pair_data_A__C.csv",
+      "bias_train/bias_protein_pair_scatter_A__C.pdf",
+      "bias_train/bias_protein_pair_scatter_A__C.png",
+      "bias_train/bias_reference_overlap_scatter.pdf",
+      "bias_train/bias_reference_overlap_scatter.png",
+      "bias_train/bias_reference_overlap_scatter_A__B.pdf",
+      "bias_train/bias_reference_overlap_scatter_A__B.png",
+      "bias_train/bias_reference_overlap_scatter_A__D.pdf",
+      "bias_train/bias_reference_overlap_scatter_A__D.png",
+      "bias_train/bias_reference_overlap_scatter_C__B.pdf",
+      "bias_train/bias_reference_overlap_scatter_C__B.png",
+      "bias_train/bias_reference_overlap_scatter_C__D.pdf",
+      "bias_train/bias_reference_overlap_scatter_C__D.png",
+      "bias_train/bias_training_data.csv",
+      "bias_train/bias_training_data_A__B.csv",
+      "bias_train/bias_training_data_A__D.csv",
+      "bias_train/bias_training_data_C__B.csv",
+      "bias_train/bias_training_data_C__D.csv",
+      "bias_train/ligand_training_data.csv",
+      "bias_train/ligand_training_data_B.csv",
+      "bias_train/ligand_training_data_D.csv",
+      "bias_train/protein_training_data.csv",
+      "bias_train/reference_landscape_summary.csv",
+      "executions.csv",
+      "failures.csv",
+      "manifest.json",
+      "metrics.csv",
+      "records.jsonl",
+      "successes.csv"
+    ],
+    "record_counts": {"execution": 0, "failure": 0, "metric": 15, "success": 1},
+    "status": "success",
+    "system_columns": [
+      "model_name",
+      "repeat",
+      "diffusion_sample",
+      "bias_prot_sim_train_max",
+      "bias_prot_sim_train_pairwise_max",
+      "bias_lig_sim_train_max"
+    ]
+  },
+  "oracle": {
+    "computed_values": [
+      ["oracle_gate_adjusted_score", -3.0],
+      ["oracle_raw_score", -5.2],
+      ["oracle_score", -3.0]
+    ],
+    "digest": "ca7787d24b132eef41822d66d8b82768163cbd774080453ca2c1604f2fa26876",
+    "files": [
+      "executions.csv",
+      "failures.csv",
+      "manifest.json",
+      "metrics.csv",
+      "records.jsonl",
+      "successes.csv"
+    ],
+    "record_counts": {"execution": 0, "failure": 0, "metric": 3, "success": 1},
+    "requested_metrics": [
+      "ligand_B__affinity_pred_value",
+      "system__confidence_score"
+    ],
+    "status": "success",
+    "value": -3.0
+  },
+  "screen": {
+    "artifacts": [
+      "executions.csv",
+      "compound_members.csv",
+      "ifp_cluster_summary.csv"
+    ],
+    "decisions": [
+      ["hit", "success", "accepted", "IFP001"],
+      ["hit", "unavailable", "not_evaluable", null],
+      ["failed", "failed", "not_evaluable", null],
+      ["failed", "failed", "not_evaluable", null],
+      ["miss", "success", "rejected", "IFP002"],
+      ["miss", "unavailable", "not_evaluable", null]
+    ],
+    "digest": "087af4ef02efe003dcb1ec8e044320313b8c074c19b2fb575a8155e7b7ca06d0",
+    "failures": [["backend_execution", "screen_compound_failed"]],
+    "files": [
+      "compound_members.csv",
+      "executions.csv",
+      "failures.csv",
+      "ifp_cluster_summary.csv",
+      "manifest.json",
+      "metrics.csv",
+      "records.jsonl",
+      "successes.csv"
+    ],
+    "identity_axes": [
+      ["failed", null, null, null, null, null, null],
+      ["failed", 17, 1, "boltz2", 0, null, null],
+      ["failed", 17, 1, "boltz2", 1, null, null],
+      ["hit", 17, 1, "boltz2", 0, null, null],
+      ["hit", 17, 1, "boltz2", 0, "entity:0", "A"],
+      ["hit", 17, 1, "boltz2", 0, "entity:1", "B"],
+      ["hit", 17, 1, "boltz2", 1, null, null],
+      ["miss", 17, 1, "boltz2", 0, null, null],
+      ["miss", 17, 1, "boltz2", 0, "entity:0", "A"],
+      ["miss", 17, 1, "boltz2", 0, "entity:1", "B"],
+      ["miss", 17, 1, "boltz2", 1, null, null]
+    ],
+    "record_counts": {"execution": 6, "failure": 1, "metric": 128, "success": 0},
+    "status": "partial"
+  },
+  "validate": {
+    "computed_values": [
+      ["affinity_pred_value", 6.1],
+      ["affinity_pred_value", 7.1],
+      ["chains_ptm", 0.65],
+      ["chains_ptm", 0.85],
+      ["confidence_score", 0.8],
+      ["confidence_score", 0.9],
+      ["iptm", 0.7],
+      ["ptm", 0.8]
+    ],
+    "digest": "c05c6ee2bee3d1b3e2903115c923b848c9d066deeacd1dddb94ad0569667ef59",
+    "failures": [["analytics", "reproduction_metrics_failed"]],
+    "files": [
+      "executions.csv",
+      "failures.csv",
+      "manifest.json",
+      "metrics.csv",
+      "records.jsonl",
+      "structures/model-a.cif",
+      "successes.csv"
+    ],
+    "identity_axes": [
+      [null, null, null, null, null, null, null],
+      [null, 17, 1, "model-a", 0, null, null],
+      [null, 17, 1, "model-a", 0, "entity:0", "A"],
+      [null, 17, 1, "model-a", 0, "entity:1", "B"],
+      [null, 17, 1, "model-a", 1, null, null],
+      [null, 17, 1, "model-a", 1, "entity:0", "A"],
+      [null, 17, 1, "model-a", 1, "entity:1", "B"],
+      [null, 23, 2, "model-a", 0, null, null],
+      [null, 23, 2, "model-a", 0, "entity:0", "A"],
+      [null, 23, 2, "model-a", 0, "entity:1", "B"],
+      [null, 23, 2, "model-a", 1, null, null],
+      [null, 23, 2, "model-a", 1, "entity:0", "A"],
+      [null, 23, 2, "model-a", 1, "entity:1", "B"]
+    ],
+    "metric_state_counts": [
+      ["affinity_pred_value", "computed", 4],
+      ["affinity_pred_value", "missing", 4],
+      ["chains_ptm", "computed", 8],
+      ["confidence_score", "computed", 4],
+      ["iptm", "computed", 4],
+      ["ptm", "computed", 4]
+    ],
+    "record_counts": {"execution": 0, "failure": 1, "metric": 28, "success": 4},
+    "seed_plan": {
+      "origin": "user_specified",
+      "repeats": [
+        {
+          "adjustment": "unchanged",
+          "adjustment_reason": null,
+          "derived_seed": 17,
+          "effective_seed": 17,
+          "origin": "user_specified",
+          "repeat_id": 1,
+          "requested_base_seed": 17,
+          "resolved_base_seed": 17
+        },
+        {
+          "adjustment": "unchanged",
+          "adjustment_reason": null,
+          "derived_seed": 23,
+          "effective_seed": 23,
+          "origin": "user_specified",
+          "repeat_id": 2,
+          "requested_base_seed": 17,
+          "resolved_base_seed": 17
+        }
+      ],
+      "requested_base_seed": 17,
+      "resolved_base_seed": 17
+    },
+    "status": "partial"
+  }
+}

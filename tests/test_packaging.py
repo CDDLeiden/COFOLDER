@@ -283,7 +283,7 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
             "recursive-include src/cofolder/resources/examples "
             "*.cif *.csv *.md *.pdb *.py *.yaml"
         ),
-        "recursive-include tests *.py",
+        "recursive-include tests *.json *.py",
         "recursive-include docs *.md",
         "recursive-include tutorials *.md *.py",
         "recursive-include examples *.cif *.csv *.md *.pdb *.py *.yaml",

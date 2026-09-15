@@ -64,6 +64,7 @@ def _verify_sdist(sdist: Path, source_root: Path) -> str:
         f"{root}/.github/workflows/quality.yml",
         f"{root}/scripts/run_test_lane.py",
         f"{root}/scripts/verify_release_artifacts.py",
+        f"{root}/tests/fixtures/structural_parity_s6.json",
     }
     required.update(
         f"{root}/{path.relative_to(source_root).as_posix()}"

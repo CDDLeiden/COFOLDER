@@ -9,7 +9,7 @@ recursive-include src/cofolder *.py
 recursive-include src/cofolder/acceptance/data *.csv *.yaml
 recursive-include src/cofolder/resources/examples *.cif *.csv *.md *.pdb *.py *.yaml
 
-recursive-include tests *.py
+recursive-include tests *.json *.py
 exclude tests/ui_development_check.py
 
 recursive-include docs *.md
