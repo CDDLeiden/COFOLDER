@@ -46,9 +46,7 @@ from cofolder.modules.contracts import (
     PUBLIC_SCHEMA_VERSION,
     SCREEN_METRIC_PROFILES,
     ArtifactReference,
-    BackendVersionStatus,
     EvidenceRegime,
-    EvidenceSource,
     ExecutionRecord,
     ExecutionStatus,
     FailureStage,
@@ -58,7 +56,6 @@ from cofolder.modules.contracts import (
     PublicOutputBundle,
     PublicSerializationError,
     RecordKind,
-    RunnerBackendIdentity,
     ScreenExecutionCardinalityError,
     ScreenOutputNormalizationError,
     StructuredExecutionError,
@@ -66,7 +63,6 @@ from cofolder.modules.contracts import (
     WorkflowExecutionError,
     WorkflowFailureRecord,
     WorkflowKind,
-    failure_from_exception,
     make_envelope,
     metric_records_from_frames,
     read_public_records,
@@ -93,14 +89,15 @@ from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import (
     PlannedExecution,
     RunnerExecutionPlan,
-    RunnerModelSlot,
     get_runner,
 )
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
 from cofolder.modules.utils import write
-from cofolder.modules.utils.helpers import resolve_seed_plan
 from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
 from cofolder.recipes._completion import report_completion
+from cofolder.recipes._diagnostics import workflow_failure
+from cofolder.recipes._execution import build_execution_plan
+from cofolder.recipes._results import standard_evidence, write_failure_bundle
 from cofolder.recipes.validate import Validate
 
 logger = logging.getLogger(__name__)
@@ -318,50 +315,14 @@ class Screen:
 
     def _build_execution_plan(self, options_obj: Any) -> RunnerExecutionPlan:
         """Resolve immutable runner, seed, repeat, model, and sample axes once."""
-        seed_plan = resolve_seed_plan(
-            int(self.validate_kwargs["repeats"]),
-            self.validate_kwargs.get("seed"),
-            self.logger,
+        return build_execution_plan(
+            self.runner_impl,
+            self.runner,
+            options_obj,
+            repeats=int(self.validate_kwargs["repeats"]),
+            seed=self.validate_kwargs.get("seed"),
+            logger=self.logger,
         )
-        resolve_effective_seed = getattr(
-            self.runner_impl, "resolve_effective_seed", None
-        )
-        adjusted = tuple(
-            resolve_effective_seed(item)
-            if callable(resolve_effective_seed)
-            else item
-            for item in seed_plan.repeats
-        )
-        seed_plan = replace(seed_plan, repeats=adjusted)
-        detect = getattr(self.runner_impl, "detect_backend_identity", None)
-        backend = detect() if callable(detect) else None
-        if backend is None:
-            backend = RunnerBackendIdentity(
-                runner_name=self.runner,
-                backend_name=self.runner,
-                version=None,
-                version_status=BackendVersionStatus.UNAVAILABLE,
-                detail="Runner does not expose backend version detection.",
-            )
-        describe = getattr(self.runner_impl, "execution_models", None)
-        models = (
-            tuple(describe(options_obj))
-            if callable(describe)
-            else (RunnerModelSlot(model_id=self.runner, sample_id=0),)
-        )
-        if not models:
-            raise ValueError("Runner execution model plan must not be empty.")
-        executions = tuple(
-            PlannedExecution(
-                repeat_id=repeat.repeat_id,
-                model_id=model.model_id,
-                sample_id=model.sample_id,
-                effective_seed=repeat.effective_seed,
-            )
-            for repeat in seed_plan.repeats
-            for model in models
-        )
-        return RunnerExecutionPlan(backend, seed_plan, executions)
 
 
     def _validate_config(self) -> None:
@@ -525,23 +486,13 @@ class Screen:
                 system_id=self.system_path.stem,
                 runner_id=self.runner,
             )
-            failure = failure_from_exception(
-                exc,
+            output_dir = self.wrk_dir / "results"
+            failure = write_failure_bundle(
+                output_dir=output_dir,
+                exc=exc,
                 identity=identity,
                 stage=self._failure_stage,
                 error_code=getattr(exc, "error_code", "screen_input_validation_failed"),
-            )
-            output_dir = self.wrk_dir / "results"
-            write_public_bundle(
-                PublicOutputBundle(
-                    manifest=PublicManifest(
-                        schema_version=PUBLIC_SCHEMA_VERSION,
-                        identity=identity,
-                        status="failed",
-                    ),
-                    records=(failure,),
-                ),
-                output_dir,
             )
             raise WorkflowExecutionError(
                 str(exc), failures=(failure,), output_dir=output_dir
@@ -848,7 +799,7 @@ class Screen:
                         )
                 else:
                     public_failures.append(
-                        failure_from_exception(
+                        workflow_failure(
                             source_exc,
                             identity=OutputIdentity(
                                 workflow=WorkflowKind.SCREEN,
@@ -1065,24 +1016,11 @@ class Screen:
 
     def _write_public_results(self, results_df: pd.DataFrame, failures) -> bool:
         public_records = []
-        evidence = []
         reference_path = self.validate_kwargs.get("reference_path")
-        if reference_path:
-            reference = Path(reference_path)
-            evidence.append(
-                EvidenceSource(
-                    kind="reference_structure",
-                    identifier=reference.name,
-                    path=str(reference),
-                )
-            )
-        if self.pocket_coverage_reference:
-            evidence.append(
-                EvidenceSource(
-                    kind="custom_pocket",
-                    identifier="configured_custom_pocket",
-                )
-            )
+        evidence = standard_evidence(
+            reference_path=Path(reference_path) if reference_path else None,
+            pocket_coverage_reference=self.pocket_coverage_reference,
+        )
         requested = set(self.validate_kwargs.get("scoring_functions") or ())
         if self.validate_kwargs.get("reproduction_metrics") is not None:
             requested.add("reproduction_metrics")

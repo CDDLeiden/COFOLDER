@@ -10,23 +10,18 @@ import pandas as pd
 from cofolder.modules.analytics.bias import apply_bias_metrics
 from cofolder.modules.analytics.bias_training import run_build_bias_training_data
 from cofolder.modules.contracts import (
-    PUBLIC_SCHEMA_VERSION,
     ArtifactReference,
     EvidenceSource,
     FailureStage,
     OutputIdentity,
-    PublicManifest,
-    PublicOutputBundle,
     WorkflowExecutionError,
     WorkflowKind,
-    bundle_from_frames,
-    failure_from_exception,
-    write_public_bundle,
 )
 from cofolder.modules.input import InputValidationError, system
 from cofolder.modules.utils import read
 from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.recipes._completion import report_completion
+from cofolder.recipes._results import write_failure_bundle, write_frame_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -761,8 +756,10 @@ class Bias:
                 run_id=self.run_id,
                 system_id=self.system_path.stem,
             )
-            failure = failure_from_exception(
-                exc,
+            output_dir = self.wrk_dir / "results"
+            failure = write_failure_bundle(
+                output_dir=output_dir,
+                exc=exc,
                 identity=identity,
                 stage=(
                     FailureStage.INPUT_VALIDATION
@@ -771,18 +768,6 @@ class Bias:
                     else FailureStage.ANALYTICS
                 ),
                 error_code="bias_analytics_failed",
-            )
-            output_dir = self.wrk_dir / "results"
-            write_public_bundle(
-                PublicOutputBundle(
-                    manifest=PublicManifest(
-                        schema_version=PUBLIC_SCHEMA_VERSION,
-                        identity=identity,
-                        status="failed",
-                    ),
-                    records=(failure,),
-                ),
-                output_dir,
             )
             raise WorkflowExecutionError(
                 str(exc), failures=(failure,), output_dir=output_dir
@@ -853,9 +838,10 @@ class Bias:
             artifacts = (
                 ArtifactReference("bias_supporting_outputs", "bias_train", "directory"),
             )
-            bundle = bundle_from_frames(
+            write_frame_bundle(
                 system_df,
                 chain_df,
+                output_dir=self.wrk_dir / "results",
                 identity=OutputIdentity(
                     workflow=WorkflowKind.BIAS,
                     run_id=self.run_id,
@@ -865,7 +851,6 @@ class Bias:
                 requested_metrics={"bias_metrics"},
                 artifacts=artifacts,
             )
-            write_public_bundle(bundle, self.wrk_dir / "results")
 
         self._log_timing_summary()
         return system_df, chain_df

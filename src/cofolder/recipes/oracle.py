@@ -29,7 +29,6 @@ from cofolder.modules.contracts import (
     SuccessRecord,
     WorkflowExecutionError,
     WorkflowKind,
-    failure_from_exception,
     get_metric_definition,
     make_envelope,
     write_public_bundle,
@@ -55,6 +54,7 @@ from cofolder.recipes._metrics import (
     read_metric_frames,
 )
 from cofolder.recipes._completion import report_completion
+from cofolder.recipes._results import write_failure_bundle
 from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS, Validate
 
 logger = logging.getLogger(__name__)
@@ -459,22 +459,14 @@ class Oracle:
                 if isinstance(source_exc, InputValidationError)
                 else FailureStage.ANALYTICS
             )
-            failure = failure_from_exception(
-                source_exc,
+            output_dir = self.wrk_dir / "results"
+            failure = write_failure_bundle(
+                output_dir=output_dir,
+                exc=source_exc,
                 identity=identity,
                 stage=stage,
                 error_code=getattr(source_exc, "error_code", "oracle_score_failed"),
             )
-            bundle = PublicOutputBundle(
-                manifest=PublicManifest(
-                    schema_version=PUBLIC_SCHEMA_VERSION,
-                    identity=identity,
-                    status="failed",
-                ),
-                records=(failure,),
-            )
-            output_dir = self.wrk_dir / "results"
-            write_public_bundle(bundle, output_dir)
             raise WorkflowExecutionError(
                 str(exc), failures=(failure,), output_dir=output_dir
             ) from exc

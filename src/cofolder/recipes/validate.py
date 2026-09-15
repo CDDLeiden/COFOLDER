@@ -12,9 +12,6 @@ from cofolder.modules.analytics.reproduction import scaffold_reproduction_metric
 from cofolder.modules.analytics.structure import Structure
 from cofolder.modules.contracts import (
     PUBLIC_SCHEMA_VERSION,
-    ArtifactReference,
-    BackendVersionStatus,
-    EvidenceSource,
     FailureStage,
     OutputIdentity,
     PublicManifest,
@@ -23,14 +20,11 @@ from cofolder.modules.contracts import (
     RepeatSeedProvenance,
     RunnerBackendIdentity,
     RunnerProvenanceError,
-    SeedAdjustment,
     SeedOrigin,
     SeedPlan,
     SeedResolutionError,
     WorkflowExecutionError,
     WorkflowKind,
-    bundle_from_frames,
-    failure_from_exception,
     write_public_bundle,
 )
 from cofolder.modules.input import load_yaml_document, system
@@ -51,6 +45,23 @@ from cofolder.modules.utils import gather, helpers, write
 from cofolder.modules.utils.timing import DebugTimingCollector
 from cofolder.recipes.bias import BiasAssessmentWorkflow
 from cofolder.recipes._completion import report_completion
+from cofolder.recipes._diagnostics import (
+    FailureStageTracker,
+    failure_stage_for_label,
+    workflow_failure,
+)
+from cofolder.recipes._execution import (
+    adjust_seed_plan,
+    detect_backend_identity,
+    validate_effective_seed,
+)
+from cofolder.recipes._results import (
+    existing_directory_artifacts,
+    manifest_provenance,
+    standard_evidence,
+    write_failure_bundle,
+    write_frame_bundle,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +251,7 @@ class Validate:
 
         self.timings = DebugTimingCollector(logger=self.logger)
         self._failure_stage = FailureStage.INPUT_VALIDATION
+        self._stage_tracker = FailureStageTracker(self.timings, self.logger)
 
     def preflight(self):
         """Validate and describe this workflow without executing it."""
@@ -281,10 +293,11 @@ class Validate:
 
     @contextmanager
     def _debug_timer(self, label: str):
+        tracker = self._stage_tracker.measure(label)
         previous = self._failure_stage
-        self._failure_stage = self._stage_for_label(label)
+        self._failure_stage = failure_stage_for_label(label)
         try:
-            with self.timings.measure(label, logger=self.logger):
+            with tracker:
                 yield
         except Exception:
             raise
@@ -293,76 +306,17 @@ class Validate:
 
     @staticmethod
     def _stage_for_label(label: str) -> FailureStage:
-        if label.startswith("runner.prepare"):
-            return FailureStage.PREPARATION
-        if label.startswith("runner.bundle"):
-            return FailureStage.OUTPUT_VALIDATION
-        if label.startswith(
-            ("structures.gather", "results.merge", "results.add_chain")
-        ):
-            return FailureStage.GATHER
-        if label.startswith(("scores.", "structure.")):
-            return FailureStage.ANALYTICS
-        if label.startswith("results.write"):
-            return FailureStage.SERIALIZATION
-        return FailureStage.INPUT_VALIDATION
+        return failure_stage_for_label(label)
 
     def _manifest_provenance(self) -> dict[str, object]:
-        if self.backend_identity is None or self.seed_plan is None:
-            return {}
-        return {
-            "backend": self.backend_identity,
-            "seed_plan": self.seed_plan,
-        }
+        return manifest_provenance(self.backend_identity, self.seed_plan)
 
     @staticmethod
     def _validate_effective_seed(
         original: RepeatSeedProvenance,
         adjusted: RepeatSeedProvenance,
     ) -> RepeatSeedProvenance:
-        if not isinstance(adjusted, RepeatSeedProvenance):
-            raise SeedResolutionError(
-                "Runner seed adjustment must return RepeatSeedProvenance."
-            )
-        immutable_fields = (
-            "repeat_id",
-            "requested_base_seed",
-            "resolved_base_seed",
-            "derived_seed",
-            "origin",
-        )
-        if any(
-            getattr(original, field) != getattr(adjusted, field)
-            for field in immutable_fields
-        ):
-            raise SeedResolutionError(
-                "Runner seed adjustment changed immutable seed provenance."
-            )
-        effective = adjusted.effective_seed
-        if (
-            isinstance(effective, bool)
-            or not isinstance(effective, int)
-            or not (0 <= effective <= 2**32 - 1)
-        ):
-            raise SeedResolutionError(
-                "Runner effective seed must be an integer between 0 and 4294967295."
-            )
-        changed = effective != original.derived_seed
-        if changed and (
-            adjusted.adjustment != SeedAdjustment.BACKEND_ADJUSTED
-            or not adjusted.adjustment_reason
-        ):
-            raise SeedResolutionError(
-                "A backend-adjusted seed requires an explicit adjustment status and reason."
-            )
-        if not changed and (
-            adjusted.adjustment != SeedAdjustment.UNCHANGED
-            or adjusted.adjustment_reason is not None
-        ):
-            raise SeedResolutionError(
-                "An unchanged seed must use adjustment='unchanged' without a reason."
-            )
-        return adjusted
+        return validate_effective_seed(original, adjusted)
 
     @report_completion(WorkflowKind.VALIDATE)
     def run(self):
@@ -373,8 +327,9 @@ class Validate:
         except PublicSerializationError:
             raise
         except Exception as exc:
-            failure = failure_from_exception(
-                exc,
+            output_dir = self.wrk_dir / "results"
+            failure = write_failure_bundle(
+                output_dir=output_dir,
                 identity=self.output_identity,
                 stage=self._failure_stage,
                 error_code=getattr(
@@ -382,19 +337,9 @@ class Validate:
                     "error_code",
                     f"validate_{self._failure_stage.value}_failed",
                 ),
-            )
-            output_dir = self.wrk_dir / "results"
-            write_public_bundle(
-                PublicOutputBundle(
-                    manifest=PublicManifest(
-                        schema_version=PUBLIC_SCHEMA_VERSION,
-                        identity=self.output_identity,
-                        status="failed",
-                        **self._manifest_provenance(),
-                    ),
-                    records=(failure,),
-                ),
-                output_dir,
+                exc=exc,
+                backend=self.backend_identity,
+                seed_plan=self.seed_plan,
             )
             raise WorkflowExecutionError(
                 str(exc), failures=(failure,), output_dir=output_dir
@@ -523,16 +468,13 @@ class Validate:
                 )
             with self._debug_timer("runner.prepare.availability"):
                 self.runner.ensure_available()
-                detect_backend = getattr(self.runner, "detect_backend_identity", None)
                 self.backend_identity = self.backend_identity or (
-                    detect_backend()
-                    if callable(detect_backend)
-                    else RunnerBackendIdentity(
-                        runner_name=self.runner_name,
-                        backend_name=self.runner_name,
-                        version=None,
-                        version_status=BackendVersionStatus.UNAVAILABLE,
-                        detail="Runner does not implement backend version detection.",
+                    detect_backend_identity(
+                        self.runner,
+                        self.runner_name,
+                        unavailable_detail=(
+                            "Runner does not implement backend version detection."
+                        ),
                     )
                 )
                 if self.backend_identity.version_status.value != "detected":
@@ -549,20 +491,10 @@ class Validate:
                     backend_version_status=self.backend_identity.version_status,
                 )
                 assert self.seed_plan is not None
-                resolve_effective_seed = getattr(
-                    self.runner, "resolve_effective_seed", None
-                )
-                adjusted_seeds = tuple(
-                    self._validate_effective_seed(
-                        original,
-                        resolve_effective_seed(original)
-                        if callable(resolve_effective_seed)
-                        else original,
-                    )
-                    for original in self.seed_plan.repeats
-                )
-                self.seed_plan = replace(self.seed_plan, repeats=adjusted_seeds)
-                self.run_seeds = [item.effective_seed for item in adjusted_seeds]
+                self.seed_plan = adjust_seed_plan(self.seed_plan, self.runner)
+                self.run_seeds = [
+                    item.effective_seed for item in self.seed_plan.repeats
+                ]
             with self._debug_timer("runner.prepare_system"):
                 preparation = self.runner.prepare_system(
                     # keep backend-specific prep behind the runner boundary
@@ -658,7 +590,7 @@ class Validate:
                     result = self.runner.run(request)
                 except Exception as exc:
                     workflow_failures.append(
-                        failure_from_exception(
+                        workflow_failure(
                             exc,
                             identity=replace(
                                 self.output_identity,
@@ -736,7 +668,7 @@ class Validate:
                         )
                     except Exception as exc:
                         workflow_failures.append(
-                            failure_from_exception(
+                            workflow_failure(
                                 exc,
                                 identity=replace(
                                     self.output_identity,
@@ -967,7 +899,7 @@ class Validate:
         *,
         stage: FailureStage = FailureStage.ANALYTICS,
     ):
-        return failure_from_exception(
+        return workflow_failure(
             exc,
             identity=self.output_identity,
             stage=stage,
@@ -1004,46 +936,29 @@ class Validate:
         failures=(),
         robustness_df=None,
     ) -> None:
-        evidence: list[EvidenceSource] = []
-        if self.reference_path is not None:
-            evidence.append(
-                EvidenceSource(
-                    kind="reference_structure",
-                    identifier=self.reference_path.name,
-                    path=str(self.reference_path),
-                )
-            )
-        if self.pocket_coverage_reference:
-            evidence.append(
-                EvidenceSource(
-                    kind="custom_pocket",
-                    identifier="configured_custom_pocket",
-                )
-            )
+        evidence = standard_evidence(
+            reference_path=self.reference_path,
+            pocket_coverage_reference=self.pocket_coverage_reference,
+        )
         requested = set(self.scoring_functions)
         if self.reproduction_metrics:
             requested.add("reproduction_metrics")
         if self.assess_bias:
             requested.add("bias_metrics")
-        artifact_refs: list[ArtifactReference] = []
-        for label, relative_path in (
-            ("predicted_structures", "structures"),
-            ("aligned_structures", "structures_aligned"),
-            ("robustness_matrices", "matrices"),
-            ("interaction_fingerprints", "ifp"),
-            ("bias_supporting_outputs", "bias_train"),
-        ):
-            if (self.wrk_dir / "results" / relative_path).exists():
-                artifact_refs.append(
-                    ArtifactReference(
-                        label=label,
-                        relative_path=relative_path,
-                        kind="directory",
-                    )
-                )
-        bundle = bundle_from_frames(
+        artifact_refs = existing_directory_artifacts(
+            self.wrk_dir / "results",
+            (
+                ("predicted_structures", "structures"),
+                ("aligned_structures", "structures_aligned"),
+                ("robustness_matrices", "matrices"),
+                ("interaction_fingerprints", "ifp"),
+                ("bias_supporting_outputs", "bias_train"),
+            ),
+        )
+        write_frame_bundle(
             system_df,
             chain_df,
+            output_dir=self.wrk_dir / "results",
             identity=self.output_identity,
             evidence=evidence,
             requested_metrics=requested,
@@ -1054,7 +969,6 @@ class Validate:
             backend=self.backend_identity,
             seed_plan=self.seed_plan,
         )
-        write_public_bundle(bundle, self.wrk_dir / "results")
 
     def _required_runner_metric_groups(self) -> set[str]:
         selected = self.scoring_functions & RUNNER_METRIC_GROUPS
