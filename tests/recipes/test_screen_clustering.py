@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from unittest.mock import patch
 
+import gemmi
 import pandas as pd
 import pytest
 import yaml
 
-from cofolder.modules.contracts import WorkflowExecutionError
+from cofolder.modules.contracts import OutputIdentity, WorkflowExecutionError, WorkflowKind
+from cofolder.recipes._results import write_frame_bundle
 from cofolder.recipes.screen import Screen
+from tests.modules.analytics.test_reproduction import _write_predicted_pdb
 
 
 def _screen(system_path, options_path, csv_path, work_dir, **kwargs):
@@ -36,6 +40,149 @@ def _write_ifp(validator, value):
             {"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ifp_distance": value},
         ]
     ).to_csv(results_dir / "chain_metrics.csv", index=False)
+
+
+@pytest.mark.parametrize("structure_suffix", [".pdb", ".cif"])
+@pytest.mark.parametrize("metric_source", ["public_records", "csv_fallback"])
+@pytest.mark.parametrize("taxonomy", ["distance", "prolif"])
+def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
+    structure_suffix,
+    metric_source,
+    taxonomy,
+    sample_system_yaml,
+    sample_options_yaml,
+    sample_csv_file,
+    temp_dir,
+    monkeypatch,
+):
+    run_dir = temp_dir / (
+        f"{taxonomy}-{metric_source}-{structure_suffix.removeprefix('.')}"
+    )
+    structures_dir = run_dir / "results" / "structures"
+    structures_dir.mkdir(parents=True)
+    pdb_path = structures_dir / "prediction.pdb"
+    _write_predicted_pdb(
+        pdb_path,
+        ((1.3, 1.2, 0.0), (2.7, 1.2, 0.0)),
+    )
+    structure_path = pdb_path
+    if structure_suffix == ".cif":
+        structure_path = structures_dir / "prediction.cif"
+        gemmi.read_structure(str(pdb_path)).make_mmcif_document().write_file(
+            str(structure_path)
+        )
+        pdb_path.unlink()
+
+    system_df = pd.DataFrame(
+        [
+            {
+                "cif_file": structure_path.name,
+                "model_name": "model-a",
+                "repeat": 2,
+                "diffusion_sample": 1,
+                "confidence_score": 0.9,
+            }
+        ]
+    )
+    chain_df = pd.DataFrame(
+        [
+            {
+                "CHAIN_ID": "A",
+                "ENTITY_TYPE": "protein",
+                "cif_file": structure_path.name,
+                "model_name": "model-a",
+                "repeat": 2,
+                "diffusion_sample": 1,
+                "chains_ptm": 0.8,
+            },
+            {
+                "CHAIN_ID": "Z",
+                "ENTITY_TYPE": "ligand",
+                "cif_file": structure_path.name,
+                "model_name": "model-a",
+                "repeat": 2,
+                "diffusion_sample": 1,
+                "chains_ptm": 0.7,
+            },
+        ]
+    )
+    if metric_source == "public_records":
+        write_frame_bundle(
+            system_df,
+            chain_df,
+            output_dir=run_dir / "results",
+            identity=OutputIdentity(
+                workflow=WorkflowKind.VALIDATE,
+                run_id="identity-proof",
+                system_id="system",
+                runner_id="boltz2",
+            ),
+        )
+    else:
+        system_df.to_csv(run_dir / "results" / "system_metrics.csv", index=False)
+        chain_df.to_csv(run_dir / "results" / "chain_metrics.csv", index=False)
+
+    if taxonomy == "prolif":
+        worker_payload = {
+            "ligand": {
+                "chain_id": "Z",
+                "residue_number": 1,
+                "insertion_code": "",
+                "residue_name": "LIG",
+            },
+            "receptor_chains": ["A"],
+            "interactions": ["A:1:HBAcceptor"],
+        }
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(
+                args[0], 0, json.dumps(worker_payload), ""
+            ),
+        )
+
+    screen = _screen(
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir / "screen",
+        ligand_chain="Z",
+        cluster_ifps=True,
+        ifp_taxonomy=taxonomy,
+    )
+    fingerprint, reason = screen._screen_postprocessor()._load_selected_interaction_fingerprint(
+        run_dir,
+        repeat_id=2,
+        sample_id=1,
+    )
+
+    assert reason == ""
+    assert fingerprint is not None
+    assert fingerprint.ligand.chain_id == "Z"
+    assert fingerprint.ligand.residue_number == 1
+    assert fingerprint.receptor_chains == ("A",)
+    assert fingerprint.interactions
+    assert {item.receptor.chain_id for item in fingerprint.interactions} == {"A"}
+    assert all(item.receptor.chain_id != "_legacy" for item in fingerprint.interactions)
+
+    clustered_rows = pd.DataFrame(
+        [
+            {
+                "compound_id": "identity-proof",
+                "execution_key": "identity-proof|repeat=2|model=model-a|sample=1",
+                "run_dir": str(run_dir),
+                "repeat_id": 2,
+                "sample_id": 1,
+                "status": "success",
+                **screen._default_cluster_result(),
+            }
+        ]
+    )
+    detailed_rows = clustered_rows.copy()
+    screen._apply_ifp_clustering(clustered_rows, detailed_rows)
+    assert clustered_rows["ifp_cluster_status"].tolist() == ["clustered"]
+    assert detailed_rows["ifp_cluster_id"].tolist() == ["IFP001"]
+    assert (temp_dir / "screen" / "results" / "ifp_cluster_summary.csv").is_file()
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)

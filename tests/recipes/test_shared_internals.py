@@ -177,6 +177,7 @@ sys.addaudithook(deny)
 import cofolder.recipes._execution
 import cofolder.recipes._diagnostics
 import cofolder.recipes._results
+import cofolder.recipes._screen_postprocess
 """
     before = tuple(temp_dir.iterdir())
     completed = subprocess.run(
