@@ -1,4 +1,4 @@
-"""Tests for cofolder.modules.utils.gather alignment orchestration."""
+"""Tests for canonical analytics aggregation orchestration."""
 
 import warnings
 from pathlib import Path
@@ -7,7 +7,7 @@ import pandas as pd
 
 from cofolder.modules.input.system import System
 from cofolder.modules.runners import build_runner_chain_identities
-from cofolder.modules.utils import gather
+from cofolder.modules.analytics import aggregation as gather
 
 
 def test_merge_runner_results_preserves_uint32_seed_exactly(temp_dir):
@@ -165,18 +165,18 @@ def test_gather_robustness_aligns_all_runs_to_reference_when_provided(
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._load_structures", _fake_load_structures
+        "cofolder.modules.analytics.aggregation.align._load_structures", _fake_load_structures
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._align_structures_on_protein_ca",
+        "cofolder.modules.analytics.aggregation.align._align_structures_on_protein_ca",
         _fake_align_structures_on_protein_ca,
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._compute_chain_rmsd",
+        "cofolder.modules.analytics.aggregation.align._compute_chain_rmsd",
         lambda chain_df, aligned_structs, wrk_dir: {},
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._compute_ligand_rmsd",
+        "cofolder.modules.analytics.aggregation.align._compute_ligand_rmsd",
         lambda chain_df, aligned_structs, wrk_dir: {},
     )
 
@@ -218,18 +218,18 @@ def test_gather_robustness_aligns_all_runs_to_first_predicted_when_no_reference(
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._load_structures", _fake_load_structures
+        "cofolder.modules.analytics.aggregation.align._load_structures", _fake_load_structures
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._align_structures_on_protein_ca",
+        "cofolder.modules.analytics.aggregation.align._align_structures_on_protein_ca",
         _fake_align_structures_on_protein_ca,
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._compute_chain_rmsd",
+        "cofolder.modules.analytics.aggregation.align._compute_chain_rmsd",
         lambda chain_df, aligned_structs, wrk_dir: {},
     )
     monkeypatch.setattr(
-        "cofolder.modules.utils.gather.align._compute_ligand_rmsd",
+        "cofolder.modules.analytics.aggregation.align._compute_ligand_rmsd",
         lambda chain_df, aligned_structs, wrk_dir: {},
     )
 

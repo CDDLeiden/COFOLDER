@@ -57,7 +57,6 @@ The public repo is organized around a few distinct user paths:
 - `examples/`: copy-and-run input files
 - repository `tutorials/`: interactive notebooks
 - `scripts/`: optional setup and bias-data helpers
-- `legacy/`: archived historical material
 
 For a concise map of those roles, see [Repository Tour](getting-started/repository-tour.md).
 

@@ -1,4 +1,4 @@
-"""Regression tests for MMseqs provenance in the bias-training builder."""
+"""Regression tests for MMseqs provenance in the installed bias-training builder."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sys
 
 import pandas as pd
 
-from cofolder.modules.analytics import build_bias_training_data as builder
+from cofolder.tools import build_bias_training_data as builder
 
 
 def _run_builder(

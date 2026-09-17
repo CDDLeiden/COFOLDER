@@ -17,7 +17,7 @@ from cofolder.modules.contracts import (
     RunnerProvenanceError,
     SeedOrigin,
 )
-from cofolder.modules.input.command import Command
+from cofolder.modules.input.config import RunnerOptions, RunnerRuntimeOptions
 from cofolder.modules.input.system import System
 from cofolder.modules.input.validation import SystemInputValidationError
 from cofolder.modules.runners.boltz2_runner import Boltz2Runner
@@ -131,7 +131,11 @@ def test_post_conformer_validation_rejects_missing_ligand_atom(temp_dir):
     with pytest.raises(SystemInputValidationError, match="atom 'N99'.*does not exist"):
         Boltz2Runner().validate_system(
             _prepared_constrained_system("N99"),
-            Command(options={"options": [{"cache": str(cache)}]}),
+            RunnerOptions(
+                version=1,
+                runtime=RunnerRuntimeOptions(cache_path=cache),
+                runner={},
+            ),
             check_atom_names=True,
         )
 

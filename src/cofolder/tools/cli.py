@@ -14,6 +14,8 @@ from cofolder.resources.examples import copy_examples
 COMMANDS = {
     "copy-examples": "Copy the packaged runnable examples to a workspace.",
     "setup-openfold3": "Prepare the OpenFold3 cache and checkpoints.",
+    "setup-boltz2-cache": "Explicitly prepare a Boltz2 cache.",
+    "populate-ccd-cache": "Populate an initialized Boltz2 CCD cache from SDF.",
     "install-mmseqs": "Install a verified vendored MMseqs2 executable.",
     "fetch-bias-training-data": "Prepare validated protein and ligand bias databases.",
     "build-bias-training-data": "Build bias-training reference tables.",
@@ -24,6 +26,8 @@ COMMANDS = {
 
 MODULES = {
     "setup-openfold3": "cofolder.tools.setup_openfold3",
+    "setup-boltz2-cache": "cofolder.tools.cache",
+    "populate-ccd-cache": "cofolder.tools.cache",
     "install-mmseqs": "cofolder.tools.install_mmseqs",
     "fetch-bias-training-data": "cofolder.tools.fetch_bias_training_data",
     "build-bias-training-data": "cofolder.tools.build_bias_training_data",
@@ -86,6 +90,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"argument command: invalid choice: '{command}'")
     if command == "copy-examples":
         return _copy_examples_main(args)
+    if command in {"setup-boltz2-cache", "populate-ccd-cache"}:
+        args.insert(0, command)
+    if command == "build-bias-training-data":
+        return _load_main(MODULES[command])(
+            args, prog="cofolder-tools build-bias-training-data"
+        )
     return _load_main(MODULES[command])(args)
 
 

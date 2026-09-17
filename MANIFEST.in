@@ -18,7 +18,6 @@ recursive-include examples *.cif *.csv *.md *.pdb *.py *.yaml
 recursive-include scripts *.md *.py *.sh
 
 prune src/cofolder/ui
-prune legacy
 prune .streamlit
 prune docs/project-knowledge
 

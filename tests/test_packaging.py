@@ -205,15 +205,7 @@ def test_unsupported_ui_is_absent_from_install_metadata():
     assert not any("ui" in script.lower() for script in scripts)
 
 
-def test_bias_training_builder_is_an_importable_package_module():
-    spec = importlib.util.find_spec(
-        "cofolder.modules.analytics.build_bias_training_data"
-    )
-
-    assert spec is not None
-    assert spec.origin is not None
-    assert Path(spec.origin).name == "build_bias_training_data.py"
-
+def test_bias_training_builder_is_an_importable_tool_module():
     tools_spec = importlib.util.find_spec("cofolder.tools.build_bias_training_data")
     assert tools_spec is not None
 
@@ -299,7 +291,6 @@ def test_sdist_manifest_excludes_unsupported_and_generated_material():
     required_exclusions = {
         "exclude tests/ui_development_check.py",
         "prune src/cofolder/ui",
-        "prune legacy",
         "prune .streamlit",
         "prune docs/project-knowledge",
         "global-exclude __pycache__",

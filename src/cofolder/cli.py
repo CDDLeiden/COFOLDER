@@ -131,7 +131,6 @@ class BaseRecipe:
         )
         scoring.add_argument(
             '--assess_bias',
-            '--asess_bias',
             dest='assess_bias',
             action=argparse.BooleanOptionalAction,
             default=False,

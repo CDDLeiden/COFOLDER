@@ -50,7 +50,8 @@ def _embedded_smiles(path: Path, residue_name: str) -> str | None:
 def _component_smiles(path: Path | None, residue_name: str) -> str | None:
     if path is None:
         return None
-    from cofolder.modules.analytics.bias import _components_cif_smiles_index, _path_cache_token
+    from cofolder.modules.analytics.bias._common import _path_cache_token
+    from cofolder.modules.analytics.bias._references import _components_cif_smiles_index
 
     return _components_cif_smiles_index(_path_cache_token(path)).get(
         residue_name.strip().upper()

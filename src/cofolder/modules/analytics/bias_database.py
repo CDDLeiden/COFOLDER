@@ -433,7 +433,7 @@ def _protein_references(
     cache_root: Path,
     threshold: float,
 ) -> tuple[pd.DataFrame, list[dict[str, str]]]:
-    from cofolder.modules.analytics.build_bias_training_data import _run_mmseqs
+    from cofolder.tools.build_bias_training_data import _run_mmseqs
     from cofolder.modules.analytics.bias_training import _resolve_mmseqs_bin
 
     metadata = pd.read_csv(bundle.metadata_path)

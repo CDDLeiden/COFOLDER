@@ -19,6 +19,8 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 EXPECTED_VERSION = "1.0.0"
 TOOL_COMMANDS = (
     "setup-openfold3",
+    "setup-boltz2-cache",
+    "populate-ccd-cache",
     "install-mmseqs",
     "fetch-bias-training-data",
     "build-bias-training-data",

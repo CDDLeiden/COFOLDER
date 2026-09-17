@@ -186,7 +186,7 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
-def test_screen_clusters_valid_ifps_and_excludes_invalid_or_incompatible_rows(
+def test_screen_does_not_cluster_vector_only_ifps_without_residue_identities(
     mock_validate_run,
     sample_system_yaml,
     sample_options_yaml,
@@ -221,30 +221,12 @@ def test_screen_clusters_valid_ifps_and_excludes_invalid_or_incompatible_rows(
         ifp_cluster_similarity_threshold=0.5,
     ).run()
 
-    assert results["ifp_cluster_id"].iloc[:4].tolist() == [
-        "IFP001",
-        "IFP001",
-        "IFP002",
-        "IFP003",
-    ]
-    assert results["ifp_cluster_id"].iloc[4:].isna().all()
-    assert results["ifp_cluster_status"].tolist() == [
-        "clustered",
-        "clustered",
-        "clustered",
-        "clustered",
-        "not_evaluable",
-        "not_evaluable",
-    ]
+    assert results["ifp_cluster_id"].isna().all()
+    assert results["ifp_cluster_status"].tolist() == ["not_evaluable"] * 6
     assert (temp_dir / "screen" / "results" / "records.jsonl").is_file()
 
     summary = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_summary.csv")
-    assert summary["ifp_cluster_id"].tolist() == ["IFP001", "IFP002", "IFP003"]
-    assert summary["size"].tolist() == [2, 1, 1]
-    assert json.loads(summary.loc[0, "member_ids"]) == [
-        "A|repeat=1|model=boltz2|sample=0",
-        "B|repeat=1|model=boltz2|sample=0",
-    ]
+    assert summary.empty
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
@@ -287,7 +269,8 @@ def test_acceptance_screen_combines_filtering_clustering_and_returned_dataframe(
         "accepted",
         "rejected",
     ]
-    assert results["ifp_cluster_id"].tolist() == ["IFP001", "IFP001", "IFP002"]
+    assert results["ifp_cluster_id"].isna().all()
+    assert results["ifp_cluster_status"].tolist() == ["not_evaluable"] * 3
     assert len(results) == 3
     assert (work_dir / "results" / "records.jsonl").is_file()
     assert (work_dir / "results" / "ifp_cluster_summary.csv").is_file()

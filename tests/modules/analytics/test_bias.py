@@ -10,18 +10,19 @@ import tempfile
 import pandas as pd
 import pytest
 
-from cofolder.modules.analytics import bias as bias_module
 from cofolder.modules.analytics import plots as plots_module
 from cofolder.modules.analytics.bias import _references as bias_references
 from cofolder.modules.analytics.bias import _similarity as bias_similarity
+from cofolder.modules.analytics.bias import _enrichment as bias_enrichment
+from cofolder.modules.analytics.bias import _artifacts as bias_artifacts
 from cofolder.modules.analytics.bias import (
     BIAS_TRAINING_DATA_COLUMNS,
-    _build_bias_training_dataset,
-    _build_protein_training_view,
-    _load_ligand_training,
-    _same_type_pair_dataset,
     apply_bias_metrics,
 )
+from cofolder.modules.analytics.bias._artifacts import _same_type_pair_dataset
+from cofolder.modules.analytics.bias._datasets import _build_bias_training_dataset
+from cofolder.modules.analytics.bias._references import _load_ligand_training
+from cofolder.modules.analytics.bias._similarity import _build_protein_training_view
 from cofolder.modules.analytics.plots import plot_bias_reference_overlap, plot_reference_overlap_scatter
 
 
@@ -271,11 +272,11 @@ def test_smiles_from_components_cif_reuses_cached_document(monkeypatch, temp_dir
         read_calls += 1
         return original_read_file(path)
 
-    bias_module._components_cif_smiles_index.cache_clear()
+    bias_references._components_cif_smiles_index.cache_clear()
     monkeypatch.setattr(bias_references.gemmi.cif, "read_file", _counting_read_file)
 
-    assert bias_module._smiles_from_components_cif("MG", components_cif) == "[Mg+2]"
-    assert bias_module._smiles_from_components_cif("K", components_cif) == "[K+]"
+    assert bias_references._smiles_from_components_cif("MG", components_cif) == "[Mg+2]"
+    assert bias_references._smiles_from_components_cif("K", components_cif) == "[K+]"
     assert read_calls == 1
 
 
@@ -867,7 +868,7 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
         lambda: "mmseqs",
     )
 
-    result = bias_module._mixed_pair_dataset(
+    result = bias_artifacts._mixed_pair_dataset(
         protein_label="A",
         ligand_label="MG",
         protein_query_sequence="SEQ_QUERY",
@@ -1088,7 +1089,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
         lambda: "mmseqs",
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         result,
         protein_queries={"A": "SEQ_QUERY"},
         ligand_queries={"B": "CCO"},
@@ -1164,7 +1165,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("MMseqs fallback should not run")),
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         rows,
         protein_queries={"A": "SEQ_QUERY"},
         ligand_queries={"MG": "[Mg+2]"},
@@ -1228,7 +1229,7 @@ def test_enrich_mixed_bias_dataset_expands_each_protein_over_all_recovered_ligan
         ],
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         rows,
         protein_queries={"A": "QUERY_SEQUENCE"},
         ligand_queries={"B": "QUERY_SMILES"},
@@ -1304,7 +1305,7 @@ def test_enrich_mixed_bias_dataset_expands_each_ligand_over_all_recovered_protei
         ),
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         rows,
         protein_queries={"A": "QUERY_SEQUENCE"},
         ligand_queries={"B": "QUERY_SMILES"},
@@ -1367,7 +1368,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_and_keeps_ligand_only
     )
 
     with caplog.at_level(logging.WARNING, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             rows,
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"MG": "[Mg+2]"},
@@ -1427,7 +1428,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_on_threshold_drift(
     )
 
     with caplog.at_level(logging.WARNING, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             rows,
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"MG": "[Mg+2]"},
@@ -1488,7 +1489,7 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_writes_progress_checkpoints
 
     output_path = temp_dir / "bias_training_data_A__B.csv"
     with caplog.at_level(logging.INFO, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             pd.DataFrame(rows),
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"B": "CCO"},
@@ -1560,7 +1561,7 @@ def test_enrich_same_type_ligand_pair_dataset_writes_progress_checkpoints(
 
     output_path = temp_dir / "bias_ligand_pair_data_B__MG.csv"
     with caplog.at_level(logging.INFO, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_same_type_ligand_pair_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_same_type_ligand_pair_dataset_with_pdb_backfill(
             pd.DataFrame(rows),
             ligand_queries={"B": "CCO", "MG": "[Mg+2]"},
             boltz_cache_path=Path(tempfile.gettempdir()),
@@ -1934,7 +1935,7 @@ def test_training_views_use_strict_manuscript_thresholds(monkeypatch):
         lambda *args, **kwargs: pd.Series([0.35, 0.36], index=ligands_df.index),
     )
 
-    ligand_view = bias_module._build_ligand_training_views(
+    ligand_view = bias_similarity._build_ligand_training_views(
         chain_df=chain_df,
         ligands_df=ligands_df,
         ligand_queries={"B": "QUERY_SMILES"},
@@ -1981,7 +1982,7 @@ def test_protein_reference_rejects_mixed_mmseqs_and_pairwise_scores(temp_dir):
     )
 
     with pytest.raises(ValueError, match="cannot contain both"):
-        bias_module._load_custom_protein_training(reference_path)
+        bias_references._load_custom_protein_training(reference_path)
 
 
 def test_combined_bias_rows_keep_mmseqs_and_pairwise_in_separate_columns():

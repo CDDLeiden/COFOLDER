@@ -1,10 +1,4 @@
-"""Runner discovery and public import surface.
-
-New code should author against the explicit contract types imported from
-`cofolder.modules.runners.contracts`. Legacy alias names remain exportable for
-import compatibility, but they are not the recommended surface for new runner
-implementations or contributor docs.
-"""
+"""Runner discovery and public import surface."""
 
 from __future__ import annotations
 
@@ -14,9 +8,6 @@ import pkgutil
 from cofolder.modules.runners.base import (
     BaseRunner,
     Runner,
-    RunnerPreparation,
-    RunnerRequest,
-    RunnerResult,
 )
 from cofolder.modules.runners.contracts import (
     RUNNER_PROVENANCE_COLUMNS,
@@ -95,10 +86,7 @@ __all__ = [
     "RunnerMetricOutcome",
     "RunnerModelSlot",
     "RunnerNormalizedBundle",
-    "RunnerPreparation",
     "RunnerPreparationResult",
-    "RunnerRequest",
-    "RunnerResult",
     "RunnerRuntime",
     "attach_runner_provenance",
     "attach_sample_provenance",

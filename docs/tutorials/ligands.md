@@ -115,14 +115,22 @@ mol_to_ccd("ETH", mol, boltz_path="~/.boltz")
 
 ### Cache Molecules from SDF
 
-```python
-from cofolder.modules.entities.ligand import cache_mols_from_sdf
+The equivalent installed commands are:
 
-cache_mols_from_sdf(
+```bash
+cofolder-tools setup-boltz2-cache --cache-path ~/.boltz
+cofolder-tools populate-ccd-cache --sdf ligands.sdf --property-id ID --cache-path ~/.boltz
+```
+
+```python
+from cofolder.tools.cache import populate_ccd_cache_from_sdf, setup_boltz2_cache
+
+setup_boltz2_cache("~/.boltz")  # explicit; may download and run backend setup
+populate_ccd_cache_from_sdf(
     file_path="ligands.sdf",
     property_id="ID",
     on_conflict="overwrite",
-    cache="~/.boltz/"
+    cache_path="~/.boltz/"
 )
 ```
 
@@ -220,10 +228,11 @@ bond_constraints = extract_constraints(constraints, 'is_bond')
 
 **Solution:**
 ```python
-cache_mols_from_sdf(
+populate_ccd_cache_from_sdf(
     file_path="ligands.sdf",
     property_id="ID",
-    on_conflict="overwrite"  # or "use_cache"
+    on_conflict="overwrite",  # or "use_cache"
+    cache_path="~/.boltz/",
 )
 ```
 
@@ -245,8 +254,8 @@ from rdkit import Chem
 from cofolder.modules.entities.ligand import (
     csv_to_sdf,
     generate_3d_conformers,
-    cache_mols_from_sdf
 )
+from cofolder.tools.cache import populate_ccd_cache_from_sdf, setup_boltz2_cache
 
 # 1. Convert CSV to SDF
 csv_to_sdf(
@@ -261,10 +270,12 @@ generate_3d_conformers(
     sdf_out="compounds_3d.sdf"
 )
 
-# 3. Cache to Boltz
-cache_mols_from_sdf(
+# 3. Explicitly set up Boltz, then populate its CCD cache
+setup_boltz2_cache("~/.boltz")
+populate_ccd_cache_from_sdf(
     file_path="compounds_3d.sdf",
-    property_id="id"
+    property_id="id",
+    cache_path="~/.boltz",
 )
 ```
 

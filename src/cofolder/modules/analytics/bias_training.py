@@ -58,7 +58,7 @@ def run_build_bias_training_data(
             sys.executable,
             "-u",
             "-m",
-            "cofolder.modules.analytics.build_bias_training_data",
+            "cofolder.tools.build_bias_training_data",
             "--system_path",
             str(system_path),
             "--components_cif",

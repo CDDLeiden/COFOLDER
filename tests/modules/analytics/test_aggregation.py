@@ -6,7 +6,7 @@ import math
 import pandas as pd
 
 from cofolder.modules.analytics import aggregation
-from cofolder.modules.utils import gather
+from cofolder.modules.analytics import aggregation as gather
 
 
 AGGREGATION_FUNCTIONS = (
@@ -22,7 +22,7 @@ AGGREGATION_FUNCTIONS = (
 )
 
 
-def test_legacy_gather_facade_aliases_all_canonical_functions():
+def test_aggregation_exports_all_canonical_functions():
     for name in AGGREGATION_FUNCTIONS:
         assert getattr(gather, name) is getattr(aggregation, name)
 
@@ -56,5 +56,5 @@ def test_canonical_gather_structures_preserves_structure_inventory(temp_dir, cap
     target = temp_dir / "results" / "structures"
     assert [path.name for path in target.iterdir()] == ["model.cif"]
     assert {record.name for record in caplog.records} == {
-        "cofolder.modules.utils.gather"
+        "cofolder.modules.analytics.aggregation"
     }

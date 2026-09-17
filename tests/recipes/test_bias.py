@@ -97,7 +97,7 @@ class TestBiasRun:
                 {"target": "2BBB_B", "pident": 30.0 if sequence == "AAAA" else 80.0, "tseq": "CCCC"},
             ])
 
-        monkeypatch.setattr("cofolder.modules.analytics.build_bias_training_data._run_mmseqs", fake_mmseqs)
+        monkeypatch.setattr("cofolder.tools.build_bias_training_data._run_mmseqs", fake_mmseqs)
         monkeypatch.setattr("cofolder.modules.analytics.bias_training._resolve_mmseqs_bin", lambda: "mmseqs")
         monkeypatch.setattr("cofolder.modules.analytics.bias_database._mmseqs_version", lambda binary: "fixture")
         bias = Bias(

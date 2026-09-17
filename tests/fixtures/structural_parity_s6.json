@@ -94,14 +94,14 @@
       "ifp_cluster_summary.csv"
     ],
     "decisions": [
-      ["hit", "success", "accepted", "IFP001"],
+      ["hit", "success", "accepted", null],
       ["hit", "unavailable", "not_evaluable", null],
       ["failed", "failed", "not_evaluable", null],
       ["failed", "failed", "not_evaluable", null],
-      ["miss", "success", "rejected", "IFP002"],
+      ["miss", "success", "rejected", null],
       ["miss", "unavailable", "not_evaluable", null]
     ],
-    "digest": "087af4ef02efe003dcb1ec8e044320313b8c074c19b2fb575a8155e7b7ca06d0",
+    "digest": "43e4b362fe4f82524a63600795adda64ca8561c4b7cc6200e78f81387a19d7eb",
     "failures": [["backend_execution", "screen_compound_failed"]],
     "files": [
       "compound_members.csv",

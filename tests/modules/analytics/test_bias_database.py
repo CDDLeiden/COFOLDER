@@ -97,7 +97,7 @@ def test_materializes_distinct_multi_entity_references_and_strict_cutoff(
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.build_bias_training_data._run_mmseqs", fake_mmseqs
+        "cofolder.tools.build_bias_training_data._run_mmseqs", fake_mmseqs
     )
     monkeypatch.setattr(
         "cofolder.modules.analytics.bias_training._resolve_mmseqs_bin", lambda: "mmseqs"
@@ -159,7 +159,7 @@ def test_whole_policy_and_shared_component_cache_across_work_directories(
             ]
         )
 
-    monkeypatch.setattr("cofolder.modules.analytics.build_bias_training_data._run_mmseqs", fake_mmseqs)
+    monkeypatch.setattr("cofolder.tools.build_bias_training_data._run_mmseqs", fake_mmseqs)
     monkeypatch.setattr("cofolder.modules.analytics.bias_training._resolve_mmseqs_bin", lambda: "mmseqs")
     monkeypatch.setattr(bias_database, "_mmseqs_version", lambda binary: "test-version")
     monkeypatch.setattr(bias_database, "_run_mmseqs_backfill", lambda *args: pd.DataFrame())
@@ -208,7 +208,7 @@ def test_component_thresholds_filter_after_shared_raw_cache(monkeypatch, temp_di
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.build_bias_training_data._run_mmseqs",
+        "cofolder.tools.build_bias_training_data._run_mmseqs",
         fake_mmseqs,
     )
     monkeypatch.setattr(
@@ -296,7 +296,7 @@ def test_second_system_hits_shared_components_and_misses_only_changed_components
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.build_bias_training_data._run_mmseqs",
+        "cofolder.tools.build_bias_training_data._run_mmseqs",
         fake_mmseqs,
     )
     monkeypatch.setattr(
@@ -395,7 +395,7 @@ def test_materialization_backfills_ligand_only_pdb_offline_and_reuses_cache(
             "sequence_similarity_method": "mmseqs_pident",
         }])
 
-    monkeypatch.setattr("cofolder.modules.analytics.build_bias_training_data._run_mmseqs", bulk)
+    monkeypatch.setattr("cofolder.tools.build_bias_training_data._run_mmseqs", bulk)
     monkeypatch.setattr("cofolder.modules.analytics.bias_training._resolve_mmseqs_bin", lambda: "mmseqs")
     monkeypatch.setattr(bias_database, "_mmseqs_version", lambda binary: "test-version")
     monkeypatch.setattr(bias_database, "_run_mmseqs_backfill", backfill)
@@ -443,7 +443,7 @@ def test_backfill_boundary_warning_uses_configured_protein_threshold(
         _bundle(temp_dir / "ligand", "ligand"), "ligand"
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.build_bias_training_data._run_mmseqs",
+        "cofolder.tools.build_bias_training_data._run_mmseqs",
         lambda *args: pd.DataFrame(
             [{"target": "1AAA_A", "pident": 90.0, "tseq": "AAAA"}]
         ),

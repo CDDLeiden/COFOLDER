@@ -26,12 +26,9 @@ from cofolder.modules.analytics.reference_ifp import (
     IFPSimilarityMetric,
     IFPTaxonomy,
     InteractionFingerprint,
-    InteractionKey,
-    LigandIdentity,
     LigandSelector,
     ReferenceEntitySelectionError,
     ReferenceIFPError,
-    ResidueIdentity,
     compare_interaction_fingerprints,
     extract_interaction_fingerprint,
     map_reference_identities,
@@ -190,7 +187,6 @@ class ScreenPostprocessor:
             return
 
         parsed_rows: list[tuple[int, InteractionFingerprint, str]] = []
-        legacy_width: int | None = None
         for position, row in summary_df.iterrows():
             if row.get("status") != "success":
                 continue
@@ -203,35 +199,6 @@ class ScreenPostprocessor:
                     else None
                 ),
             )
-            if fingerprint is None and self.ifp_taxonomy is IFPTaxonomy.DISTANCE:
-                vector, _ = self._load_selected_ligand_ifp(
-                    Path(row["run_dir"]),
-                    repeat_id=int(row["repeat_id"]),
-                    sample_id=(
-                        int(row["sample_id"])
-                        if pd.notna(row.get("sample_id"))
-                        else None
-                    ),
-                )
-                if vector is not None:
-                    if legacy_width is None:
-                        legacy_width = len(vector)
-                    if len(vector) != legacy_width:
-                        continue
-                    fingerprint = InteractionFingerprint(
-                        taxonomy=IFPTaxonomy.DISTANCE,
-                        ligand=LigandIdentity(self.ligand_chain, 0),
-                        receptor_chains=("_legacy",),
-                        interactions=frozenset(
-                            InteractionKey(
-                                ResidueIdentity("_legacy", index + 1),
-                                "distance_contact",
-                            )
-                            for index, active in enumerate(vector)
-                            if active
-                        ),
-                        source_path=Path(row["run_dir"]),
-                    )
             if fingerprint is None:
                 continue
             parsed_rows.append((position, fingerprint, str(row["execution_key"])))
@@ -331,35 +298,6 @@ class ScreenPostprocessor:
             result = (None, str(exc))
         self._prediction_ifp_cache[cache_key] = result
         return result
-
-    def _load_selected_ligand_ifp(
-        self,
-        run_dir: Path,
-        *,
-        repeat_id: int | None = None,
-        sample_id: int | None = None,
-    ) -> tuple[list[int] | None, str]:
-        _, chain_df = read_metric_frames(run_dir)
-        if chain_df.empty:
-            return None, "missing_chain_metrics"
-        required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
-        if chain_df.empty or not required.issubset(chain_df.columns):
-            return None, "missing_ifp"
-        chain_df = self._select_chain_metrics_rows(
-            chain_df, repeat_id=repeat_id, sample_id=sample_id
-        )
-        ligand_rows = chain_df[
-            chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
-        ]
-        if self.ligand_chain:
-            ligand_rows = ligand_rows[
-                ligand_rows["CHAIN_ID"].astype(str) == self.ligand_chain
-            ]
-        elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
-            return None, "ambiguous_ligand_chain"
-        if ligand_rows.empty:
-            return None, "ligand_chain_not_found"
-        return self._parse_binary_ifp(ligand_rows.iloc[0].get("ifp_distance"))
 
     def _default_filter_result(self) -> dict[str, Any]:
         if self._ifp_filter_enabled():
@@ -782,6 +720,5 @@ class ScreenPostprocessor:
         if "CHAIN_ID" in df.columns:
             return df.drop_duplicates(subset=["CHAIN_ID"], keep="first")
         return df
-
 
 

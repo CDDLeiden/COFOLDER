@@ -1185,7 +1185,7 @@ class TestValidateRun:
             ),
         )
         monkeypatch.setattr(
-            "cofolder.modules.analytics.build_bias_training_data._run_mmseqs",
+            "cofolder.tools.build_bias_training_data._run_mmseqs",
             lambda *args: pd.DataFrame(
                 [{"target": "1ABC_A", "pident": 80.0, "tseq": "MKRAAT"}]
             ),

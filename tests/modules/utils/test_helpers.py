@@ -1,11 +1,12 @@
-"""Tests for cofolder.modules.utils.helpers module."""
+"""Tests for canonical utility and affinity modules."""
 
 import pandas as pd
 import pytest
 from rdkit import Chem
 
+from cofolder.modules.analytics import dataset, plots, stats
 from cofolder.modules.contracts import SeedOrigin, SeedResolutionError
-from cofolder.modules.utils import helpers
+from cofolder.modules.utils import helpers, read, write
 
 
 class TestSeedPlan:
@@ -81,20 +82,6 @@ class TestCreateDir:
         assert temp_dir.exists()
 
 
-class TestSetDir:
-    """Tests for set_dir function."""
-
-    def test_create_new_directory(self, temp_dir):
-        """Test creating a new directory."""
-        new_dir = temp_dir / "set_test_dir"
-        assert not new_dir.exists()
-
-        helpers.set_dir(str(new_dir))
-
-        assert new_dir.exists()
-        assert new_dir.is_dir()
-
-
 class TestParseListAsStr:
     """Tests for parse_list_as_str function."""
 
@@ -144,7 +131,7 @@ class TestReadYaml:
 
     def test_read_valid_yaml(self, sample_yaml_file):
         """Test reading a valid YAML file."""
-        data = helpers.read_yaml(str(sample_yaml_file))
+        data = read.read_yaml(str(sample_yaml_file))
 
         assert data is not None
         assert data["key1"] == "value1"
@@ -152,7 +139,7 @@ class TestReadYaml:
 
     def test_read_nonexistent_file(self, temp_dir):
         """Test reading a nonexistent file."""
-        result = helpers.read_yaml(str(temp_dir / "nonexistent.yaml"))
+        result = read.read_yaml(str(temp_dir / "nonexistent.yaml"))
         assert result is None
 
 
@@ -161,7 +148,7 @@ class TestReadCsv:
 
     def test_read_valid_csv(self, sample_csv_file):
         """Test reading a valid CSV file."""
-        df = helpers.read_csv(str(sample_csv_file), columns=["compound_id", "smiles"])
+        df = read.read_csv(str(sample_csv_file), columns=["compound_id", "smiles"])
 
         assert df is not None
         assert len(df) == 2
@@ -170,7 +157,7 @@ class TestReadCsv:
 
     def test_missing_column_warning(self, sample_csv_file, caplog):
         """Test warning for missing column."""
-        df = helpers.read_csv(str(sample_csv_file), columns=["nonexistent"])
+        df = read.read_csv(str(sample_csv_file), columns=["nonexistent"])
         assert df is not None
 
 
@@ -189,7 +176,7 @@ class TestReadSdf:
         writer.write(mol2)
         writer.close()
 
-        mols = helpers.read_sdf(str(sdf_path))
+        mols = read.read_sdf(str(sdf_path))
 
         assert mols is not None
         assert len(mols) == 2
@@ -203,7 +190,7 @@ class TestDeleteLastLine:
         test_file = temp_dir / "test.txt"
         test_file.write_text("line1\nline2\nline3\n")
 
-        helpers.delete_last_line(str(test_file))
+        write.delete_last_line(str(test_file))
 
         content = test_file.read_text()
         assert content == "line1\nline2\n"
@@ -213,7 +200,7 @@ class TestDeleteLastLine:
         test_file = temp_dir / "test.txt"
         test_file.write_text("single line\n")
 
-        helpers.delete_last_line(str(test_file))
+        write.delete_last_line(str(test_file))
 
         content = test_file.read_text()
         assert content == ""
@@ -223,7 +210,7 @@ class TestDeleteLastLine:
         test_file = temp_dir / "test.txt"
         test_file.write_text("")
 
-        helpers.delete_last_line(str(test_file))
+        write.delete_last_line(str(test_file))
 
         content = test_file.read_text()
         assert content == ""
@@ -235,7 +222,7 @@ class TestParseCensoredAffinity:
     def test_parse_with_signs(self):
         """Test parsing affinity values with censoring signs."""
         series = pd.Series([">5.0", "<=6.5", "7.2", "<4.0"])
-        result = helpers.parse_censored_affinity(series, keep_sign=True)
+        result = dataset.parse_censored_affinity(series, keep_sign=True)
 
         assert result["affinity_value"].tolist() == [5.0, 6.5, 7.2, 4.0]
         assert result["affinity_sign"].tolist() == [">", "<=", None, "<"]
@@ -243,7 +230,7 @@ class TestParseCensoredAffinity:
     def test_parse_without_signs(self):
         """Test parsing with signs removed."""
         series = pd.Series([">5.0", "6.5"])
-        result = helpers.parse_censored_affinity(series, keep_sign=False)
+        result = dataset.parse_censored_affinity(series, keep_sign=False)
 
         assert all(pd.isnull(result["affinity_sign"]))
 
@@ -257,7 +244,7 @@ class TestRemoveCensoredAffinity:
             "affinity": [">5.0", "6.5", "<=7.2", "8.0"],
             "other": [1, 2, 3, 4]
         })
-        result = helpers.remove_censored_affinity(df, ["affinity"])
+        result = dataset.remove_censored_affinity(df, ["affinity"])
 
         assert len(result) == 2
         assert result["affinity"].tolist() == ["6.5", "8.0"]
@@ -272,7 +259,7 @@ class TestStripCensoringSigns:
             "aff1": [">5.0", "6.5", "<=7.2"],
             "aff2": ["<4.0", "5.5", ">=6.0"]
         })
-        result = helpers.strip_censoring_signs(df, ["aff1", "aff2"])
+        result = dataset.strip_censoring_signs(df, ["aff1", "aff2"])
 
         assert result["aff1"].tolist() == [5.0, 6.5, 7.2]
         assert result["aff2"].tolist() == [4.0, 5.5, 6.0]
@@ -287,7 +274,7 @@ class TestPrepareAffinityDataframe:
             "pred": [">5.0", "6.5", "7.0"],
             "exp": ["5.5", "6.0", "<7.5"]
         })
-        result = helpers.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="remove")
+        result = dataset.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="remove")
 
         assert len(result) == 1
         assert result["pred"].tolist() == ["6.5"]
@@ -298,7 +285,7 @@ class TestPrepareAffinityDataframe:
             "pred": [">5.0", "6.5"],
             "exp": ["5.5", "<6.0"]
         })
-        result = helpers.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="strip")
+        result = dataset.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="strip")
 
         assert len(result) == 2
         assert result["pred"].tolist() == [5.0, 6.5]
@@ -308,7 +295,7 @@ class TestPrepareAffinityDataframe:
         """Test with invalid censoring mode."""
         df = pd.DataFrame({"pred": [5.0], "exp": [5.0]})
         with pytest.raises(ValueError, match="censoring must be"):
-            helpers.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="invalid")
+            dataset.prepare_affinity_dataframe(df, ["pred", "exp"], censoring="invalid")
 
 
 class TestConvertBoltzAffinityToIc50:
@@ -319,7 +306,7 @@ class TestConvertBoltzAffinityToIc50:
         df = pd.DataFrame({
             "affinity_pred_value": [6.0, 7.0, 8.0]
         })
-        result = helpers.convert_boltz_affinity_to_ic50(df)
+        result = stats.convert_boltz_affinity_to_ic50(df)
 
         assert "IC50_uM" in result.columns
         assert "pIC50_kcal_per_mol" in result.columns
@@ -330,7 +317,7 @@ class TestConvertBoltzAffinityToIc50:
         df = pd.DataFrame({"affinity_pred_value": [6.0]})
         output_path = temp_dir / "output.csv"
 
-        helpers.convert_boltz_affinity_to_ic50(df, output_path=str(output_path))
+        stats.convert_boltz_affinity_to_ic50(df, output_path=str(output_path))
 
         assert output_path.exists()
 
@@ -360,7 +347,7 @@ class TestCalculateAffinityCorrelations:
             "pred": [5.0, 6.0, 7.0, 8.0, 9.0],
             "exp": [5.2, 6.1, 6.9, 8.2, 8.8]
         })
-        metrics = helpers.calculate_affinity_correlations(df, "pred", "exp")
+        metrics = stats.calculate_affinity_correlations(df, "pred", "exp")
 
         assert "r2" in metrics
         assert "pearson" in metrics
@@ -386,7 +373,7 @@ class TestPlotAffinityCorrelation:
         })
         output_path = temp_dir / "plot.png"
 
-        helpers.plot_affinity_correlation(
+        plots.plot_affinity_correlation(
             df, "pred", "exp", output_path=str(output_path)
         )
 

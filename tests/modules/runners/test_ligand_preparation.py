@@ -10,7 +10,6 @@ from pathlib import Path
 from rdkit import Chem
 
 from cofolder.modules.entities import ligand
-from cofolder.modules.input.command import Command
 from cofolder.modules.input.system import System
 from cofolder.modules.runners import _ligand_preparation
 
@@ -116,25 +115,6 @@ def test_prepare_ligand_conformers_preserves_supplied_sdf_order_and_failures(
     assert result == {"L1": "ETH", "L2": "ETN"}
     assert attempted == [("ETH", "CCO"), ("ETN", "CCN")]
     assert sdf_path.exists()
-
-
-def test_legacy_handle_conformers_facade_preserves_command_cache(monkeypatch, temp_dir):
-    captured = {}
-
-    def fake_prepare(*args, **kwargs):
-        captured.update(kwargs)
-        return {"L": "ABCDE"}
-
-    monkeypatch.setattr(_ligand_preparation, "prepare_ligand_conformers", fake_prepare)
-    options = Command(options={"options": [{"cache": str(temp_dir / "legacy")}]})
-
-    result = ligand.handle_conformers(
-        object(), options, str(temp_dir), conformers="2D", logger=logging.getLogger(__name__)
-    )
-
-    assert result == {"L": "ABCDE"}
-    assert captured["cache_path"] == temp_dir / "legacy"
-    assert captured["conformers"] == "2D"
 
 
 def test_importing_extracted_boundaries_has_no_execution_side_effects(temp_dir):

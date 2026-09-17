@@ -120,7 +120,6 @@ These top-level paths now have distinct roles:
 - [`examples/`](examples/): copyable input files and small fixtures used by quickstarts and docs
 - [`tutorials/`](tutorials/): interactive notebook tutorials for hands-on exploration
 - [`scripts/`](scripts/): helper utilities for optional setup and bias-data preparation
-- [`legacy/`](legacy/): archival material preserved for traceability, not the recommended public path
 - [`LICENSE`](LICENSE) and [`THIRD_PARTY_SOFTWARE.md`](THIRD_PARTY_SOFTWARE.md): repository licensing and third-party attribution
 
 For a short tour of how these pieces fit together, see [docs/getting-started/repository-tour.md](docs/getting-started/repository-tour.md).
@@ -130,7 +129,6 @@ For a short tour of how these pieces fit together, see [docs/getting-started/rep
 - [examples/README.md](examples/README.md) explains which example files to use first.
 - [tutorials/README.md](tutorials/README.md) gives a recommended notebook order.
 - [scripts/README.md](scripts/README.md) separates supported helpers from maintainer-oriented utilities.
-- [legacy/README.md](legacy/README.md) explains what is archived there and why it should not be the first stop for new users.
 
 ## Documentation
 

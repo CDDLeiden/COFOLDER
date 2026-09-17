@@ -47,10 +47,8 @@ At a high level, COFOLDER calls a runner in six steps:
 
 The supported contract types live in `src/cofolder/modules/runners/contracts.py`, and `src/cofolder/modules/runners/base.py` provides the default no-op preparation path for simple runners.
 
-Compatibility note:
-
-- Import and author against `RunnerExecutionRequest`, `RunnerExecutionResult`, and `RunnerPreparationResult`.
-- Legacy alias names such as `RunnerRequest`, `RunnerResult`, and `RunnerPreparation` may remain importable for compatibility, but they are not the recommended authoring surface for new code or docs.
+Import and author against `RunnerExecutionRequest`, `RunnerExecutionResult`, and
+`RunnerPreparationResult`.
 
 Every runner must also declare `input_capabilities = RunnerInputCapabilities(...)`.
 List only entity and constraint types that the adapter preserves and the backend
@@ -221,7 +219,7 @@ After that, COFOLDER takes over again:
 - per-repeat private CSVs are converted into the versioned public record bundle under `results/`
 - shared analytics such as structure metrics, reproduction metrics, bias, and robustness run on the normalized bundle
 
-The merge step is implemented in `src/cofolder/modules/utils/gather.py`.
+The merge step is implemented in `src/cofolder/modules/analytics/aggregation.py`.
 
 `manifest.json` may still include `runtime_context` for debugging and provenance, but shared recipe logic should rely on the typed `RunnerRuntime` contract rather than re-reading loose runtime dictionaries.
 

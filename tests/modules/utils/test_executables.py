@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from cofolder.modules.analytics import bias_training, build_bias_training_data
+from cofolder.modules.analytics import bias_training
+from cofolder.tools import build_bias_training_data
 from cofolder.modules.utils.executables import resolve_mmseqs_executable
 from cofolder.tools import fetch_bias_training_data
 

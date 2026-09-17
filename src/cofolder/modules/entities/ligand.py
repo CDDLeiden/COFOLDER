@@ -8,7 +8,6 @@ import importlib
 import logging
 import os
 import pickle
-from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +17,6 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, rdDepictor, rdmolops
 
-from cofolder.modules.input import command
 from cofolder.modules.utils import read, write
 
 if TYPE_CHECKING:
@@ -38,52 +36,6 @@ def _load_parse_ccd_residue():
         ) from exc
     return module.parse_ccd_residue
 
-
-def handle_conformers(
-    sys_obj,
-    opt_obj,
-    wrk_dir: str,
-    conformers: Optional[str] = None,
-    sdf_file: Optional[Union[str, Path]] = None,
-    logger: Optional[logging.Logger] = None,
-) -> Optional[str]:
-    """Compatibility facade for Boltz-facing ligand preparation.
-
-    Parameters
-    ----------
-    sys_obj : System
-        The system object containing ligand information (must support find_value and update_system).
-    opt_obj : Command
-        Boltz options object (must support find_value).
-    wrk_dir : str
-        Working directory where temporary SDF may be written.
-    conformers : {"2D", "3D", "sdf"}, optional
-        Type of conformer generation requested.
-    sdf_file : str or Path, optional
-        Existing SDF file to use (required if conformers="sdf").
-    global_seed : int, optional
-        Global seed used as fallback for residue name if none found.
-    logger : logging.Logger, optional
-        Logger to use. Defaults to root logger if None.
-
-    Returns
-    -------
-    resname : str
-        mapping of ligand id -> CCD residue name..
-    """
-    from cofolder.modules.runners._ligand_preparation import (
-        prepare_ligand_conformers,
-    )
-
-    cache_path = Path(opt_obj.find_value(key="cache") or "~/.boltz").expanduser()
-    return prepare_ligand_conformers(
-        sys_obj,
-        cache_path=cache_path,
-        wrk_dir=wrk_dir,
-        conformers=conformers,
-        sdf_file=sdf_file,
-        logger=logger,
-    )
 
 def sanitize_mol_id(mol_id: str) -> str:
     """Ensure molecule ID complies with CCD naming rules (max 5 characters).
@@ -555,100 +507,6 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
         logger.debug("All atoms have 'name' property.")
         
     write.write_pickle(mol, mols_dir / f"{resname}.pkl")
-
-def cache_mols_from_sdf(file_path: str, property_id: str, on_conflict: str = 'overwrite', cache: str = "~/.boltz/"):
-    """Batch convert SDF molecules to CCD format and add to cache.
-
-    Reads all molecules from an SDF file, converts each to CCD format,
-    and stores them in the Boltz cache directory for use in predictions.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to the input SDF file.
-    property_id : str
-        SDF property name to use as molecule identifier.
-    on_conflict : {'use_cache', 'overwrite'}, default='overwrite'
-        Behavior when a CCD file already exists:
-        - 'use_cache': Skip processing, keep existing CCD
-        - 'overwrite': Replace existing CCD with new conversion
-    cache : str, default="~/.boltz/"
-        Path to Boltz cache directory.
-
-    Raises
-    ------
-    FileNotFoundError
-        If the input SDF file does not exist.
-    ValueError
-        If duplicate molecule IDs are found in the SDF file, or if
-        on_conflict has an invalid value.
-
-    Notes
-    -----
-    - Automatically prepares the default Boltz2 cache when required components
-      are missing or empty
-    - Duplicate IDs in the SDF file cause an error before processing
-    - Logs statistics on success, failure, and skipped molecules
-    - Failed conversions are logged but don't stop the batch process
-    """
-    file_path = os.path.expanduser(file_path)
-    cache = os.path.expanduser(cache)
-    if on_conflict not in {"use_cache", "overwrite"}:
-        raise ValueError(f"Invalid on_conflict mode: {on_conflict}")
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"Input file not found: {file_path}")
-
-    # Fully validate the source before creating cache artifacts or running setup.
-    suppl = read.read_sdf(file_path)
-    if not suppl:
-        raise ValueError(f"SDF contains no valid molecule records: {file_path}")
-    missing_ids = [
-        index
-        for index, mol in enumerate(suppl)
-        if not mol.HasProp(property_id) or not mol.GetProp(property_id).strip()
-    ]
-    if missing_ids:
-        raise ValueError(
-            f"SDF records {missing_ids} are missing required property "
-            f"'{property_id}'"
-        )
-    ids = [mol.GetProp(property_id) for mol in suppl]
-    duplicates = [i for i, c in Counter(ids).items() if c > 1]
-    if duplicates:
-        raise ValueError(f"Duplicate molecule IDs found in SDF: {duplicates}")
-
-    command._ensure_boltz2_cache(cache)
-    mols_dir = Path(cache) / "mols"
-
-    # Existing cache
-    cached_ids = {f.stem for f in mols_dir.glob("*.pkl")}
-    overlap_ids = set(ids) & cached_ids
-    if overlap_ids:
-        logger.info(f"Found {len(overlap_ids)} overlapping IDs with cache: {sorted(list(overlap_ids))[:10]}...")
-
-    n_success, n_fail, n_skipped = 0, 0, 0
-    for mol in suppl:
-        if mol is None:
-            continue
-        mol_id = mol.GetProp(property_id)
-        mol_file = mols_dir / f"{mol_id}.pkl"
-
-        if mol_file.exists():
-            if on_conflict == "use_cache":
-                logger.info(f"Using cached CCD for {mol_id}")
-                n_skipped += 1
-                continue
-            elif on_conflict == "overwrite":
-                logger.info(f"Overwriting cached CCD for {mol_id}")
-
-        try:
-            mol_to_ccd(mol_id, mol, boltz_path=cache)
-            n_success += 1
-        except Exception as e:
-            logger.error(f"Failed to process ID {mol_id}: {e}")
-            n_fail += 1
-
-    logger.info(f"Caching complete — Success: {n_success}, Failed: {n_fail}, Skipped: {n_skipped}")
 
 if __name__ == "__main__":
     print("Testing mol_to_ccd with ethanol (CCO)...")

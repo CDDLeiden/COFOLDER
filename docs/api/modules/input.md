@@ -1,10 +1,10 @@
 # Input Module
 
-This module handles input processing and command construction.
+This module handles typed options and molecular-system input processing.
 
-## Command
+## Typed Runner Options
 
-::: cofolder.modules.input.command
+::: cofolder.modules.input.config
     options:
       show_root_heading: true
       show_source: true

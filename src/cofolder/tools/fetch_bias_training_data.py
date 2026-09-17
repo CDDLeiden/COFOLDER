@@ -440,7 +440,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else pd.Series(dtype=bool)
         )
         if prepare_ligand and missing.any():
-            from cofolder.modules.analytics.build_bias_training_data import _load_ccd_smiles
+            from cofolder.tools.build_bias_training_data import _load_ccd_smiles
 
             ccd = _load_ccd_smiles(components_cif)
             ccd_smiles = dict(zip(ccd["ligand_id"].astype(str), ccd["smiles"].astype(str)))

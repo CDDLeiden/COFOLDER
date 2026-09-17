@@ -275,9 +275,9 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 plan_version: 3
 overall_status: IN_PROGRESS
 active_phase: S7
-active_task: S7.2
-last_completed_task: S7.1
-next_action: "Start S7.2 approved removals one R ID at a time, beginning with a fresh readiness and caller-reference check."
+active_task: S7.3
+last_completed_task: S7.2
+next_action: "Run S7.3 dangling-reference and retained-capability verification from the completed removal working tree."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
 last_updated: 2026-09-15
@@ -518,16 +518,16 @@ linked gated task, never as incidental cleanup.
 
 | ID | Decision | Readiness / prerequisite evidence | Decision note |
 |---|---|---|---|
-| R01 | **APPROVED; READY WITH MIGRATION** | Three documentation dependencies enumerated above; repair them with deletion | User: "accept R01-R10 (all)", 2026-09-09 |
-| R02 | **APPROVED; READY WITH MIGRATION** | Definitions, export, alias test, documentation mention and canonical types enumerated | User: "accept R01-R10 (all)", 2026-09-09 |
-| R03 | **APPROVED; READY WITH MIGRATION** | Every wrapper, repository caller and canonical implementation enumerated | User: "accept R01-R10 (all)", 2026-09-09 |
-| R04 | **APPROVED; READY** | Correct spelling confirmed across user invocations; both generated misspelled forms identified | User: "accept R01-R10 (all)", 2026-09-09 |
-| R05 | **APPROVED; GATED** | Await S1 typed migration and published replacement signatures | User: "accept R01-R10 (all)", 2026-09-09 |
-| R06 | **APPROVED; READY FOR S7** | S6.2 proves PDB/mmCIF identity-bearing distance and ProLIF fingerprints through public-record and CSV-compatible Screen paths; removal remains isolated to S7.2 | User: "accept R01-R10 (all)", 2026-09-09 |
-| R07 | **APPROVED; GATED** | Await supported pytest capture and handler-preservation evidence | User: "accept R01-R10 (all)", 2026-09-09 |
+| R01 | **APPROVED; APPLIED S7.2** | Documentation dependencies migrated and tracked archive deleted | User: "accept R01-R10 (all)", 2026-09-09 |
+| R02 | **APPROVED; APPLIED S7.2** | Canonical runner contracts and discovery tests retained | User: "accept R01-R10 (all)", 2026-09-09 |
+| R03 | **APPROVED; APPLIED S7.2** | Capability tests migrated to canonical modules before wrappers were removed | User: "accept R01-R10 (all)", 2026-09-09 |
+| R04 | **APPROVED; APPLIED S7.2** | Correct positive/negative spelling and CLI parity retained | User: "accept R01-R10 (all)", 2026-09-09 |
+| R05 | **APPROVED; APPLIED S7.2** | Typed options/runner request path documented and regression-tested | User: "accept R01-R10 (all)", 2026-09-09 |
+| R06 | **APPROVED; APPLIED S7.2** | Identity-bearing distance/ProLIF clustering retained; vector-only rows are not evaluable | User: "accept R01-R10 (all)", 2026-09-09 |
+| R07 | **APPROVED; APPLIED S7.2** | Supported capture, repeated setup and unrelated-handler preservation tests pass | User: "accept R01-R10 (all)", 2026-09-09 |
 | R08 | **APPROVED; READY FOR S4** | Exact Python bound and six-dependency `analysis` move recorded above | User: "accept R01-R10 (all)", 2026-09-09 |
-| R09 | **APPROVED; GATED BY RELATED PHASES** | Exact finite old-to-new path table recorded; each row waits for its canonical implementation and migrated callers | User: "accept R01-R10 (all)", 2026-09-09 |
-| R10 | **APPROVED; GATED** | Await explicit setup documentation/tests and retained CCD conversion contract | User: "accept R01-R10 (all)", 2026-09-09 |
+| R09 | **APPROVED; APPLIED S7.2** | Exact finite paths migrated to canonical implementations and callers | User: "accept R01-R10 (all)", 2026-09-09 |
+| R10 | **APPROVED; APPLIED S7.2** | Explicit setup/population APIs and commands replace implicit prediction | User: "accept R01-R10 (all)", 2026-09-09 |
 | R11 | **APPROVED; READY FOR S2/S3** | Issue 24 scope supplied; exact documentation, wheel, dependency and release-test exclusions recorded above | User: "The UI will not be shipped", 2026-09-10 |
 
 ### Task ledger
@@ -661,7 +661,7 @@ or a work-log reference as tasks finish.
 | S6.4 | Chemistry/cache and aggregation boundaries | Separate chemistry from backend cache orchestration and move aggregation to analytics; follow the approved R05/R09/R10 path table only after each readiness gate | **DONE** | Typed runner preparation and canonical analytics aggregation boundaries pass 59 focused and 662 full supported tests; compatibility facades and all gated cache/command interfaces remain. |
 | S6.5 | Structural parity verification | Compare fixture outputs before/after for counts, identities, seeds, values/states, provenance, gates, filters/clusters and artifact families; run import-boundary checks and full suite | **DONE** | Identical normalized digests from `6d5c48b` and `6175f41`: Validate `c05c6ee2`, Screen `087af4ef`, Oracle `ca7787d2`, Bias `6245cbe7`; 3 parity/import tests, 273 focused tests and all 665 supported tests pass with lint, docs and artifact gates. |
 | S7.1 | Safe cache corrections independent of R10 | Validate input before writes, inspect required cache components, use unique temporary workspaces, and test empty/partial/complete/concurrent/error cases without changing the documented automatic behavior | **DONE** | Source validation precedes writes; cache-component inspection, serialized setup, unique temporary workspaces and destination forwarding pass 50 focused and 682 full supported tests plus lint, docs and artifact gates. |
-| S7.2 | Execute approved removals | Implement only `APPROVED` R01–R11 items, one ID per reviewable change; update canonical callers/tests/docs and retain the underlying capability safeguards | **NOT_STARTED** | — |
+| S7.2 | Execute approved removals | Implement only `APPROVED` R01–R11 items, one ID per reviewable change; update canonical callers/tests/docs and retain the underlying capability safeguards | **DONE** | R01–R07/R09/R10 applied; R08/R11 reconciled as already applied. Focused 139, full 656 and final tool/packaging 35 tests pass; Ruff, strict docs, artifact verification and diff checks pass. |
 | S7.3 | Cleanup verification | Search for dangling references per executed ID; prove gated interfaces remained until their prerequisites passed; run relevant capability tests and full suite | **NOT_STARTED** | — |
 | S8.1 | Static and unit release gate | Repository lint, supported core/contract/tutorial tests and CLI/module parity pass without Streamlit in the declared test environment | **NOT_STARTED** | — |
 | S8.2 | Distribution release gate | Clean sdist→wheel build, explicit inventory, installed metadata/licence, external-checkout smoke and sdist test execution pass | **NOT_STARTED** | — |
@@ -764,6 +764,8 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-15 | S6.4 | `bde6c73`; working tree | Runner ligand-preparation boundary, analytics aggregation module, retained entity/utility facades, Validate import and characterization tests; this audit | Focused runner/entity/aggregation/Validate selection: 59 passed; `python scripts/run_test_lane.py all`: 662 passed in 34.82s with one third-party deprecation warning; Ruff and `git diff --check` passed; strict MkDocs passed in 2.24s; `python scripts/verify_release_artifacts.py` passed clean sdist-to-wheel inventory and installed smoke. | Boltz preparation now receives the typed runtime cache path and owns conformer/CCD orchestration; all nine aggregation functions live under analytics and Validate uses that boundary. Legacy `handle_conformers` and `utils.gather` remain compatible, including shared alignment patching. `Command`, cache download/population and every R05/R09/R10 removal remain untouched. Imports perform no subprocess/network/write work. No inference, service, tag or publication occurred. Advance to S6.5 structural parity verification. |
 | 2026-09-15 | S6.5 | `6175f41`; working tree | Structural parity collector/fixture, sdist fixture inventory, import/dependency-boundary regressions and this audit | The same public-workflow fixture passed against temporary `6d5c48b` and current `6175f41` archives with exact normalized digests: Validate `c05c6ee2`, Screen `087af4ef`, Oracle `ca7787d2`, Bias `6245cbe7`. New parity/import tests: 3 passed; focused recipe/contract/analytics/preparation/aggregation selection: 273 passed in 59.13s; `python scripts/run_test_lane.py all`: 665 passed in 45.77s. Ruff, `git diff --check`, strict MkDocs (2.51s) and `python scripts/verify_release_artifacts.py` passed clean sdist-to-wheel inventory and installed smoke. | Only temporary roots and record timestamps are normalized; CSV/JSON order, values/states, identities, seeds/provenance, decisions and text artifacts remain exact, while PNG/PDF content is represented by required filenames and Bias checkpoint callbacks are compared explicitly. The known MDAnalysis deprecation and pandas concatenation future warning remain; the pandas warning occurs in both revisions. No semantic drift, production change, removal, inference, network/service use, commit, tag or publication occurred. S6 exit satisfied; advance to S7.1. |
 | 2026-09-15 | S7.1 | `c3cc48a`; working tree | Legacy Boltz cache setup/population helpers, focused input/entity tests and this audit | Focused input/entity/ligand-preparation selection: 50 passed; `python scripts/run_test_lane.py all`: 682 passed in 45.66s with the two known MDAnalysis/pandas warnings. Ruff and `git diff --check` passed; strict MkDocs passed in 3.99s; `python scripts/verify_release_artifacts.py` passed clean sdist-to-wheel inventory and installed smoke. Existing `/home/remco/.boltz` satisfied the read-only component inspection. | Input and identifiers are validated before writes; incomplete Boltz2 caches use a cache-local lock, unique cleaned setup workspaces and post-setup verification; requested CCD destinations are honored. Tests mocked setup, so no inference, network, download, interface removal, commit, tag or publication occurred. R10 remains gated; advance to S7.2 with a fresh per-ID readiness/caller check. |
+
+| 2026-09-15 | S7.2 | `6ad502f`; working tree | Approved compatibility removals, explicit Boltz2 cache tools, canonical aggregation/bias-builder/bias-submodule migrations, tests/docs and this audit | Focused removal/migration selection: 139 passed; `python scripts/run_test_lane.py all`: 656 passed with the two known MDAnalysis/pandas warnings; final tool/packaging selection: 35 passed; Ruff, strict MkDocs, `python scripts/verify_release_artifacts.py`, three installed-tool help smokes and `git diff --check` passed. | Applied only R01–R07/R09/R10; R08/R11 were already applied. Vector-only Screen fixtures now remain explicitly unclustered while identity-bearing distance/ProLIF coverage remains. Cache population performs no implicit setup. No network, inference, commit, tag or publication occurred. Advance to S7.3. |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

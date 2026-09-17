@@ -14,7 +14,7 @@ from cofolder.modules.runners.contracts import RunnerChainIdentity
 from cofolder.modules.utils import read
 
 # Preserve the established logger identity during the behavior-preserving move.
-_DEFAULT_LOGGER = logging.getLogger("cofolder.modules.utils.gather")
+_DEFAULT_LOGGER = logging.getLogger(__name__)
 logger = _DEFAULT_LOGGER
 
 

@@ -70,11 +70,11 @@ def test_discover_real_runners_include_boltz_family_and_openfold3():
     assert "openfold3" in runners
 
 
-def test_runner_module_keeps_legacy_aliases_as_compatibility_exports():
+def test_runner_module_exports_canonical_contracts():
     assert runner_exports.RunnerExecutionRequest is RunnerExecutionRequest
     assert runner_exports.RunnerExecutionResult is RunnerExecutionResult
     assert runner_exports.RunnerPreparationResult is RunnerPreparationResult
-    assert runner_exports.RunnerRequest is RunnerExecutionRequest
-    assert runner_exports.RunnerResult is RunnerExecutionResult
-    assert runner_exports.RunnerPreparation is RunnerPreparationResult
     assert runner_exports.RunnerInputCapabilities is RunnerInputCapabilities
+    assert not hasattr(runner_exports, "RunnerRequest")
+    assert not hasattr(runner_exports, "RunnerResult")
+    assert not hasattr(runner_exports, "RunnerPreparation")

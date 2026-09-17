@@ -485,11 +485,11 @@ def _bias_snapshot(root: Path) -> dict[str, object]:
         f"CCO,custom_set,{structure.name}\n",
         encoding="utf-8",
     )
-    from cofolder.modules.analytics import bias as bias_module
+    from cofolder.modules.analytics.bias import _enrichment as bias_enrichment
 
     enrichment_functions = (
-        bias_module._enrich_mixed_bias_dataset_with_pdb_backfill,
-        bias_module._enrich_same_type_ligand_pair_dataset_with_pdb_backfill,
+        bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill,
+        bias_enrichment._enrich_same_type_ligand_pair_dataset_with_pdb_backfill,
     )
     owners = {
         importlib.import_module(function.__module__) for function in enrichment_functions

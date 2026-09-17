@@ -24,10 +24,6 @@ This page explains the role of the main publication-facing files and folders in 
 - Use the supported `bias`, `validate`, `screen`, and `oracle` commands or the
   [Python API execution references](../reference/python-api/index.md) instead.
 
-## Archived Material
-
-- `legacy/`: historical files retained for traceability and migration support, not the recommended path for new users
-
 ## Recommended Reading Order
 
 1. `README.md`

@@ -24,11 +24,6 @@ from cofolder.modules.runners.contracts import (
     RunnerPreparationResult,
 )
 
-RunnerPreparation = RunnerPreparationResult
-RunnerRequest = RunnerExecutionRequest
-RunnerResult = RunnerExecutionResult
-
-
 class BaseRunner(ABC):
     name: str
     backend_name: str = ""

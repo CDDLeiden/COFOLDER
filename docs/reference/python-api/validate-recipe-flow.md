@@ -127,7 +127,7 @@ outputs from `<wrk_dir>/results/`; do not expect the DataFrames to be returned.
 
 12. **Valid repeat outputs are gathered.**
 
-    `modules.utils.gather.gather_structures()` copies normalized structures into
+    `modules.analytics.aggregation.gather_structures()` copies normalized structures into
     `<wrk_dir>/results/structures/`. `merge_runner_results()` merges repeat-level
     `system_metrics.csv` and `chain_metrics.csv` into DataFrames. `add_chain_info()`
     attaches semantic chain and entity identities. Unsupported optional runner
