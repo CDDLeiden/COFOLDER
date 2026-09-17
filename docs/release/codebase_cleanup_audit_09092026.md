@@ -274,13 +274,13 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 ```yaml
 plan_version: 3
 overall_status: IN_PROGRESS
-active_phase: S7
-active_task: S7.3
-last_completed_task: S7.2
-next_action: "Run S7.3 dangling-reference and retained-capability verification from the completed removal working tree."
+active_phase: S8
+active_task: S8.1
+last_completed_task: S7.3
+next_action: "Run the S8.1 static and unit release gate from release-candidate commit 9d40404."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
-last_updated: 2026-09-15
+last_updated: 2026-09-17
 updated_by: Codex
 ```
 
@@ -333,7 +333,7 @@ use, or feature/interface removal beyond approved R01-R11 and their gates.
 | S4 | Reproducible quality and supported environments (C06, C07) | S3 | **DONE** | Repository-owned lint/test/package lanes pass in documented environments |
 | S5 | Additive CLI/Python usability and discovery improvements (C11–C13) | S3, S4 | **DONE** | 71 focused usability tests and 641-test full lane pass; eight console/module journeys match, all four preflights are no-service/non-mutating, and artifact/docs/lint gates pass |
 | S6 | Behavior-preserving responsibility extraction (C09, C10) | S1–S5 | **DONE** | Pre-S6/current semantic digests match for all four workflows; import, focused, full, lint, docs and artifact gates pass |
-| S7 | Permission-gated cleanup and cache/logging changes (C08, C14, C15; R01–R11) | S0 decision gate, relevant earlier phases | **IN_PROGRESS** | Only approved removals applied; each has specific regression evidence |
+| S7 | Permission-gated cleanup and cache/logging changes (C08, C14, C15; R01–R11) | S0 decision gate, relevant earlier phases | **DONE** | Per-ID reference/import checks, 227 focused and 657 full supported tests, lint, strict docs and clean artifact verification pass at `9d40404` |
 | S8 | Release-candidate verification and claim reconciliation | S1–S7 | **NOT_STARTED** | Required matrix below is complete; unresolved external checks are explicit |
 
 S0.4 documentation work was completed while S1 code was active; only one
@@ -525,10 +525,31 @@ linked gated task, never as incidental cleanup.
 | R05 | **APPROVED; APPLIED S7.2** | Typed options/runner request path documented and regression-tested | User: "accept R01-R10 (all)", 2026-09-09 |
 | R06 | **APPROVED; APPLIED S7.2** | Identity-bearing distance/ProLIF clustering retained; vector-only rows are not evaluable | User: "accept R01-R10 (all)", 2026-09-09 |
 | R07 | **APPROVED; APPLIED S7.2** | Supported capture, repeated setup and unrelated-handler preservation tests pass | User: "accept R01-R10 (all)", 2026-09-09 |
-| R08 | **APPROVED; READY FOR S4** | Exact Python bound and six-dependency `analysis` move recorded above | User: "accept R01-R10 (all)", 2026-09-09 |
+| R08 | **APPROVED; APPLIED S4.4** | Exact Python bound and six-dependency `analysis` move verified again in S7.3 | User: "accept R01-R10 (all)", 2026-09-09 |
 | R09 | **APPROVED; APPLIED S7.2** | Exact finite paths migrated to canonical implementations and callers | User: "accept R01-R10 (all)", 2026-09-09 |
 | R10 | **APPROVED; APPLIED S7.2** | Explicit setup/population APIs and commands replace implicit prediction | User: "accept R01-R10 (all)", 2026-09-09 |
-| R11 | **APPROVED; READY FOR S2/S3** | Issue 24 scope supplied; exact documentation, wheel, dependency and release-test exclusions recorded above | User: "The UI will not be shipped", 2026-09-10 |
+| R11 | **APPROVED; APPLIED S2/S3** | UI exclusion from supported docs, dependencies, entry points, tests and wheel verified again in S7.3 | User: "The UI will not be shipped", 2026-09-10 |
+
+### S7.3 cleanup verification evidence
+
+Verification at clean commit `9d40404` found no live dangling reference in source,
+scripts, supported documentation, tutorials or examples. References in the dated
+release audits remain historical descriptions of their audited revisions. The only
+current search matches were deliberate negative assertions and packaging exclusions.
+
+| Removal | Negative and retained-capability evidence |
+|---|---|
+| R01 | The `legacy/` tree is absent; supported documentation and artifact tests do not depend on it. |
+| R02 | The three aliases are absent from runner exports; canonical preparation/request/result contracts import and pass registry/contract tests. |
+| R03 | All approved helper forwarders are absent; canonical read/write, dataset, stats, plots and aggregation coverage passes. |
+| R04 | Neither misspelled flag is registered or documented; the correctly spelled positive/negative CLI paths pass. |
+| R05 | The old command module is absent and non-importable; typed configuration, `_boltz_command` and all numeric serialization cases pass. Commit `3009c87` established the typed boundary before `9d40404` removed the facade. |
+| R06 | Production code no longer fabricates `_legacy` identities; vector-only inputs stay unclustered and distance/ProLIF identity-bearing paths pass. Commit `ba45810` established and proved the postprocessing boundary before removal. |
+| R07 | Production logging contains no pytest/private-handler lookup; capture, unrelated-handler preservation and repeated setup pass. Commit `d7a6735` established normal console/file/capture behavior before the special recovery path was removed. |
+| R08 | Metadata is exactly `>=3.11,<3.13`; the six approved packages are absent from base and present in `analysis`, with packaging and optional-dependency tests passing. |
+| R09 | The finite old modules/script are absent and non-importable; canonical aggregation, bias package, builder, ligand preparation and installed tools import and pass. |
+| R10 | Old implicit cache/conformer APIs are absent; `mol_to_ccd`, explicit cache setup/population, invalid/partial/concurrent cases and installed help pass without inference. Commit `6ad502f` hardened cache behavior first; the explicit API, docs/tests and withdrawal then landed atomically in `9d40404`. |
+| R11 | Streamlit/UI remain only warned source-development material; supported extras, entry points, test lane and built wheel exclude them while all four workflows remain covered. |
 
 ### Task ledger
 
@@ -662,7 +683,7 @@ or a work-log reference as tasks finish.
 | S6.5 | Structural parity verification | Compare fixture outputs before/after for counts, identities, seeds, values/states, provenance, gates, filters/clusters and artifact families; run import-boundary checks and full suite | **DONE** | Identical normalized digests from `6d5c48b` and `6175f41`: Validate `c05c6ee2`, Screen `087af4ef`, Oracle `ca7787d2`, Bias `6245cbe7`; 3 parity/import tests, 273 focused tests and all 665 supported tests pass with lint, docs and artifact gates. |
 | S7.1 | Safe cache corrections independent of R10 | Validate input before writes, inspect required cache components, use unique temporary workspaces, and test empty/partial/complete/concurrent/error cases without changing the documented automatic behavior | **DONE** | Source validation precedes writes; cache-component inspection, serialized setup, unique temporary workspaces and destination forwarding pass 50 focused and 682 full supported tests plus lint, docs and artifact gates. |
 | S7.2 | Execute approved removals | Implement only `APPROVED` R01–R11 items, one ID per reviewable change; update canonical callers/tests/docs and retain the underlying capability safeguards | **DONE** | R01–R07/R09/R10 applied; R08/R11 reconciled as already applied. Focused 139, full 656 and final tool/packaging 35 tests pass; Ruff, strict docs, artifact verification and diff checks pass. |
-| S7.3 | Cleanup verification | Search for dangling references per executed ID; prove gated interfaces remained until their prerequisites passed; run relevant capability tests and full suite | **NOT_STARTED** | — |
+| S7.3 | Cleanup verification | Search for dangling references per executed ID; prove gated interfaces remained until their prerequisites passed; run relevant capability tests and full suite | **DONE** | Per-ID searches/import probes found no live dangling references; prerequisite history and atomic replacement evidence recorded above. Focused 227 and full 657 tests pass with only the two known warnings; Ruff, strict MkDocs, artifact verification and diff checks pass. |
 | S8.1 | Static and unit release gate | Repository lint, supported core/contract/tutorial tests and CLI/module parity pass without Streamlit in the declared test environment | **NOT_STARTED** | — |
 | S8.2 | Distribution release gate | Clean sdist→wheel build, explicit inventory, installed metadata/licence, external-checkout smoke and sdist test execution pass | **NOT_STARTED** | — |
 | S8.3 | Environment/backend release gate | Supported Python/base/analysis matrix and actual Boltz1/Boltz2/Community/OpenFold3 acceptance run in isolated environments; record unavailable hardware/service/model resources without claiming a pass | **NOT_STARTED** | — |
@@ -766,6 +787,7 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-15 | S7.1 | `c3cc48a`; working tree | Legacy Boltz cache setup/population helpers, focused input/entity tests and this audit | Focused input/entity/ligand-preparation selection: 50 passed; `python scripts/run_test_lane.py all`: 682 passed in 45.66s with the two known MDAnalysis/pandas warnings. Ruff and `git diff --check` passed; strict MkDocs passed in 3.99s; `python scripts/verify_release_artifacts.py` passed clean sdist-to-wheel inventory and installed smoke. Existing `/home/remco/.boltz` satisfied the read-only component inspection. | Input and identifiers are validated before writes; incomplete Boltz2 caches use a cache-local lock, unique cleaned setup workspaces and post-setup verification; requested CCD destinations are honored. Tests mocked setup, so no inference, network, download, interface removal, commit, tag or publication occurred. R10 remains gated; advance to S7.2 with a fresh per-ID readiness/caller check. |
 
 | 2026-09-15 | S7.2 | `6ad502f`; working tree | Approved compatibility removals, explicit Boltz2 cache tools, canonical aggregation/bias-builder/bias-submodule migrations, tests/docs and this audit | Focused removal/migration selection: 139 passed; `python scripts/run_test_lane.py all`: 656 passed with the two known MDAnalysis/pandas warnings; final tool/packaging selection: 35 passed; Ruff, strict MkDocs, `python scripts/verify_release_artifacts.py`, three installed-tool help smokes and `git diff --check` passed. | Applied only R01–R07/R09/R10; R08/R11 were already applied. Vector-only Screen fixtures now remain explicitly unclustered while identity-bearing distance/ProLIF coverage remains. Cache population performs no implicit setup. No network, inference, commit, tag or publication occurred. Advance to S7.3. |
+| 2026-09-17 | S7.3 | `9d40404`; working tree | This audit; generated `site/` verification output trashed after the check | Per-ID path/reference searches and import probes passed; focused cleanup/capability selection: 227 passed in 18.87s with the known MDAnalysis warning; `python scripts/run_test_lane.py all`: 657 passed in 39.13s with the known MDAnalysis and pandas warnings; Ruff, strict MkDocs (2.12s), `python scripts/verify_release_artifacts.py` and `git diff --check` passed. | No live dangling references or lost retained capabilities found. Dated audits retain historical citations; current matches are negative assertions/exclusions. R05/R06/R07 prerequisites predate removal; R10 cache hardening predates its atomic explicit-API replacement. No network, inference, commit, tag or publication occurred. S7 exit satisfied; advance to S8.1. |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every
