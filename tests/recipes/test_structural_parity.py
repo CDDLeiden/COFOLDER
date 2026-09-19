@@ -363,7 +363,24 @@ def _screen_snapshot(root: Path) -> dict[str, object]:
         )
         write_public_bundle(bundle, results)
 
-    with patch("cofolder.recipes.screen.Validate.run", autospec=True, side_effect=validate_run):
+    stable_backend = RunnerBackendIdentity(
+        "boltz2",
+        "boltz",
+        "2.2.1",
+        BackendVersionStatus.DETECTED,
+        raw_version="2.2.1",
+    )
+    with (
+        patch(
+            "cofolder.recipes.screen.Validate.run",
+            autospec=True,
+            side_effect=validate_run,
+        ),
+        patch(
+            "cofolder.recipes._execution.detect_backend_identity",
+            return_value=stable_backend,
+        ),
+    ):
         screen = Screen(
             wrk_dir=str(root / "screen"),
             system_path=str(system_path),
@@ -410,7 +427,17 @@ def _oracle_snapshot(root: Path) -> dict[str, object]:
             [{"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "affinity_pred_value": 6.0}]
         ).to_csv(results / "chain_metrics.csv", index=False)
 
-    with patch("cofolder.recipes.oracle.Validate.run", autospec=True, side_effect=validate_run):
+    with (
+        patch(
+            "cofolder.recipes.oracle.Validate.run",
+            autospec=True,
+            side_effect=validate_run,
+        ),
+        patch(
+            "cofolder.modules.runners.base.BaseRunner.ensure_available",
+            autospec=True,
+        ),
+    ):
         oracle = Oracle(
             wrk_dir=str(root / "oracle"),
             system_path=str(system_path),

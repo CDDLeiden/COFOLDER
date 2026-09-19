@@ -18,7 +18,7 @@
       ["bias_prot_sim_train_pairwise", 25.0],
       ["bias_prot_sim_train_pairwise_max", 100.0]
     ],
-    "digest": "6245cbe7ea625e2022e7e9315db6fb4542519bd124924de9db457e5214116a11",
+    "digest": "3aed2e506b90938b56459bdfbcecccefaa15f0a16a1c3fab1f280c37ba3fbdbe",
     "files": [
       "bias_train/bias_ligand_pair_data_B__D.csv",
       "bias_train/bias_ligand_pair_scatter_B__D.pdf",

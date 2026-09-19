@@ -121,17 +121,21 @@ def _protein_pairwise_similarity_series(
     if "sequence_similarity_pairwise" in proteins_df.columns:
         pairwise = pd.to_numeric(
             proteins_df["sequence_similarity_pairwise"], errors="coerce"
-        )
+        ).copy()
     else:
         pairwise = pd.Series(pd.NA, index=proteins_df.index, dtype="Float64")
     mmseqs = _protein_similarity_series(query_seq, proteins_df)
     missing = pairwise.isna() & mmseqs.isna()
     if missing.any() and "sequence" in proteins_df.columns:
-        pairwise.loc[missing] = proteins_df.loc[missing, "sequence"].apply(
-            lambda sequence: _pairwise_sequence_identity_percent(
-                query_seq, str(sequence)
-            )
-        )
+        missing_positions = [
+            position
+            for position, is_missing in enumerate(missing.to_numpy())
+            if is_missing
+        ]
+        pairwise.iloc[missing_positions] = [
+            _pairwise_sequence_identity_percent(query_seq, str(sequence))
+            for sequence in proteins_df.iloc[missing_positions]["sequence"]
+        ]
     return pd.to_numeric(pairwise, errors="coerce")
 
 

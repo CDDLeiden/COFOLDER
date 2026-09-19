@@ -273,14 +273,14 @@ and work log as work proceeds; do not maintain a separate unchecked checklist.
 
 ```yaml
 plan_version: 3
-overall_status: IN_PROGRESS
+overall_status: COMPLETE
 active_phase: S8
-active_task: S8.1
-last_completed_task: S7.3
-next_action: "Run the S8.1 static and unit release gate from release-candidate commit 9d40404."
+active_task: S8.5
+last_completed_task: S8.5
+next_action: "S8 handoff complete; final documentation alignment, release tagging and publication remain separate authorized work."
 blocked_on: []
 implementation_base_commit: e9642f25eb358d44e2a97edcb4203d96d485c14b
-last_updated: 2026-09-17
+last_updated: 2026-09-19
 updated_by: Codex
 ```
 
@@ -334,7 +334,7 @@ use, or feature/interface removal beyond approved R01-R11 and their gates.
 | S5 | Additive CLI/Python usability and discovery improvements (C11–C13) | S3, S4 | **DONE** | 71 focused usability tests and 641-test full lane pass; eight console/module journeys match, all four preflights are no-service/non-mutating, and artifact/docs/lint gates pass |
 | S6 | Behavior-preserving responsibility extraction (C09, C10) | S1–S5 | **DONE** | Pre-S6/current semantic digests match for all four workflows; import, focused, full, lint, docs and artifact gates pass |
 | S7 | Permission-gated cleanup and cache/logging changes (C08, C14, C15; R01–R11) | S0 decision gate, relevant earlier phases | **DONE** | Per-ID reference/import checks, 227 focused and 657 full supported tests, lint, strict docs and clean artifact verification pass at `9d40404` |
-| S8 | Release-candidate verification and claim reconciliation | S1–S7 | **NOT_STARTED** | Required matrix below is complete; unresolved external checks are explicit |
+| S8 | Release-candidate verification and claim reconciliation | S1–S7 | **DONE** | Fresh source/artifact/Python 3.11/3.12/four-backend gates pass; claims and removals are reconciled below, with tag/publication and final documentation alignment handed off explicitly |
 
 S0.4 documentation work was completed while S1 code was active; only one
 implementation task may be active at a time. S5 and non-conflicting S7 preparation
@@ -684,11 +684,12 @@ or a work-log reference as tasks finish.
 | S7.1 | Safe cache corrections independent of R10 | Validate input before writes, inspect required cache components, use unique temporary workspaces, and test empty/partial/complete/concurrent/error cases without changing the documented automatic behavior | **DONE** | Source validation precedes writes; cache-component inspection, serialized setup, unique temporary workspaces and destination forwarding pass 50 focused and 682 full supported tests plus lint, docs and artifact gates. |
 | S7.2 | Execute approved removals | Implement only `APPROVED` R01–R11 items, one ID per reviewable change; update canonical callers/tests/docs and retain the underlying capability safeguards | **DONE** | R01–R07/R09/R10 applied; R08/R11 reconciled as already applied. Focused 139, full 656 and final tool/packaging 35 tests pass; Ruff, strict docs, artifact verification and diff checks pass. |
 | S7.3 | Cleanup verification | Search for dangling references per executed ID; prove gated interfaces remained until their prerequisites passed; run relevant capability tests and full suite | **DONE** | Per-ID searches/import probes found no live dangling references; prerequisite history and atomic replacement evidence recorded above. Focused 227 and full 657 tests pass with only the two known warnings; Ruff, strict MkDocs, artifact verification and diff checks pass. |
-| S8.1 | Static and unit release gate | Repository lint, supported core/contract/tutorial tests and CLI/module parity pass without Streamlit in the declared test environment | **NOT_STARTED** | — |
-| S8.2 | Distribution release gate | Clean sdist→wheel build, explicit inventory, installed metadata/licence, external-checkout smoke and sdist test execution pass | **NOT_STARTED** | — |
-| S8.3 | Environment/backend release gate | Supported Python/base/analysis matrix and actual Boltz1/Boltz2/Community/OpenFold3 acceptance run in isolated environments; record unavailable hardware/service/model resources without claiming a pass | **NOT_STARTED** | — |
-| S8.4 | Claim and removal reconciliation | Re-evaluate every affected PI/IN/WF/PK claim, all additional retained capabilities and R01–R11; link evidence and list any residual risk | **NOT_STARTED** | — |
-| S8.5 | Handoff | Set `overall_status` accurately; summarize shipped changes, deferred documentation/tag/publication work and exact blockers. Mark `COMPLETE` only if all required gates pass | **NOT_STARTED** | — |
+| S8.1 | Static and unit release gate | Repository lint, supported core/contract/tutorial tests and CLI/module parity pass without Streamlit in the declared test environment | **DONE** | Independent initial lanes passed 577 core, 22 contracts/tutorial, 42 lightweight acceptance, 5 explicit redaction and 8 real console/module parity tests; after the S8.3 correction, Ruff and the complete 658-test supported suite passed again |
+| S8.2 | Distribution release gate | Clean sdist→wheel build, explicit inventory, installed metadata/licence, external-checkout smoke and sdist test execution pass | **DONE** | Verifier passed again after the correction; retained handoff build `/tmp/cofolder-s8-handoff.PZc2KT` contains a 312-entry sdist and its exclusively derived 125-entry wheel with SHA-256 `55674a8e...a0b9b` and `bb399581...45e9` |
+| S8.3 | Environment/backend release gate | Supported Python/base/analysis matrix and actual Boltz1/Boltz2/Community/OpenFold3 acceptance run in isolated environments; record unavailable hardware/service/model resources without claiming a pass | **DONE** | Python 3.11.15/3.12.13 base/full installs pass `pip check`, installed smokes, no-Streamlit checks and both 658-test full lanes; isolated actual inference passes one sample/zero failures for all four backends with 45/55/57/43 metrics |
+| S8.3-FIX | Fresh-environment verification correction | Scope any defect exposed by S8 separately, add a regression and rerun every affected source/artifact/environment/backend gate | **DONE** | Fixed pandas view mutation and duplicate-index alignment in protein pairwise similarity; isolated structural-parity fixtures from ambient backend availability/version. New regression and corrected semantic fixture pass under pandas 2/3, followed by complete source, artifact, environment and backend reruns |
+| S8.4 | Claim and removal reconciliation | Re-evaluate every affected PI/IN/WF/PK claim, all additional retained capabilities and R01–R11; link evidence and list any residual risk | **DONE** | Every PI/IN/WF/PK ID is accounted for in `v1.0-claim-matrix.md`; retained additional capabilities remain represented; R01–R11 remain approved/applied with no new removal; PK-02's tag/documentation portion is an explicit handoff rather than a false pass |
+| S8.5 | Handoff | Set `overall_status` accurately; summarize shipped changes, deferred documentation/tag/publication work and exact blockers. Mark `COMPLETE` only if all required gates pass | **DONE** | All required S8 verification-matrix rows pass; residual warnings/limits and the precise documentation/tag/publication handoff are recorded below. No tag or publication was performed |
 
 ### Phase exit checks
 
@@ -727,21 +728,65 @@ from the release candidate, not inherited from the audit baseline.
 
 | Gate | Required check | Status | Evidence |
 |---|---|---|---|
-| Source | Repository-owned Ruff baseline | **NOT_RUN** | — |
-| Source | Full supported core/contracts/tutorial test lanes without Streamlit | **NOT_RUN** | — |
-| CLI | Console/module help, version, invalid command and preflight parity | **NOT_RUN** | — |
-| Security | Success/failure secret-redaction tests for all command reporters | **NOT_RUN** | — |
-| Artifact | Sdist inventory and wheel built from unpacked sdist | **NOT_RUN** | — |
-| Artifact | Installed-outside-checkout resources, entry points, metadata and licence | **NOT_RUN** | — |
-| Scope | UI absent from wheel, supported extras/entry points/docs and release test requirements | **NOT_RUN** | — |
-| Environment | Fresh Python 3.11 base/full lanes | **NOT_RUN** | — |
-| Environment | Fresh Python 3.12 base/full lanes | **NOT_RUN** | — |
-| Backend | Boltz1 actual acceptance | **NOT_RUN** | — |
-| Backend | Boltz2 actual acceptance | **NOT_RUN** | — |
-| Backend | Boltz Community actual acceptance | **NOT_RUN** | — |
-| Backend | OpenFold3 actual acceptance | **NOT_RUN** | — |
-| Claims | PI/IN/WF/PK and additional-capability reconciliation | **NOT_RUN** | — |
-| Removals | Approved/rejected/pending R01–R11 reconciled | **NOT_RUN** | — |
+| Source | Repository-owned Ruff baseline | **PASS** | `ruff check src tests scripts tutorials examples`: clean on the corrected S8 working-tree candidate derived from `fcae176` |
+| Source | Full supported core/contracts/tutorial test lanes without Streamlit | **PASS** | Initial independent lanes passed 577 core, 22 contracts/tutorial and 42 lightweight acceptance tests; final `python scripts/run_test_lane.py all` passed all 658 after the S8.3 correction |
+| CLI | Console/module help, version, invalid command and preflight parity | **PASS** | Eight real subprocess cases passed: root help/version, four command helps, invalid command and copied-example preflight |
+| Security | Success/failure secret-redaction tests for all command reporters | **PASS** | `tests/modules/runners/test_command_reporting.py`: 5 passed; Boltz/OpenFold3 real argv remains usable while success/failure diagnostics are redacted |
+| Artifact | Sdist inventory and wheel built from unpacked sdist | **PASS** | Final verifier passed; retained 312-entry sdist SHA-256 `55674a8ee6e1fd6085cc1cc1d8699764eae629694bbb87f15ebde72a0d9a0b9b` exclusively produced the 125-entry wheel SHA-256 `bb399581c7b762d0b5ebcab7421e3dcb15efaddd28db394c804298327f4b45e9` |
+| Artifact | Installed-outside-checkout resources, entry points, metadata and licence | **PASS** | Clean verifier passed installed import/version, MIT metadata/two legal files, `cofolder`/`cofolder-tools` entry points, tool help, 12 acceptance resources and 12 copied example resources |
+| Scope | UI absent from wheel, supported extras/entry points/docs and release test requirements | **PASS** | Explicit inventory reports zero `cofolder.ui` files; verifier confirms no UI/Streamlit dependency, entry point or supported test requirement |
+| Environment | Fresh Python 3.11 base/full lanes | **PASS** | CPython 3.11.15 base/full wheel installs pass `pip check`, import/version, installed entry points/resources/options/input smokes and the 658-test full lane; Streamlit is absent and omitted analysis imports give declared guidance |
+| Environment | Fresh Python 3.12 base/full lanes | **PASS** | CPython 3.12.13 base/full wheel installs pass the same checks and independent 658-test full lane; package imports resolve to the isolated site-packages and Streamlit is absent |
+| Backend | Boltz1 actual acceptance | **PASS** | Isolated Boltz 1.0.0 actual GPU run: manifest `success`, one success, zero failures, 45 metric records, detected runner/backend provenance |
+| Backend | Boltz2 actual acceptance | **PASS** | Isolated Boltz 2.2.1 actual GPU run: manifest `success`, one success, zero failures, 55 metric records, detected runner/backend provenance |
+| Backend | Boltz Community actual acceptance | **PASS** | Isolated Boltz Community 2.10.12 actual GPU run: manifest `success`, one success, zero failures, 57 metric records, detected runner/backend provenance |
+| Backend | OpenFold3 actual acceptance | **PASS** | Isolated OpenFold3 0.4.1 actual GPU run: manifest `success`, one success, zero failures, 43 metric records, detected runner/backend provenance |
+| Claims | PI/IN/WF/PK and additional-capability reconciliation | **PASS** | Every ID is explicitly reconciled in `v1.0-claim-matrix.md`; runtime/code gates pass, while PK-02 accurately hands off its forbidden tag and deferred final-documentation portions. Retained additional capabilities are accounted for below |
+| Removals | Approved/rejected/pending R01–R11 reconciled | **PASS** | R01–R11 are all approved and applied with their recorded replacements/prerequisites intact; fresh full, artifact, environment and real-backend checks expose no additional or unapproved removal |
+
+### S8 claim, capability and handoff reconciliation
+
+The claim-by-claim S8 status is recorded in the mandatory
+[`v1.0-claim-matrix.md`](v1.0-claim-matrix.md). PI-01–PI-10,
+IN-01–IN-12, WF-01–WF-20 and the code/runtime/artifact portions of PK-01–PK-08
+have fresh passing evidence. PK-02 is intentionally split: installed metadata,
+runtime and both CLI entry points report `1.0.0`, but a release tag was not created
+and final documentation-wide release alignment remains handoff work.
+
+The additional capability guardrails also remain accounted for:
+
+- automatic runner discovery and selected-runner provenance pass in contracts and
+  in four isolated actual backend runs;
+- supported setup, download, vendor and temporary-environment paths remain exposed
+  through packaged `cofolder-tools`, source wrappers and the installed help smokes;
+- Bias landscape plots, mixed/same-type pair data, enrichment and checkpoint output
+  remain covered by fresh recipe/structural-parity tests;
+- affinity censoring, conversion, correlation and plotting remain in their canonical
+  dataset/stats/plots modules with fresh full-suite coverage;
+- explicit cache setup/population, shared Bias query-cache inspection/invalidation,
+  MSA reuse and executable discovery remain covered and packaged;
+- the aliases, misspelled flag, archived entry paths and vector-only fingerprint
+  fallback named by the old guardrail text were removed only under approved
+  R01–R06/R09. The UI boundary remains the separately approved R11 unsupported
+  source-development surface, absent from installed artifacts.
+
+Residual limits and handoff items are not release-gate passes by implication:
+
+- the complete source suite still reports the known MDAnalysis deprecation and
+  pandas concatenation future warnings in the ambient environment; fresh full
+  environments report the MDAnalysis warning, and backend logs contain upstream
+  Lightning/Biotite multiprocessing or deprecation notices;
+- actual inference is one small reference-free sample per backend using retained
+  local model caches. OpenFold3 intentionally used its query-only dummy MSA with
+  `--use-msa-server=False`; no fresh model download, live MSA service, credentialed
+  service, exhaustive diagnostic combination or remote CI run is claimed;
+- the OpenFold3 optional dependency remains unbounded in metadata; the detected
+  and passing S8 backend version is 0.4.1, so later dependency upgrades require the
+  same isolated backend gate;
+- broad documentation completion, final version/repository/citation/archive
+  alignment, release tagging and artifact publication remain outside this plan and
+  require separate authorization. These are the precise resume point for release
+  finalization; S8 itself has no unavailable required check or blocker.
 
 ### Work log
 
@@ -788,6 +833,12 @@ correction. The initial row records plan creation, not implementation progress.
 
 | 2026-09-15 | S7.2 | `6ad502f`; working tree | Approved compatibility removals, explicit Boltz2 cache tools, canonical aggregation/bias-builder/bias-submodule migrations, tests/docs and this audit | Focused removal/migration selection: 139 passed; `python scripts/run_test_lane.py all`: 656 passed with the two known MDAnalysis/pandas warnings; final tool/packaging selection: 35 passed; Ruff, strict MkDocs, `python scripts/verify_release_artifacts.py`, three installed-tool help smokes and `git diff --check` passed. | Applied only R01–R07/R09/R10; R08/R11 were already applied. Vector-only Screen fixtures now remain explicitly unclustered while identity-bearing distance/ProLIF coverage remains. Cache population performs no implicit setup. No network, inference, commit, tag or publication occurred. Advance to S7.3. |
 | 2026-09-17 | S7.3 | `9d40404`; working tree | This audit; generated `site/` verification output trashed after the check | Per-ID path/reference searches and import probes passed; focused cleanup/capability selection: 227 passed in 18.87s with the known MDAnalysis warning; `python scripts/run_test_lane.py all`: 657 passed in 39.13s with the known MDAnalysis and pandas warnings; Ruff, strict MkDocs (2.12s), `python scripts/verify_release_artifacts.py` and `git diff --check` passed. | No live dangling references or lost retained capabilities found. Dated audits retain historical citations; current matches are negative assertions/exclusions. R05/R06/R07 prerequisites predate removal; R10 cache hardening predates its atomic explicit-API replacement. No network, inference, commit, tag or publication occurred. S7 exit satisfied; advance to S8.1. |
+| 2026-09-17 | S8.1 | `fcae176`; audit working tree | This audit only | Ruff clean; independent lanes passed: core 577 with the two known warnings, contracts/tutorial 22, lightweight acceptance 42; explicit command-reporting security tests 5 passed; eight real console/module help/version/error/preflight parity cases passed; `git diff --check` passed. | `fcae176` differs from product-code candidate `9d40404` only by the S7 audit record. No product behavior, network, inference, tag or publication action occurred. Advance to S8.2 clean distribution verification. |
+| 2026-09-17 | S8.2 | `fcae176`; audit working tree | This audit; temporary artifacts `/tmp/cofolder-s8.2.NmZmzR` | `python scripts/verify_release_artifacts.py` passed; retained isolated builds produced a 312-entry sdist (`28906ba...4f0f9`) and, only from its unpacked source, a 125-entry wheel (`5a2ee5...08497`). Installed wheel metadata/licence, both entry points, tool help, example copy, 12 acceptance and 12 example resources passed; UI inventory was zero. A wheel-installed environment ran all 657 supported tests from the unpacked sdist with the two known warnings. | The first ambient sdist run resolved the checkout's editable install, so it was not used as isolation evidence; the repeated run proved imports came from the S8 wheel environment. No product change, inference, tag or publication occurred. Advance to S8.3 fresh environments and real backends. |
+| 2026-09-19 | S8.3-FIX | `fcae176`; corrected working-tree candidate | Protein pairwise-similarity implementation/regression, structural-parity isolation/fixture, this audit | Fresh pandas 2 and pandas 3 focused runs pass the new duplicate-index/non-identical-query regression and three structural-parity tests. Final `python scripts/run_test_lane.py all`: 658 passed; Ruff, explicit 5-test redaction lane, 8-test CLI parity selection and `git diff --check` passed. `python scripts/verify_release_artifacts.py` passed after the correction. | Fresh environments exposed a real pandas view-mutation leak and two fixture dependencies on ambient Boltz2 availability/version. Copied positional assignment now prevents source mutation and duplicate-index alignment errors; parity mocks only environmental availability/provenance, and the corrected Bias digest changes from `6245cbe7...` to `3aed2e50...`. All affected gates were rerun rather than waiving the failures. |
+| 2026-09-19 | S8.3 | corrected S8 working tree | Temporary environments, backend logs/results under `/tmp/cofolder-s8.3`; no tracked environment output | CPython 3.11.15 and 3.12.13 base/full installs pass `pip check`, package-origin/version/entry-point/resource/config/input/no-Streamlit checks; both full environments pass Ruff and all 658 tests. Isolated real GPU runs pass Boltz1 1.0.0 (45 metrics), Boltz2 2.2.1 (55), Community 2.10.12 (57), OpenFold3 0.4.1 (43); every manifest reports `success`, one success and zero failures. | Separate prefixes prevent conflicting `boltz` namespaces. Existing validated `/home/remco/.boltz` and `/home/remco/.openfold3` caches were reused; OpenFold3 used no live MSA server. No missing hardware/model/service result was counted as a pass. Advance to S8.4. |
+| 2026-09-19 | S8.4 | corrected S8 working tree | `docs/release/v1.0-claim-matrix.md`, this audit | PI-01–PI-10, IN-01–IN-12, WF-01–WF-20 and PK-01–PK-08 were each reconciled against the fresh 658-test, artifact, environment and real-backend evidence. R01–R11 and all retained additional capability groups were rechecked. `python -m mkdocs build --strict` passed with the known informational Material/MkDocs 2 notice and unnavlisted-page report. | PK-02's installed/runtime/artifact version passes at 1.0.0; tag and final documentation alignment remain explicit handoff items. No removal decision changed and no new removal was made. Advance to S8.5. |
+| 2026-09-19 | S8.5 | corrected S8 working tree | This audit; retained handoff artifacts `/tmp/cofolder-s8-handoff.PZc2KT` | Final `python scripts/verify_release_artifacts.py` passed. A retained 312-entry sdist (`55674a8e...a0b9b`) exclusively produced the 125-entry wheel (`bb399581...45e9`); installed metadata/licence, resources, UI exclusion and entry-point smokes pass. Final Ruff, complete 658-test lane, strict docs and diff checks pass as recorded in S8. | Every required S8 matrix row is PASS, so S8 and `overall_status` are COMPLETE. Known warnings, one-sample/cache/service limits, unbounded OpenFold3 provenance and the exact documentation/tag/publication resume point are recorded above. No commit, tag or publication was performed. |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

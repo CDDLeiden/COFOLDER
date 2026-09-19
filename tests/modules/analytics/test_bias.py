@@ -1883,6 +1883,43 @@ def test_build_protein_training_view_keeps_distinct_custom_paths_for_same_sequen
     ]
 
 
+def test_build_protein_training_view_handles_duplicate_source_indices_by_position():
+    proteins_df = pd.DataFrame(
+        [
+            {
+                "pdb_id": "1AAA",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "source_structure_path": pd.NA,
+                "source_reference_path": pd.NA,
+                "sequence": "MAAA",
+            },
+            {
+                "pdb_id": "2BBB",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "source_structure_path": pd.NA,
+                "source_reference_path": pd.NA,
+                "sequence": "MBBB",
+            },
+        ],
+        index=[0, 0],
+    )
+
+    result = _build_protein_training_view(
+        proteins_df,
+        {"A": "MAAA", "C": "MBBB"},
+        minimum_similarity=None,
+    ).set_index(["query_chain_id", "pdb_id"])
+
+    assert result.loc[("A", "1AAA"), "sequence_similarity_pairwise"] == 100.0
+    assert result.loc[("A", "2BBB"), "sequence_similarity_pairwise"] == 25.0
+    assert result.loc[("C", "1AAA"), "sequence_similarity_pairwise"] == 25.0
+    assert result.loc[("C", "2BBB"), "sequence_similarity_pairwise"] == 100.0
+
+
 def test_training_views_use_strict_manuscript_thresholds(monkeypatch):
     proteins_df = pd.DataFrame(
         [
