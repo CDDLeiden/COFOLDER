@@ -72,7 +72,6 @@ def _verify_sdist(sdist: Path, source_root: Path) -> str:
         f"{root}/{path.relative_to(source_root).as_posix()}"
         for path in (source_root / "tests").rglob("test_*.py")
         if "__pycache__" not in path.parts
-        and path.name != "ui_development_check.py"
     )
     missing = required - names
     if missing:
@@ -83,6 +82,7 @@ def _verify_sdist(sdist: Path, source_root: Path) -> str:
         f"{root}/tests/ui_development_check.py",
         f"{root}/legacy/",
         f"{root}/.streamlit/",
+        f"{root}/run_ui.sh",
     )
     leaked = sorted(name for name in names if any(item in name for item in forbidden))
     if leaked:

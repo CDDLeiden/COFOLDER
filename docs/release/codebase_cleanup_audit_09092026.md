@@ -788,6 +788,16 @@ Residual limits and handoff items are not release-gate passes by implication:
   require separate authorization. These are the precise resume point for release
   finalization; S8 itself has no unavailable required check or blocker.
 
+### Post-audit reconciliation — issue 24 UI retirement
+
+On 2026-09-19, the user explicitly approved complete removal of the obsolete
+Streamlit prototype for the v1.0 release. This supersedes only R11's earlier option
+to retain warned source-development material; the historical S2-S8 entries below
+remain unchanged as evidence of the state that was verified at the time. The release
+continues to expose only the supported `bias`, `validate`, `screen`, and `oracle`
+CLI and Python workflows. Issue 24 is to be closed as not planned after this removal
+is merged and verified, without creating a replacement UI issue.
+
 ### Work log
 
 Append entries; do not rewrite history except to correct a factual error and note the
@@ -839,6 +849,7 @@ correction. The initial row records plan creation, not implementation progress.
 | 2026-09-19 | S8.3 | corrected S8 working tree | Temporary environments, backend logs/results under `/tmp/cofolder-s8.3`; no tracked environment output | CPython 3.11.15 and 3.12.13 base/full installs pass `pip check`, package-origin/version/entry-point/resource/config/input/no-Streamlit checks; both full environments pass Ruff and all 658 tests. Isolated real GPU runs pass Boltz1 1.0.0 (45 metrics), Boltz2 2.2.1 (55), Community 2.10.12 (57), OpenFold3 0.4.1 (43); every manifest reports `success`, one success and zero failures. | Separate prefixes prevent conflicting `boltz` namespaces. Existing validated `/home/remco/.boltz` and `/home/remco/.openfold3` caches were reused; OpenFold3 used no live MSA server. No missing hardware/model/service result was counted as a pass. Advance to S8.4. |
 | 2026-09-19 | S8.4 | corrected S8 working tree | `docs/release/v1.0-claim-matrix.md`, this audit | PI-01–PI-10, IN-01–IN-12, WF-01–WF-20 and PK-01–PK-08 were each reconciled against the fresh 658-test, artifact, environment and real-backend evidence. R01–R11 and all retained additional capability groups were rechecked. `python -m mkdocs build --strict` passed with the known informational Material/MkDocs 2 notice and unnavlisted-page report. | PK-02's installed/runtime/artifact version passes at 1.0.0; tag and final documentation alignment remain explicit handoff items. No removal decision changed and no new removal was made. Advance to S8.5. |
 | 2026-09-19 | S8.5 | corrected S8 working tree | This audit; retained handoff artifacts `/tmp/cofolder-s8-handoff.PZc2KT` | Final `python scripts/verify_release_artifacts.py` passed. A retained 312-entry sdist (`55674a8e...a0b9b`) exclusively produced the 125-entry wheel (`bb399581...45e9`); installed metadata/licence, resources, UI exclusion and entry-point smokes pass. Final Ruff, complete 658-test lane, strict docs and diff checks pass as recorded in S8. | Every required S8 matrix row is PASS, so S8 and `overall_status` are COMPLETE. Known warnings, one-sample/cache/service limits, unbounded OpenFold3 provenance and the exact documentation/tag/publication resume point are recorded above. No commit, tag or publication was performed. |
+| 2026-09-19 | ISSUE-24 | post-S8 working tree | Removed `.streamlit/`, `run_ui.sh`, `src/cofolder/ui/`, `tests/ui_development_check.py`; updated repository tour, artifact guard, packaging regression and this audit | Packaging: 16 passed; complete supported lane: 658 passed with the two previously recorded warnings; Ruff, strict MkDocs, clean sdist-to-wheel installed verification and `git diff --check` passed. Built artifacts contain no UI package, Streamlit dependency, UI extra or UI entry point. | The user approved full prototype retirement, superseding only R11's permission to retain warned development material. The four supported CLI/Python workflows are unchanged. Close issue 24 as `not planned` only after this change is merged; do not create a replacement UI issue. |
 
 Completion means the P1 defects are resolved with meaningful regressions, the
 intended runtime/optional environments and artifact contents are tested, every

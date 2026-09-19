@@ -179,8 +179,16 @@ def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
     assert "[acceptance,openfold3" not in normalized
 
 
-def test_unsupported_ui_is_absent_from_install_metadata():
+def test_retired_ui_is_absent_from_source_and_install_metadata():
     pyproject = _load_pyproject()
+
+    retired_paths = (
+        ".streamlit",
+        "run_ui.sh",
+        "src/cofolder/ui",
+        "tests/ui_development_check.py",
+    )
+    assert all(not (REPOSITORY / path).exists() for path in retired_paths)
 
     optional_dependencies = pyproject["project"]["optional-dependencies"]
     all_dependencies = list(pyproject["project"]["dependencies"])
