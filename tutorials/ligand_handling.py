@@ -18,25 +18,26 @@ def _():
     from rdkit import Chem
 
     from _marimo_helpers import EXAMPLES_DIR, code_block, format_command, make_workspace, read_text
+    from _workflow_examples import build_screen_command, build_validate_command
 
-    return Chem, EXAMPLES_DIR, code_block, format_command, make_workspace, mo, pd, read_text
+    return Chem, EXAMPLES_DIR, build_screen_command, build_validate_command, code_block, format_command, make_workspace, mo, pd, read_text
 
 
 @app.cell
-def _(EXAMPLES_DIR, code_block, format_command, mo, read_text):
+def _(EXAMPLES_DIR, build_screen_command, build_validate_command, code_block, format_command, mo, read_text):
     covalent_path = EXAMPLES_DIR / "system_covalent.yaml"
-    preview_command = [
-        "cofolder",
-        "validate",
-        "-s",
-        EXAMPLES_DIR / "system.yaml",
-        "-o",
-        EXAMPLES_DIR / "options.yaml",
-        "--conformers",
-        "3D",
-        "--runner",
-        "boltz2",
-    ]
+    preview_command = build_validate_command(EXAMPLES_DIR, EXAMPLES_DIR / "ligand-output")
+    sdf_validate_command = build_validate_command(
+        EXAMPLES_DIR,
+        EXAMPLES_DIR / "sdf-output",
+        conformer_sdf=True,
+    )
+    sdf_screen_command = build_screen_command(
+        EXAMPLES_DIR, EXAMPLES_DIR / "sdf-screen-output", library_name="ethanol.sdf"
+    )
+    mol_screen_command = build_screen_command(
+        EXAMPLES_DIR, EXAMPLES_DIR / "mol-screen-output", library_name="ethanol.mol"
+    )
     mo.md(
         f"""
         # Ligand Handling
@@ -51,9 +52,20 @@ def _(EXAMPLES_DIR, code_block, format_command, mo, read_text):
         **Covalent example system**
         {code_block(read_text(covalent_path), "yaml")}
 
-        **Conformer-enabled command preview**
+        **Native SMILES command**
         ```bash
         {format_command(preview_command)}
+        ```
+
+        **Reuse the packaged SDF conformer**
+        ```bash
+        {format_command(sdf_validate_command)}
+        ```
+
+        **Use SDF or MOL as a Screen library**
+        ```bash
+        {format_command(sdf_screen_command)}
+        {format_command(mol_screen_command)}
         ```
 
         Notes:
@@ -107,7 +119,7 @@ def _(mo):
 
 
 @app.cell
-def _(make_workspace, mo, pd, run_ligand_demo):
+def _(Chem, make_workspace, mo, pd, run_ligand_demo):
     mo.stop(
         not run_ligand_demo.value,
         mo.md(
@@ -123,6 +135,7 @@ def _(make_workspace, mo, pd, run_ligand_demo):
             generate_2d_conformers,
             generate_3d_conformers,
             iterate_sdf_records,
+            mol_to_ccd,
             sanitize_mol_id,
         )
     except ModuleNotFoundError as exc:
@@ -152,17 +165,19 @@ def _(make_workspace, mo, pd, run_ligand_demo):
     generate_2d_conformers(str(sdf_path), str(sdf_2d_path))
     generate_3d_conformers(str(sdf_path), str(sdf_3d_path))
     records = list(iterate_sdf_records(str(sdf_3d_path), "compound_id"))
+    custom_ccd_cache = workspace / "custom_ccd_cache"
+    mol_to_ccd("ET5", Chem.MolFromSmiles("CCO"), boltz_path=custom_ccd_cache)
     summary = pd.DataFrame(
         {
             "compound_id": [record[1] for record in records],
             "sanitized_ccd_candidate": [sanitize_mol_id(record[1]) for record in records],
         }
     )
-    return records, sdf_2d_path, sdf_3d_path, summary, workspace
+    return custom_ccd_cache, records, sdf_2d_path, sdf_3d_path, summary, workspace
 
 
 @app.cell
-def _(mo, records, sdf_2d_path, sdf_3d_path, summary, workspace):
+def _(custom_ccd_cache, mo, records, sdf_2d_path, sdf_3d_path, summary, workspace):
     mo.md(
         f"""
         ## Utility Demo Results
@@ -173,6 +188,7 @@ def _(mo, records, sdf_2d_path, sdf_3d_path, summary, workspace):
 
         - `{sdf_2d_path.name}`
         - `{sdf_3d_path.name}`
+        - `{custom_ccd_cache / "mols" / "ET5.pkl"}`
 
         Molecules found in the 3D SDF: `{len(records)}`
         """

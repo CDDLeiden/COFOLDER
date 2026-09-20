@@ -254,6 +254,11 @@ class TestMolToCcd:
             "F4",
         ]
 
+    @pytest.mark.parametrize("identifier", ["", "TOO-LONG", "BAD_ID", "A B"])
+    def test_mol_to_ccd_rejects_invalid_identifier(self, identifier, temp_dir):
+        with pytest.raises(ValueError, match="CCD identifier"):
+            ligand.mol_to_ccd(identifier, Chem.MolFromSmiles("CCO"), temp_dir)
+
 
 def _write_cache_sdf(path: Path, records: list[tuple[str | None, str]]) -> None:
     writer = Chem.SDWriter(str(path))

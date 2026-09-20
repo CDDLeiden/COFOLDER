@@ -468,6 +468,16 @@ def robustness_records_from_frame(
             metric_name, related_chain_id = _metric_name_and_related_chain(
                 raw_metric_name, {}
             )
+            definition = get_metric_definition(metric_name)
+            row_scope = (
+                "system"
+                if entity_type == "system"
+                else "chain_pair"
+                if related_chain_id is not None
+                else "chain"
+            )
+            if row_scope not in definition.scopes:
+                continue
             record_identity = identity
             if related_chain_id is not None:
                 record_identity = replace(
@@ -475,7 +485,6 @@ def robustness_records_from_frame(
                     related_entity_id=f"entity:related:{related_chain_id}",
                     related_chain_id=related_chain_id,
                 )
-            definition = get_metric_definition(metric_name)
             value = _json_value(raw_value, value_type="float")
             status = (
                 RecordStatus.COMPUTED if value is not None else RecordStatus.MISSING

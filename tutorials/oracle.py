@@ -23,10 +23,12 @@ def _():
         read_text,
         run_command,
     )
+    from _workflow_examples import build_oracle_command
 
     return (
         EXAMPLES_DIR,
         REPO_ROOT,
+        build_oracle_command,
         code_block,
         format_command,
         make_workspace,
@@ -37,14 +39,15 @@ def _():
 
 
 @app.cell
-def _(EXAMPLES_DIR, REPO_ROOT, make_workspace):
+def _(EXAMPLES_DIR, REPO_ROOT, build_oracle_command, make_workspace):
     workspace = make_workspace("cofolder-tutorial-oracle-")
     system_path = EXAMPLES_DIR / "system.yaml"
     options_path = EXAMPLES_DIR / "options.yaml"
     ligand_training_path = (
         REPO_ROOT / "src/cofolder/acceptance/data/ligand_training_data.csv"
     )
-    return ligand_training_path, options_path, system_path, workspace
+    oracle_command = build_oracle_command(EXAMPLES_DIR, workspace)
+    return ligand_training_path, options_path, oracle_command, system_path, workspace
 
 
 @app.cell
@@ -53,29 +56,12 @@ def _(
     format_command,
     ligand_training_path,
     mo,
+    oracle_command,
     options_path,
     read_text,
     system_path,
     workspace,
 ):
-    oracle_command = [
-        "cofolder",
-        "oracle",
-        "-s",
-        system_path,
-        "-o",
-        options_path,
-        "--input_smiles",
-        "CCO",
-        "--output_metric",
-        "ligand_B__affinity_pred_value",
-        "--aggregate",
-        "first",
-        "-w",
-        workspace,
-        "--runner",
-        "boltz2",
-    ]
     bias_command = [
         "cofolder",
         "oracle",

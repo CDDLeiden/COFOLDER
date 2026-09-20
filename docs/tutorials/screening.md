@@ -86,24 +86,57 @@ the directory containing the original system YAML.
 
 ## Step 6: Analyze Results
 
-Results are saved in a CSV file:
+The public metric view is long-form. Select the computed system confidence rows,
+rename `value`, and join source metadata explicitly:
 
 ```python
 import pandas as pd
 
 results = pd.read_csv("screening_output/results/metrics.csv")
+library = pd.read_csv("library.csv")
 
-# Sort by a system-level confidence metric
-top_hits = results.sort_values("system__confidence_score", ascending=False).head(10)
+confidence = results[
+    (results["metric_name"] == "confidence_score")
+    & (results["status"] == "computed")
+    & (results["chain_id"].isna())
+][["compound_id", "value"]].rename(columns={"value": "confidence_score"})
+
+top_hits = (
+    confidence.merge(library, left_on="compound_id", right_on="compound_id")
+    .sort_values("confidence_score", ascending=False)
+    .head(10)
+)
 
 print("Top 10 Compounds:")
-print(top_hits[["compound_id", "system__confidence_score", "mw", "logp"]])
+print(top_hits[["compound_id", "confidence_score", "mw", "logp"]])
 ```
 
-The same table is returned directly when calling `Screen.run()` from Python. Its
-stable columns include model affinity/pIC50 and binding likelihood when supported,
-confidence scores, ligand SASA, distance IFPs, bias similarities, and configured
-pocket/reference metrics. Metrics that are unavailable for a runner remain empty.
+`records.jsonl` is authoritative; `metrics.csv` is its tabular metric view. Each row
+retains metric status, scope, provenance, unit, and direction. Unsupported, missing,
+failed, and unrequested metrics therefore remain distinguishable from numerical zero.
+When calling `Screen.run()` from Python, its convenience return value is a wide
+`DataFrame`; that return value is not a replacement public file format.
+
+### SDF and MOL libraries
+
+The packaged ethanol files exercise structural library ingestion without converting
+them to CSV first:
+
+```bash
+cofolder screen -s system_template.yaml -o screening_options.yaml \
+  -c examples/ethanol.sdf --ligand_chain B --id_property ID \
+  -w ./sdf_screen_output
+
+cofolder screen -s system_template.yaml -o screening_options.yaml \
+  -c examples/ethanol.mol --ligand_chain B --id_property ID \
+  -w ./mol_screen_output
+```
+
+For SDF, every `$$$$` record becomes one outcome. A missing `--id_property` falls
+back to `record_000001`, `record_000002`, and so on. MOL input contains one record.
+Duplicate identifiers are rejected by default; select `--duplicate_id_policy suffix`
+or `source_index` when deterministic rewriting is intended. Malformed structural
+records are retained as source-mapped failures while valid records continue.
 
 ### Discover contact-pattern families without a reference
 
@@ -139,7 +172,7 @@ import seaborn as sns
 
 # Plot confidence distribution
 plt.figure(figsize=(10, 6))
-sns.histplot(results["system__confidence_score"].dropna(), bins=30)
+sns.histplot(confidence["confidence_score"].dropna(), bins=30)
 plt.xlabel('Confidence Score')
 plt.ylabel('Count')
 plt.title('Screening Confidence Distribution')
@@ -227,6 +260,12 @@ cofolder screen \
 - [Validate top hits](../user-guide/validate.md) with the single-system workflow
 - Try [advanced features](advanced.md) like custom scoring
 - Explore [ligand handling](ligands.md) in detail
+
+## Post-v1 Scope
+
+COFOLDER 1.0 screens a ligand library against a fixed system. Protein-iteration or
+selectivity screening is not an implemented 1.0 workflow and is not implied by this
+tutorial.
 
 ## Related
 

@@ -55,6 +55,10 @@ def test_population_rejects_invalid_ids_duplicates_and_conflict_mode(temp_dir):
     _write_sdf(duplicate, [("ETH", "CCO"), ("ETH", "CCN")])
     with pytest.raises(ValueError, match="Duplicate molecule IDs.*ETH"):
         cache.populate_ccd_cache_from_sdf(duplicate, "ID", cache_path=root)
+    invalid = temp_dir / "invalid-id.sdf"
+    _write_sdf(invalid, [("TOO_LONG", "CCO")])
+    with pytest.raises(ValueError, match="Invalid CCD identifiers"):
+        cache.populate_ccd_cache_from_sdf(invalid, "ID", cache_path=root)
     assert not root.exists()
 
 

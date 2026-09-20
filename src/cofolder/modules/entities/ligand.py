@@ -457,6 +457,10 @@ def mol_to_ccd(resname: str, mol: Chem.Mol, boltz_path: Union[str, os.PathLike] 
     - Stereochemical bond configurations
     - Aromatic ring planarity constraints
     """
+    if not isinstance(resname, str) or not resname or len(resname) > 5 or not resname.isalnum():
+        raise ValueError(
+            "CCD identifier must be a nonempty alphanumeric code of at most 5 characters."
+        )
     if mol is None:
         raise Exception("Mol can not be null")
 

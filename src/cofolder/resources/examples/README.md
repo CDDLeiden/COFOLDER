@@ -10,6 +10,8 @@ Use these files when you want to copy a working starting point before editing it
 - `options.yaml`: standard runner options example
 - `system_screen.yaml`: screening template used with a ligand library
 - `ligand_screen.csv`: small screening CSV used by the screen tutorial
+- `ethanol.sdf` and `ethanol.mol`: structural ligand inputs for conformer reuse and Screen
+- `system_custom_ccd.yaml`: custom `ET5` CCD input populated from `ethanol.sdf`
 - `ifp_clustering_demo.py`: CPU-only deterministic IFP clustering demonstration
 - `system_covalent.yaml`: example of a more specialized system definition
 - `system_nucleic_acid.yaml`: protein/DNA/RNA/ligand system with a pocket constraint
@@ -27,6 +29,10 @@ Start with:
 3. one of the quick commands from the root `README.md` or `docs/getting-started/quickstart.md`
 
 Then move to `system_screen.yaml` and `ligand_screen.csv` when you want to explore `screen`.
+
+The ligand tutorial uses `ethanol.sdf`, `ethanol.mol`, and
+`system_custom_ccd.yaml`. The custom CCD system becomes runnable after `ET5` is
+explicitly populated into the cache; it is not expected to work before that setup.
 
 Prepare and compare bias references with:
 

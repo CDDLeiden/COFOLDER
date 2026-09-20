@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -23,10 +24,27 @@ from cofolder.modules.runners.contracts import (
 )
 from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.recipes.screen import Screen
+from cofolder.recipes._screen_postprocess import ScreenPostprocessor
 from tests.modules.analytics.test_reproduction import (
     _write_predicted_pdb,
     _write_reference_pdb,
 )
+
+
+def test_execution_key_validation_ignores_aggregate_metric_rows():
+    processor = SimpleNamespace(
+        execution_plan=SimpleNamespace(
+            executions=(SimpleNamespace(repeat_id=1, sample_id=0),)
+        )
+    )
+    system_df = pd.DataFrame(
+        [
+            {"repeat": 1, "diffusion_sample": 0, "confidence_score": 0.8},
+            {"repeat": None, "diffusion_sample": None, "confidence_score": 0.8},
+        ]
+    )
+
+    ScreenPostprocessor._validate_observed_execution_keys(processor, system_df)
 
 
 def test_reference_complex_ifp_filter_annotates_primary_prediction(
@@ -769,6 +787,8 @@ class TestScreenRun:
         temp_dir,
     ):
         input_df = pd.read_csv(sample_csv_file)
+        input_df["pIC50"] = [5.4, 6.1]
+        input_df.to_csv(sample_csv_file, index=False)
         for i, (_, in_row) in enumerate(input_df.iterrows(), 1):
             run_dir = temp_dir / f"compound_{i:06d}"
             results_dir = run_dir / "results"
@@ -826,7 +846,7 @@ class TestScreenRun:
             library=str(sample_csv_file),
             smiles_column="smiles",
             col_id="compound_id",
-            merge_data="mw",
+            merge_data="mw,pIC50",
         )
         returned_df = screener.run()
 
@@ -853,7 +873,12 @@ class TestScreenRun:
         assert merged_df["system__bias_lig_sim_train_max"].tolist() == [0.35, 0.35]
         assert merged_df["ligand_B__pocket_coverage_custom"].tolist() == [0.75, 0.75]
         assert "mw" in merged_df.columns
+        assert merged_df["pIC50"].tolist() == [5.4, 6.1]
         assert "compound_id" in merged_df.columns
+        public_metrics = pd.read_csv(temp_dir / "results" / "metrics.csv")
+        pic50 = public_metrics[public_metrics["metric_name"] == "pIC50"]
+        assert not pic50["chain_id"].isna().any()
+        assert set(pic50.loc[pic50["status"] == "computed", "chain_id"]) == {"B"}
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_calls_validate_per_row_and_writes_summary(

@@ -17,32 +17,22 @@ def _():
     import pandas as pd
 
     from _marimo_helpers import EXAMPLES_DIR, code_block, format_command, make_workspace, read_text, run_command
+    from _workflow_examples import build_validate_command
 
-    return EXAMPLES_DIR, code_block, format_command, make_workspace, mo, pd, read_text, run_command
+    return EXAMPLES_DIR, build_validate_command, code_block, format_command, make_workspace, mo, pd, read_text, run_command
 
 
 @app.cell
-def _(EXAMPLES_DIR, make_workspace):
+def _(EXAMPLES_DIR, build_validate_command, make_workspace):
     workspace = make_workspace("cofolder-tutorial-validate-")
     system_path = EXAMPLES_DIR / "system.yaml"
     options_path = EXAMPLES_DIR / "options.yaml"
-    return options_path, system_path, workspace
+    validate_command = build_validate_command(EXAMPLES_DIR, workspace)
+    return options_path, system_path, validate_command, workspace
 
 
 @app.cell
-def _(code_block, format_command, mo, options_path, read_text, system_path, workspace):
-    validate_command = [
-        "cofolder",
-        "validate",
-        "-s",
-        system_path,
-        "-o",
-        options_path,
-        "-w",
-        workspace,
-        "--runner",
-        "boltz2",
-    ]
+def _(code_block, format_command, mo, options_path, read_text, system_path, validate_command):
     mo.md(
         f"""
         # Validate Workflow

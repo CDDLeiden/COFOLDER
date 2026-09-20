@@ -19,11 +19,14 @@ EXAMPLE_RESOURCE_NAMES = {
     "README.md",
     "bias_matrix.yaml",
     "custom_bias_complexes.yaml",
+    "ethanol.mol",
+    "ethanol.sdf",
     "ifp_clustering_demo.py",
     "ligand_screen.csv",
     "options.yaml",
     "system.yaml",
     "system_covalent.yaml",
+    "system_custom_ccd.yaml",
     "system_nucleic_acid.yaml",
     "system_screen.yaml",
 }
@@ -170,7 +173,7 @@ def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
     assert all(
         "analysis" in job["extras"].split(",")
         for job in matrix
-        if job["lane"] == "core"
+        if job["lane"] in {"core", "contracts-tutorial"}
     )
     for lane in ("core", "contracts-tutorial", "artifact", "acceptance"):
         assert lane in workflow
@@ -281,12 +284,12 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
         "recursive-include src/cofolder/acceptance/data *.csv *.yaml",
         (
             "recursive-include src/cofolder/resources/examples "
-            "*.cif *.csv *.md *.pdb *.py *.yaml"
+            "*.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml"
         ),
         "recursive-include tests *.json *.py",
         "recursive-include docs *.md",
         "recursive-include tutorials *.md *.py",
-        "recursive-include examples *.cif *.csv *.md *.pdb *.py *.yaml",
+        "recursive-include examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml",
         "recursive-include scripts *.md *.py *.sh",
     }
 

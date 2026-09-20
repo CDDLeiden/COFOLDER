@@ -98,6 +98,16 @@ def populate_ccd_cache_from_sdf(
             f"SDF records {missing_ids} are missing required property '{property_id}'"
         )
     identifiers = [molecule.GetProp(property_id) for molecule in molecules]
+    invalid_ids = [
+        identifier
+        for identifier in identifiers
+        if not identifier or len(identifier) > 5 or not identifier.isalnum()
+    ]
+    if invalid_ids:
+        raise ValueError(
+            "Invalid CCD identifiers found in SDF; expected nonempty alphanumeric "
+            f"codes of at most 5 characters: {invalid_ids}"
+        )
     duplicates = [key for key, count in Counter(identifiers).items() if count > 1]
     if duplicates:
         raise ValueError(f"Duplicate molecule IDs found in SDF: {duplicates}")

@@ -97,7 +97,9 @@ exclude = ["cofolder.ui", "cofolder.ui.*"]
     "*.cif",
     "*.csv",
     "*.md",
+    "*.mol",
     "*.pdb",
     "*.py",
+    "*.sdf",
     "*.yaml",
 ]

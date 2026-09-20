@@ -192,6 +192,11 @@ class Screen:
             tuple[InteractionFingerprint | None, str],
         ] = {}
         self._postprocessor: ScreenPostprocessor | None = None
+        # Library annotations are data, even when a column happens to share a
+        # name with a registered COFOLDER metric (for example an experimental
+        # ``pIC50`` column).  Keep the names so public-output adaptation never
+        # promotes those annotations to computed system metrics.
+        self._library_metadata_columns: set[str] = set()
 
         self.validate_kwargs: dict[str, Any] = {
             "repeats": repeats,
@@ -542,6 +547,11 @@ class Screen:
             metadata_fields=self.merge_data,
             duplicate_policy=self.duplicate_id_policy,
         )
+        self._library_metadata_columns = {
+            str(column)
+            for outcome in compound_library.outcomes
+            for column in outcome.source.metadata
+        }
         if self.validate_kwargs.get("conformers") == "sdf":
             if compound_library.source_format is CompoundLibraryFormat.CSV:
                 raise ValueError("--conformers sdf requires an SDF/MOL screening library.")
@@ -1174,7 +1184,10 @@ class Screen:
                 name = str(key).removeprefix("system__")
                 if str(key).startswith("system__") and name in METRIC_CATALOG:
                     system_values[name] = value
-                elif str(key) in METRIC_CATALOG:
+                elif (
+                    str(key) in METRIC_CATALOG
+                    and str(key) not in self._library_metadata_columns
+                ):
                     system_values[str(key)] = value
             generated_records = metric_records_from_frames(
                 pd.DataFrame([system_values]),

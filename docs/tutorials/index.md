@@ -7,10 +7,11 @@ COFOLDER tutorials come in two forms:
 
 ## Suggested Learning Path
 
-1. Read [Quick Start](../getting-started/quickstart.md).
-2. Read [User Guide Overview](../user-guide/overview.md).
-3. Work through [Basic Usage](basic.md).
-4. Continue with the workflow-specific or topic-specific tutorials below.
+1. Copy the distributable inputs with `cofolder-tools copy-examples ./cofolder-examples`.
+2. Read [Quick Start](../getting-started/quickstart.md).
+3. Read [User Guide Overview](../user-guide/overview.md).
+4. Work through [Basic Usage](basic.md).
+5. Continue with the workflow-specific or topic-specific tutorials below.
 
 ## Written Tutorials
 
@@ -42,6 +43,13 @@ marimo edit tutorials/bias.py
 ```
 
 Use the notebooks when you want to inspect intermediate outputs, execute cells step by step, or adapt the tutorial flow to your own systems. The workflow-first set centers on `bias`, `validate`, `screen`, and `oracle`, then adds cross-cutting ligand handling plus one contributor notebook for runners and backend acceptance.
+
+## Release Scope
+
+The 1.0 tutorial surface covers standalone bias evaluation, Validate, fixed-system
+ligand-library Screen, Oracle, and SMILES/SDF/MOL/CCD ligand handling. Protein-iteration
+or selectivity screening, ligand soaking, and standalone molecule generation are
+post-v1 ambitions and are not presented as implemented workflows.
 
 ## Real-Backend System Inputs
 

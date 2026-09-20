@@ -35,6 +35,8 @@ def test_canonical_aggregation_classifies_and_summarizes_metrics():
         "score_std": math.sqrt(2.0),
     }
     assert aggregation.is_metadata_column("repeat") is True
+    assert aggregation.is_metadata_column("effective_seed") is True
+    assert aggregation.is_metadata_column("runner_version") is True
     assert aggregation.is_metadata_column("confidence_score") is False
     assert bool(aggregation.is_numeric_metric(pd.Series(["1.0", "", None]))) is True
     assert bool(aggregation.is_numeric_metric(pd.Series(["value"]))) is False

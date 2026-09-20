@@ -1,286 +1,191 @@
 # Ligand Handling Tutorial
 
-Comprehensive guide to working with ligands in COFOLDER.
+COFOLDER 1.0 accepts native SMILES, SDF/MOL structural records, and preprocessed
+Chemical Component Dictionary (CCD) entries. Copy the distributable fixtures before
+working through the examples:
 
-## Overview
+```bash
+cofolder-tools copy-examples ./cofolder-examples
+cd cofolder-examples
+```
 
-COFOLDER supports multiple ligand input formats and provides utilities for ligand preparation and manipulation.
+## Route 1: Native SMILES
 
-## Ligand Input Formats
-
-### SMILES Strings
-
-The simplest format for small molecules:
+Put SMILES directly in a system YAML when the selected runner supports native SMILES:
 
 ```yaml
-ligand:
-  id: L
-  smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: ACDEFGHIK
+  - ligand:
+      id: B
+      smiles: CCO
 ```
 
-### SDF Conformers
-
-Keep canonical SMILES in the system and request coordinates at invocation time:
-
-```bash
-cofolder validate -s system.yaml -o options.yaml \
-  --conformers sdf --sdf_file path/to/ligand.sdf
-```
-
-The SDF molecule must match the normalized SMILES chemistry. Direct `sdf` and
-`pdb` fields are not system-YAML ligand formats.
-
-### CCD Identifiers
-
-For standard residues in the Chemical Component Dictionary:
-
-```yaml
-ligand:
-  id: L
-  ccd: "ATP"  # Adenosine triphosphate
-```
-
-## Conformer Generation
-
-### 2D Conformers
-
-Fast generation of 2D coordinates:
-
-```bash
-cofolder validate \
-  -s system.yaml \
-  -o options.yaml \
-  --conformers 2D
-```
-
-### 3D Conformers
-
-Generate 3D conformers using ETKDG + UFF:
-
-```bash
-cofolder validate \
-  -s system.yaml \
-  -o options.yaml \
-  --conformers 3D
-```
-
-## Programmatic Ligand Handling
-
-### Convert CSV to SDF
-
-```python
-from cofolder.modules.entities.ligand import csv_to_sdf
-
-csv_to_sdf(
-    csv_path="compounds.csv",
-    smiles_col="smiles",
-    output_sdf_path="compounds.sdf",
-    property_cols=["compound_id", "mw", "logp"]
-)
-```
-
-### Generate 2D Conformers
-
-```python
-from cofolder.modules.entities.ligand import generate_2d_conformers
-
-generate_2d_conformers(
-    sdf_in="input.sdf",
-    sdf_out="output_2d.sdf"
-)
-```
-
-### Generate 3D Conformers
-
-```python
-from cofolder.modules.entities.ligand import generate_3d_conformers
-
-generate_3d_conformers(
-    sdf_in="input.sdf",
-    sdf_out="output_3d.sdf"
-)
-```
-
-### Create CCD Entries
-
-Convert molecules to Boltz CCD format:
-
-```python
-from rdkit import Chem
-from cofolder.modules.entities.ligand import mol_to_ccd
-
-mol = Chem.MolFromSmiles("CCO")
-mol_to_ccd("ETH", mol, boltz_path="~/.boltz")
-```
-
-### Cache Molecules from SDF
-
-The equivalent installed commands are:
-
-```bash
-cofolder-tools setup-boltz2-cache --cache-path ~/.boltz
-cofolder-tools populate-ccd-cache --sdf ligands.sdf --property-id ID --cache-path ~/.boltz
-```
-
-```python
-from cofolder.tools.cache import populate_ccd_cache_from_sdf, setup_boltz2_cache
-
-setup_boltz2_cache("~/.boltz")  # explicit; may download and run backend setup
-populate_ccd_cache_from_sdf(
-    file_path="ligands.sdf",
-    property_id="ID",
-    on_conflict="overwrite",
-    cache_path="~/.boltz/"
-)
-```
-
-## Working with SDF Files
-
-### Iterate Through SDF
-
-```python
-from cofolder.modules.entities.ligand import iterate_sdf_records
-
-for idx, mol_id, molblock in iterate_sdf_records("library.sdf", "ID"):
-    print(f"Processing {mol_id}...")
-    # Do something with molblock
-```
-
-## Best Practices
-
-### CCD Naming
-
-- Keep identifiers ≤ 5 characters
-- Use alphanumeric characters only
-- Avoid conflicts with standard CCD codes
-- Use descriptive names when possible
-
-```python
-from cofolder.modules.entities.ligand import sanitize_mol_id
-
-safe_id = sanitize_mol_id("VERY_LONG_COMPOUND_ID")  # Truncates to 5 chars
-```
-
-### SMILES Validation
-
-Use the shared validator to parse, sanitize, canonicalize, and retain source identity:
+Validate and canonicalize SMILES through the shared public boundary when preparing
+inputs programmatically:
 
 ```python
 from cofolder.modules.input import LigandSourceIdentity, validate_smiles
 
 ligand = validate_smiles(
-    "CC(C)Cc1ccc(cc1)C(C)C(=O)O",
-    source=LigandSourceIdentity("entity:1", ("L",)),
+    "C[C@H](O)F",
+    source=LigandSourceIdentity("entity:1", ("B",)),
 )
 print(ligand.canonical_smiles)
 ```
 
-### Stereochemistry
+The validator preserves defined stereochemistry in canonical isomeric SMILES. It does
+not invent unspecified stereocentres or protonation/tautomer states.
 
-Ensure stereochemistry is properly defined:
+## Route 2: SDF Conformers for Validate
+
+The system still declares canonical chemistry as SMILES. `--conformers sdf` supplies
+coordinates for that same molecule:
+
+```bash
+cofolder validate -s system_screen.yaml -o options.yaml \
+  --conformers sdf --sdf_file ethanol.sdf \
+  --runner boltz2 -w ./validate-sdf
+```
+
+The first valid SDF molecule must normalize to the same isomeric SMILES as the selected
+system ligand. A chemistry mismatch, unreadable record, or empty file fails before
+backend execution. Direct `sdf`, `mol`, and `pdb` fields are not system-YAML ligand
+fields.
+
+Use generated conformers when no external coordinates are required:
+
+```bash
+cofolder validate -s system_screen.yaml -o options.yaml --conformers 2D
+cofolder validate -s system_screen.yaml -o options.yaml --conformers 3D
+```
+
+## Route 3: SDF and MOL Libraries for Screen
+
+Screen consumes structural libraries directly:
+
+```bash
+cofolder screen -s system_screen.yaml -o options.yaml \
+  -c ethanol.sdf --ligand_chain B --id_property ID \
+  --runner boltz2 -w ./screen-sdf
+
+cofolder screen -s system_screen.yaml -o options.yaml \
+  -c ethanol.mol --ligand_chain B --id_property ID \
+  --runner boltz2 -w ./screen-mol
+```
+
+- Each SDF `$$$$` block is one source record; MOL has exactly one record.
+- `--id_property` selects the SDF property used as the compound ID. Missing values use
+  deterministic `record_000001` identifiers.
+- Duplicate IDs fail by default. Use `--duplicate_id_policy suffix` or `source_index`
+  only when deterministic rewriting is intended.
+- Malformed records become source-mapped failure records and do not hide valid members.
+- Coordinates and defined stereochemistry from a structural record are retained for
+  ligand preparation; chemistry is also normalized to canonical isomeric SMILES.
+
+## Route 4: Standard and Custom CCD Inputs
+
+Use a CCD code when exact atom names are required, especially for covalent constraints,
+or when a backend-compatible component has already been prepared:
+
+```yaml
+version: 1
+sequences:
+  - protein:
+      id: A
+      sequence: ACDEFGHIK
+  - ligand:
+      id: B
+      ccd: ATP
+```
+
+CCD identifiers must be nonempty alphanumeric codes no longer than five characters.
+Atom names in constraints must exist in the cached component. A preprocessed CCD is
+accepted as-is; COFOLDER does not rederive its named atoms and bonds from SMILES.
+
+The packaged `system_custom_ccd.yaml` uses the custom code `ET5`. Initialize a Boltz2
+cache, populate it from the packaged SDF, then run the CCD system with the same cache:
+
+```bash
+cofolder-tools setup-boltz2-cache --cache-path ./cache/.boltz
+cofolder-tools populate-ccd-cache \
+  --sdf ethanol.sdf --property-id ID --cache-path ./cache/.boltz
+cofolder validate -s system_custom_ccd.yaml -o options.yaml \
+  --runner boltz2 -w ./validate-custom-ccd
+```
+
+`setup-boltz2-cache` may download backend assets. `populate-ccd-cache` is explicit and
+supports conflict policies; it never silently replaces an existing component.
+
+### Convert SMILES through the public Python API
 
 ```python
+from pathlib import Path
+
 from rdkit import Chem
-from rdkit.Chem import AllChem
+from cofolder.modules.entities.ligand import mol_to_ccd
 
-mol = Chem.MolFromSmiles("C[C@H](O)c1ccccc1")
-AllChem.AssignStereochemistryFrom3D(mol)
+cache = Path("cache/.boltz")
+molecule = Chem.MolFromSmiles("CCO")
+mol_to_ccd("ET5", molecule, boltz_path=cache)
 ```
 
-## Advanced Features
+This produces `cache/.boltz/mols/ET5.pkl`, including Boltz-compatible atom names,
+connectivity, stereochemical properties, and geometric constraints. Initialize the
+rest of the cache first when it will be used for prediction.
 
-### Custom CCD Properties
-
-Add custom properties to molecules:
-
-```python
-from cofolder.modules.entities.ligand import add_pickled_prop
-
-mol = Chem.MolFromSmiles("CCO")
-add_pickled_prop(mol, "custom_score", 0.95)
-```
-
-### Extract Constraints
-
-Extract geometric constraints from molecules:
+## Reusable Conversion Utilities
 
 ```python
-from cofolder.modules.entities.ligand import extract_constraints
-
-constraints = [...]  # From parsed residue
-bond_constraints = extract_constraints(constraints, 'is_bond')
-```
-
-## Common Issues
-
-### Invalid SMILES
-
-**Problem:** SMILES string cannot be parsed
-
-**Solution:**
-- Validate with RDKit before use
-- Check for typos or invalid characters
-- Use canonical SMILES
-
-### CCD Conflicts
-
-**Problem:** CCD identifier already exists
-
-**Solution:**
-```python
-populate_ccd_cache_from_sdf(
-    file_path="ligands.sdf",
-    property_id="ID",
-    on_conflict="overwrite",  # or "use_cache"
-    cache_path="~/.boltz/",
-)
-```
-
-### 3D Generation Failures
-
-**Problem:** 3D conformer generation fails
-
-**Solution:**
-- Try 2D conformers instead
-- Check molecule for unusual features
-- Simplify structure if possible
-
-## Examples
-
-### Complete Workflow
-
-```python
-from rdkit import Chem
 from cofolder.modules.entities.ligand import (
     csv_to_sdf,
+    generate_2d_conformers,
     generate_3d_conformers,
+    iterate_sdf_records,
 )
-from cofolder.tools.cache import populate_ccd_cache_from_sdf, setup_boltz2_cache
 
-# 1. Convert CSV to SDF
 csv_to_sdf(
     csv_path="compounds.csv",
     smiles_col="smiles",
-    property_cols=["id", "name"]
+    output_sdf_path="compounds.sdf",
+    property_cols=["compound_id"],
 )
+generate_2d_conformers("compounds.sdf", "compounds-2d.sdf")
+generate_3d_conformers("compounds.sdf", "compounds-3d.sdf")
 
-# 2. Generate 3D conformers
-generate_3d_conformers(
-    sdf_in="compounds.sdf",
-    sdf_out="compounds_3d.sdf"
-)
-
-# 3. Explicitly set up Boltz, then populate its CCD cache
-setup_boltz2_cache("~/.boltz")
-populate_ccd_cache_from_sdf(
-    file_path="compounds_3d.sdf",
-    property_id="id",
-    cache_path="~/.boltz",
-)
+for source_index, compound_id, molblock in iterate_sdf_records(
+    "compounds-3d.sdf", "compound_id"
+):
+    print(source_index, compound_id, len(molblock))
 ```
+
+2D coordinates are intended for layout. 3D generation uses ETKDG followed by UFF and
+can fail for molecules that cannot be embedded or optimized. Inspect generated
+stereochemistry rather than assuming that 3D generation resolves unspecified centres.
+
+## Failure Guide
+
+| Failure | Resolution |
+| --- | --- |
+| Invalid SMILES | Parse and sanitize with `validate_smiles`; correct the source chemistry. |
+| SDF chemistry mismatch | Use an SDF record for the exact selected system ligand, including stereochemistry. |
+| Missing SDF identifier | Set the requested property or accept the deterministic source-record fallback. |
+| Duplicate identifiers | Correct the library or select an explicit duplicate-ID policy. |
+| Invalid CCD identifier | Use a unique alphanumeric code of at most five characters. |
+| Missing custom CCD | Initialize and populate the same cache path configured in `options.yaml`. |
+| CCD conflict | Select `overwrite` or `use_cache` deliberately; the installed command defaults to `overwrite`. |
+
+## Not a COFOLDER 1.0 Workflow
+
+Ligand soaking and standalone molecule generation are post-v1 ambitions. External
+molecule generators can call Oracle with proposed SMILES, but COFOLDER does not claim a
+standalone generator or soaking workflow in this release.
 
 ## Related
 
-- [API Reference: Entities](../api/modules/entities.md)
-- [Virtual Screening Tutorial](screening.md)
+- [Virtual Screening](screening.md)
 - [Configuration Guide](../getting-started/configuration.md)
+- [Entities API](../api/modules/entities.md)

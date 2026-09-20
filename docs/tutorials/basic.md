@@ -43,6 +43,15 @@ runner:
 
 ## Step 3: Run Prediction
 
+Check the complete input contract without starting inference:
+
+```bash
+cofolder validate -s system.yaml -o options.yaml \
+  -w ./tutorial_output --preflight_only
+```
+
+After preflight reports `preflight=ready`, run the prediction:
+
 ```bash
 cofolder validate -s system.yaml -o options.yaml -w ./tutorial_output
 ```
@@ -58,7 +67,8 @@ ls -l tutorial_output/
 You should see:
 - `raw/` - runner-owned raw execution artifacts
 - `results/records.jsonl` - authoritative versioned records
-- `results/metrics.csv` - long-form metric view
+- `results/{executions,successes,metrics,failures}.csv` - long-form views
+- `results/manifest.json` - invocation, backend, evidence, and completion metadata
 - `results/structures/` - gathered output structures
 - log files in the working directory
 
@@ -78,9 +88,17 @@ Examine the confidence scores:
 import pandas as pd
 
 metrics_df = pd.read_csv("tutorial_output/results/metrics.csv")
+confidence = metrics_df[
+    (metrics_df["metric_name"] == "confidence_score")
+    & (metrics_df["status"] == "computed")
+]
 
-print(system_df[["model_name", "confidence_score"]].head())
+print(confidence[["repeat_id", "model_id", "sample_id", "value"]].head())
 ```
+
+`metrics.csv` is deliberately long-form: metric names live in `metric_name` and
+their numeric result lives in `value`. Do not expect the retired wide
+`system_metrics.csv` or `chain_metrics.csv` files in `results/`.
 
 ## Next Steps
 

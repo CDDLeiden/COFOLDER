@@ -651,9 +651,10 @@ class ScreenPostprocessor:
         planned = {
             (slot.repeat_id, slot.sample_id) for slot in self.execution_plan.executions
         }
+        execution_rows = system_df.dropna(subset=["repeat", "diffusion_sample"])
         observed = {
             (int(row["repeat"]), int(row["diffusion_sample"]))
-            for _, row in system_df.iterrows()
+            for _, row in execution_rows.iterrows()
         }
         extras = sorted(observed - planned)
         if extras:
@@ -720,5 +721,4 @@ class ScreenPostprocessor:
         if "CHAIN_ID" in df.columns:
             return df.drop_duplicates(subset=["CHAIN_ID"], keep="first")
         return df
-
 

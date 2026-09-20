@@ -38,6 +38,7 @@ from cofolder.modules.contracts import (
     failure_from_exception,
     make_envelope,
     metric_records_from_frames,
+    robustness_records_from_frame,
     validate_public_bundle,
     write_public_bundle,
 )
@@ -339,6 +340,33 @@ def test_pairwise_metric_uses_related_identity_instead_of_dynamic_name():
     assert metric.envelope.identity.chain_id == "A"
     assert metric.envelope.identity.related_chain_id == "B"
     assert metric.envelope.identity.related_entity_id == "entity:0"
+
+
+def test_robustness_adapter_ignores_metrics_outside_each_row_scope():
+    frame = pd.DataFrame(
+        [
+            {
+                "ENTITY_TYPE": "system",
+                "ENTITY_ID": "system",
+                "confidence_score_mean": 0.8,
+                "pair_chains_iptm_1_mean": None,
+            },
+            {
+                "ENTITY_TYPE": "ligand",
+                "ENTITY_ID": "B",
+                "confidence_score_mean": None,
+                "pair_chains_iptm_1_mean": 0.7,
+            },
+        ]
+    )
+
+    records = robustness_records_from_frame(frame, base_identity=_identity())
+
+    assert [(record.metric_name, record.envelope.identity.chain_id) for record in records] == [
+        ("confidence_score", None),
+        ("confidence_score", "B"),
+        ("pair_chains_iptm", "B"),
+    ]
 
 
 def test_aggregation_preserves_identity_and_emits_robustness_metadata():

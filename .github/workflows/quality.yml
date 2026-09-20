@@ -39,7 +39,7 @@ jobs:
             extras: test,analysis
           - python-version: "3.11"
             lane: contracts-tutorial
-            extras: test,tutorials
+            extras: test,tutorials,analysis
           - python-version: "3.11"
             lane: acceptance
             extras: test,acceptance
@@ -48,7 +48,7 @@ jobs:
             extras: test,analysis
           - python-version: "3.12"
             lane: contracts-tutorial
-            extras: test,tutorials
+            extras: test,tutorials,analysis
           - python-version: "3.12"
             lane: acceptance
             extras: test,acceptance

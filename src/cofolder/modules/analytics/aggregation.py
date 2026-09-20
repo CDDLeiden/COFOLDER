@@ -10,7 +10,10 @@ import pandas as pd
 
 from cofolder.modules.analytics import align
 from cofolder.modules.contracts import AmbiguousIdentityError
-from cofolder.modules.runners.contracts import RunnerChainIdentity
+from cofolder.modules.runners.contracts import (
+    RUNNER_PROVENANCE_COLUMNS,
+    RunnerChainIdentity,
+)
 from cofolder.modules.utils import read
 
 # Preserve the established logger identity during the behavior-preserving move.
@@ -486,9 +489,11 @@ def is_metadata_column(column_name: str) -> bool:
         "diffusion_sample",
         "cif_file",
         "CHAIN_ID",
+        "ENTITY_ID",
         "ENTITY_TYPE",
         "conf_chain_id",
-    }
+        "ligand_molecule_id",
+    } | set(RUNNER_PROVENANCE_COLUMNS)
 
     result = column_name in metadata_cols
 
