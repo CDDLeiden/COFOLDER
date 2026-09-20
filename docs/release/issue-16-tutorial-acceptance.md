@@ -97,8 +97,10 @@ then consumed.
 ## Automated gates
 
 - `ruff check src tests scripts tutorials examples`: passed.
-- `python scripts/run_test_lane.py contracts-tutorial`: 27 passed on Python
-  3.12.4. The CI lane is matrixed over Python 3.11 and 3.12.
+- `python scripts/run_test_lane.py contracts-tutorial`: 27 passed independently
+  in the clean Python 3.11.15 and Python 3.12.13 release environments; `pip
+  check` passed in both. The same lane is matrixed over Python 3.11 and 3.12 in
+  GitHub Actions.
 - Focused ligand, input, packaging, example, tutorial, and Screen regression set:
   117 passed.
 - Aggregation, public-contract, Validate, Screen, ligand, and cache regressions:
