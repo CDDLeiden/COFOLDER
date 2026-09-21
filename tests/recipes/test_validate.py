@@ -28,6 +28,7 @@ from cofolder.modules.runners.contracts import (
     RunnerPreparationResult,
     RunnerRuntime,
 )
+from cofolder.modules.input.system import System
 from cofolder.recipes.screen import Screen
 from cofolder.recipes.validate import Validate
 
@@ -334,6 +335,7 @@ class _CapturingRunner(_FakeRunner):
         super().__init__(system_name)
         self.validation_snapshots = []
         self.execution_constraints = None
+        self.execution_system = None
 
     def validate_system(
         self,
@@ -359,6 +361,7 @@ class _CapturingRunner(_FakeRunner):
         )
 
     def run(self, request):
+        self.execution_system = json.loads(json.dumps(request.system_obj.system))
         self.execution_constraints = json.loads(
             json.dumps(request.system_obj.system.get("constraints", []))
         )
@@ -960,6 +963,74 @@ def test_failed_backend_attempt_persists_version_and_seed_provenance(
 
 
 class TestValidateRun:
+    def test_canonical_protein_sequence_round_trips_to_runner_request(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        source_path = temp_dir / "source.yaml"
+        source_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        system_obj = System(system_path=source_path)
+        system_obj.update_system(
+            value="MKRAAT", path=["sequences", 0, "protein", "sequence"]
+        )
+        saved_path = temp_dir / "saved.yaml"
+        system_obj.save_system_to_yaml(saved_path)
+        assert System(system_path=saved_path).system["sequences"][0]["protein"] == {
+            "id": "A",
+            "sequence": "MKRAAT",
+        }
+        runner = _CapturingRunner(system_name="sequence_round_trip")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(saved_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        assert runner.execution_system["sequences"][0]["protein"] == {
+            "id": "A",
+            "sequence": "MKRAAT",
+        }
+
+    def test_ccd_only_ligand_reaches_runner_without_smiles_derivation(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "ccd.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "ccd": "ET5"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _CapturingRunner(system_name="ccd_input")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        ligand_definition = runner.execution_system["sequences"][1]["ligand"]
+        assert ligand_definition == {"id": "B", "ccd": "ET5"}
+
     def test_invalid_runner_options_fail_preflight_without_backend_call(
         self, monkeypatch, sample_system_yaml, temp_dir
     ):

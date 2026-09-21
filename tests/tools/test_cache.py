@@ -1,5 +1,7 @@
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+import pickle
+from types import SimpleNamespace
 
 import pytest
 from rdkit import Chem
@@ -80,6 +82,55 @@ def test_population_preserves_conflict_modes(monkeypatch, temp_dir):
     converted.clear()
     cache.populate_ccd_cache_from_sdf(source, "ID", cache_path=root)
     assert converted == ["ETH", "ETN"]
+
+
+def test_population_creates_readable_ccd_artifacts_for_multiple_records(
+    monkeypatch, temp_dir
+):
+    root = temp_dir / "cache"
+    _complete(root)
+    source = temp_dir / "ligands.sdf"
+    _write_sdf(source, [("ETH", "CCO"), ("ETN", "CCN")])
+    parsed = SimpleNamespace(
+        rdkit_bounds_constraints=[],
+        chiral_atom_constraints=[],
+        stereo_bond_constraints=[],
+        planar_ring_5_constraints=[],
+        planar_ring_6_constraints=[],
+        planar_bond_constraints=[],
+    )
+    monkeypatch.setattr(
+        "cofolder.modules.entities.ligand._load_parse_ccd_residue",
+        lambda: lambda *args: parsed,
+    )
+
+    cache.populate_ccd_cache_from_sdf(source, "ID", cache_path=root)
+
+    for identifier, expected_smiles in (("ETH", "CCO"), ("ETN", "CCN")):
+        artifact = root / "mols" / f"{identifier}.pkl"
+        assert artifact.is_file()
+        with artifact.open("rb") as stream:
+            molecule = pickle.load(stream)
+        assert Chem.MolToSmiles(molecule, isomericSmiles=True) == expected_smiles
+        assert pickle.loads(bytes.fromhex(molecule.GetProp("MOL_NAME"))) == identifier
+
+
+def test_population_surfaces_conversion_failures_with_identifier(
+    monkeypatch, temp_dir
+):
+    root = temp_dir / "cache"
+    _complete(root)
+    source = temp_dir / "ligands.sdf"
+    _write_sdf(source, [("ETH", "CCO")])
+    monkeypatch.setattr(
+        "cofolder.modules.entities.ligand.mol_to_ccd",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad conversion")),
+    )
+
+    with pytest.raises(RuntimeError, match="ETH: bad conversion"):
+        cache.populate_ccd_cache_from_sdf(source, "ID", cache_path=root)
+
+    assert not (root / "mols" / "ETH.pkl").exists()
 
 
 def test_explicit_setup_is_locked_and_verified(monkeypatch, temp_dir):

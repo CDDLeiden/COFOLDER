@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+from rdkit import Chem
+import yaml
 
 from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.recipes.oracle import (
@@ -163,6 +165,53 @@ class TestOracleInit:
 
 
 class TestOracleRun:
+    @pytest.mark.parametrize("suffix", [".mol", ".sdf"])
+    @patch("cofolder.recipes.oracle.Validate.run")
+    def test_run_accepts_mol_file_and_replaces_ligand_with_canonical_smiles(
+        self,
+        mock_validate_run,
+        suffix,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        molecule = Chem.MolFromSmiles("C(C)O")
+        input_path = temp_dir / f"query{suffix}"
+        if suffix == ".sdf":
+            writer = Chem.SDWriter(str(input_path))
+            writer.write(molecule)
+            writer.close()
+        else:
+            input_path.write_text(Chem.MolToMolBlock(molecule), encoding="utf-8")
+        run_dir = temp_dir / "oracle_run" / "results"
+        run_dir.mkdir(parents=True)
+        pd.DataFrame([{"confidence_score": 0.75}]).to_csv(
+            run_dir / "system_metrics.csv", index=False
+        )
+        pd.DataFrame([{"CHAIN_ID": "A"}]).to_csv(
+            run_dir / "chain_metrics.csv", index=False
+        )
+        oracle = Oracle(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            input_mol_file=str(input_path),
+            output_metric="confidence_score",
+            scoring_functions=["confidence_metrics"],
+        )
+
+        assert oracle.run() == pytest.approx(0.75)
+
+        generated = yaml.safe_load(
+            (temp_dir / "oracle_run" / "oracle_system.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        ligand_definition = generated["sequences"][1]["ligand"]
+        assert ligand_definition["smiles"] == "CCO"
+        assert "ccd" not in ligand_definition
+        mock_validate_run.assert_called_once()
+
     @patch("cofolder.recipes.oracle.Validate")
     def test_run_uses_boltz2_as_default_runner(
         self,

@@ -374,6 +374,17 @@ def smiles_to_sdf(
         if output_sdf_path is None:
             output_sdf_path = "output.sdf"
 
+        invalid_smiles = [
+            (index, smiles)
+            for index, smiles in enumerate(smiles_list)
+            if Chem.MolFromSmiles(smiles) is None
+        ]
+        if invalid_smiles:
+            details = ", ".join(
+                f"{index} ({smiles!r})" for index, smiles in invalid_smiles
+            )
+            raise ValueError(f"Invalid SMILES at index/indices: {details}")
+
         # Normalize property_cols for SMILES
         if property_cols is None:
             props_list = [{}] * len(smiles_list)

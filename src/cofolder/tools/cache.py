@@ -119,6 +119,7 @@ def populate_ccd_cache_from_sdf(
         )
     from cofolder.modules.entities.ligand import mol_to_ccd
     mols = root / "mols"
+    failures: list[tuple[str, Exception]] = []
     for molecule in molecules:
         identifier = molecule.GetProp(property_id)
         destination = mols / f"{identifier}.pkl"
@@ -129,6 +130,12 @@ def populate_ccd_cache_from_sdf(
             mol_to_ccd(identifier, molecule, boltz_path=root)
         except Exception as exc:
             logger.error("Failed to process ID %s: %s", identifier, exc)
+            failures.append((identifier, exc))
+    if failures:
+        details = "; ".join(
+            f"{identifier}: {exc}" for identifier, exc in failures
+        )
+        raise RuntimeError(f"Failed to populate CCD cache for {details}") from failures[0][1]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

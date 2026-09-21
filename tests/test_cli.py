@@ -10,6 +10,7 @@ import urllib.request
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from rdkit import Chem
 import yaml
 
 from cofolder import cli
@@ -349,6 +350,95 @@ def test_cli_preflight_rejects_ambiguous_ligands_before_writes(
     assert captured.err == ""
     assert not output.exists()
 
+
+def test_validate_rejects_sdf_conformer_mode_without_sdf_file(
+    sample_system_yaml, sample_options_yaml, temp_dir
+):
+    assert cli.main(
+        [
+            "validate",
+            "-s", str(sample_system_yaml),
+            "-o", str(sample_options_yaml),
+            "--conformers", "sdf",
+            "-w", str(temp_dir / "validate"),
+        ]
+    ) == 2
+
+
+def test_screen_rejects_missing_csv_mapping_and_structure_mapping_conflict(
+    sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
+):
+    common = [
+        "-s", str(sample_system_yaml),
+        "-o", str(sample_options_yaml),
+        "--preflight_only",
+    ]
+    assert cli.main(
+        ["screen", *common, "-c", str(sample_csv_file), "--smiles_column", "smiles"]
+    ) == 2
+
+    sdf_path = temp_dir / "library.sdf"
+    writer = Chem.SDWriter(str(sdf_path))
+    writer.write(Chem.MolFromSmiles("CCO"))
+    writer.close()
+    assert cli.main(
+        ["screen", *common, "-c", str(sdf_path), "--smiles_column", "smiles"]
+    ) == 2
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        [],
+        ["--input_smiles", "CCO", "--input_mol_file", "query.mol"],
+        ["--input_smiles", "CCO", "--aggregate", "unsupported"],
+    ],
+)
+def test_oracle_parser_rejects_missing_duplicate_or_invalid_inputs(
+    extra, sample_system_yaml, sample_options_yaml, temp_dir
+):
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                "oracle",
+                "-s", str(sample_system_yaml),
+                "-o", str(sample_options_yaml),
+                "--output_metric", "confidence_score",
+                "-w", str(temp_dir),
+                *extra,
+            ]
+        )
+    assert caught.value.code == 2
+
+
+def test_oracle_rejects_nonexistent_and_unparseable_mol_inputs(
+    sample_system_yaml, sample_options_yaml, temp_dir
+):
+    common = [
+        "oracle",
+        "-s", str(sample_system_yaml),
+        "-o", str(sample_options_yaml),
+        "--output_metric", "confidence_score",
+        "--scoring_functions", "confidence_metrics",
+    ]
+    assert cli.main(
+        [
+            *common,
+            "--input_mol_file", str(temp_dir / "missing.mol"),
+            "--preflight_only",
+        ]
+    ) == 2
+
+    invalid = temp_dir / "invalid.mol"
+    invalid.write_text("not a molblock", encoding="utf-8")
+    assert cli.main(
+        [
+            *common,
+            "--input_mol_file", str(invalid),
+            "-w", str(temp_dir / "invalid-oracle"),
+        ]
+    ) != 0
+
 class TestValidateRecipe:
     """Tests for ValidateRecipe class."""
 
@@ -541,6 +631,44 @@ class TestScreenRecipe:
             cli.main(args)
         assert caught.value.code == 2
 
+    def test_main_dispatches_current_screen_contract(
+        self,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        screener = Mock()
+        screen_cls = Mock(return_value=screener)
+
+        with patch("cofolder.cli._load_recipe_class", return_value=screen_cls):
+            result = cli.main(
+                [
+                    "screen",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "-c", str(sample_csv_file),
+                    "--ligand_chain", "B",
+                    "--smiles_column", "smiles",
+                    "--col_id", "compound_id",
+                    "--merge_data", "mw",
+                    "--scoring_functions", "confidence_metrics",
+                    "-w", str(temp_dir),
+                ]
+            )
+
+        assert result == 0
+        kwargs = screen_cls.call_args.kwargs
+        assert kwargs["system_path"] == str(sample_system_yaml)
+        assert kwargs["options_path"] == str(sample_options_yaml)
+        assert kwargs["library"] == str(sample_csv_file)
+        assert kwargs["ligand_chain"] == "B"
+        assert kwargs["smiles_column"] == "smiles"
+        assert kwargs["col_id"] == "compound_id"
+        assert kwargs["merge_data"] == "mw"
+        assert kwargs["scoring_functions"] == ["confidence_metrics"]
+        screener.run.assert_called_once()
+
 
 class TestOracleRecipe:
     """Tests for OracleRecipe class."""
@@ -568,6 +696,37 @@ class TestOracleRecipe:
         assert args.input_smiles == "CCO"
         assert args.output_metric == "affinity_pred_value"
         assert args.aggregate == "first"
+
+    def test_main_dispatches_current_oracle_contract(
+        self, sample_system_yaml, sample_options_yaml, temp_dir
+    ):
+        oracle = Mock()
+        oracle_cls = Mock(return_value=oracle)
+
+        with patch("cofolder.cli._load_recipe_class", return_value=oracle_cls):
+            result = cli.main(
+                [
+                    "oracle",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "--input_smiles", "C[C@H](O)F",
+                    "--output_metric", "confidence_score",
+                    "--aggregate", "median",
+                    "--scoring_functions", "confidence_metrics",
+                    "-w", str(temp_dir),
+                ]
+            )
+
+        assert result == 0
+        kwargs = oracle_cls.call_args.kwargs
+        assert kwargs["system_path"] == str(sample_system_yaml)
+        assert kwargs["options_path"] == str(sample_options_yaml)
+        assert kwargs["input_smiles"] == "C[C@H](O)F"
+        assert kwargs["input_mol_file"] is None
+        assert kwargs["output_metric"] == "confidence_score"
+        assert kwargs["aggregate"] == "median"
+        assert kwargs["scoring_functions"] == ["confidence_metrics"]
+        oracle.run.assert_called_once()
 
 
 class TestBiasRecipe:

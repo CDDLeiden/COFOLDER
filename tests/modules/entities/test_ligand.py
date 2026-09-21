@@ -191,6 +191,56 @@ class TestCsvToSdf:
             )
 
 
+class TestSmilesToSdf:
+    """Tests for direct single- and multi-SMILES conversion."""
+
+    @pytest.mark.parametrize(
+        ("data", "properties", "expected_smiles", "expected_ids"),
+        [
+            ("C[C@H](O)F", {"ID": "CHF"}, ["C[C@H](O)F"], ["CHF"]),
+            (
+                ["CCO", "C[C@@H](O)F"],
+                [{"ID": "ETH"}, {"ID": "CHG"}],
+                ["CCO", "C[C@@H](O)F"],
+                ["ETH", "CHG"],
+            ),
+        ],
+    )
+    def test_round_trip_smiles_with_properties_and_stereochemistry(
+        self, data, properties, expected_smiles, expected_ids, temp_dir
+    ):
+        output = temp_dir / "direct.sdf"
+
+        ligand.smiles_to_sdf(
+            data=data,
+            output_sdf_path=str(output),
+            property_cols=properties,
+        )
+
+        molecules = [
+            molecule
+            for molecule in Chem.SDMolSupplier(str(output), removeHs=False)
+            if molecule is not None
+        ]
+        assert [
+            Chem.MolToSmiles(molecule, isomericSmiles=True)
+            for molecule in molecules
+        ] == expected_smiles
+        assert [molecule.GetProp("ID") for molecule in molecules] == expected_ids
+
+    @pytest.mark.parametrize(
+        "data",
+        ["not-a-smiles", ["CCO", "not-a-smiles"]],
+    )
+    def test_invalid_smiles_fails_without_partial_output(self, data, temp_dir):
+        output = temp_dir / "invalid.sdf"
+
+        with pytest.raises(ValueError, match="Invalid SMILES at index/indices"):
+            ligand.smiles_to_sdf(data=data, output_sdf_path=str(output))
+
+        assert not output.exists()
+
+
 class TestIterateSdfRecords:
     """Tests for iterate_sdf_records function."""
 

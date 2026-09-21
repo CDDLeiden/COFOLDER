@@ -31,7 +31,7 @@ def sample_system_yaml(temp_dir):
             {
                 "protein": {
                     "id": "A",
-                    "fasta": "MKRAAT"
+                    "sequence": "MKRAAT"
                 }
             },
             {
