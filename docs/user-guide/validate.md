@@ -6,6 +6,18 @@ shared query cache, and prepared custom-complex supplements.
 
 The `validate` command performs co-folding of a single protein-ligand system.
 
+## Evidence regimes
+
+| Regime | Inputs | Applicable diagnostics |
+| --- | --- | --- |
+| Reference complex | `--reference_path` with a PDB/mmCIF/CIF complex | Protein/ligand RMSD, SuCOS, pose overlap, reference pocket coverage, reference-derived IFP analysis |
+| Pocket only | `--pocket_coverage_reference` without a structure reference | Custom pocket coverage, distance IFPs, exposure, confidence, robustness, and optional bias context |
+| Reference free | Neither reference input | Confidence, binding/affinity when runner-supported, SASA, interactions, repeat consistency, and optional bias context |
+
+Unavailable evidence is represented explicitly; it does not turn an unrelated
+diagnostic into a failure. No regime or metric provides a universal correctness
+threshold.
+
 ## Basic Usage
 
 ```bash
@@ -89,9 +101,12 @@ sequences:
       id: "protein_1"
       fasta: "MKTAYIAKQRQISFV..."
   - ligand:
+      id: B
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
+
+Each ligand defines exactly one of `smiles`, `ccd`, or `ccd_codes`. Use CCD instead
+of SMILES when stable atom names or a preprocessed multi-component ligand is needed.
 
 ## Output
 

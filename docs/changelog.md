@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-20
+
 ### Added
 - Python Oracle composite objectives, structured custom scoring callbacks, and
   auditable structure gates with down-weight, fixed-penalty, or non-binder outcomes.
@@ -55,5 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive CLI interface
 - Example configurations and tutorials
 
-[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/CDDLeiden/COFOLDER/releases/tag/v0.1.0

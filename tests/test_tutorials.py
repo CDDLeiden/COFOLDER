@@ -12,8 +12,11 @@ from rdkit import Chem
 import yaml
 
 from cofolder import cli
+from cofolder.modules.contracts import METRIC_CATALOG
 from cofolder.modules.input.compound_library import CompoundMember, load_compound_library
 from cofolder.modules.input.ligand import LigandTarget
+from cofolder.modules.input.system import System
+from cofolder.modules.runners.boltz2_runner import Boltz2Runner
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIALS_DIR = REPO_ROOT / "tutorials"
@@ -151,3 +154,77 @@ def test_public_tutorials_do_not_reference_removed_or_fictional_apis() -> None:
         "system_df[[",
     )
     assert all(symbol not in content for symbol in forbidden)
+
+
+def test_packaged_system_and_options_examples_validate() -> None:
+    runner = Boltz2Runner()
+    options = runner.load_options(EXAMPLES_DIR / "options.yaml")
+    system_paths = sorted(EXAMPLES_DIR.glob("system*.yaml"))
+
+    assert system_paths
+    for path in system_paths:
+        document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        runner.validate_system(
+            System(system=document),
+            options,
+            check_atom_names=False,
+            source_path=path,
+        )
+
+
+def test_public_docs_use_validated_oracle_quickstart() -> None:
+    expected = "--output_metric system__confidence_score"
+    scoring = "--scoring_functions confidence_metrics"
+    for path in (REPO_ROOT / "README.md", REPO_ROOT / "docs/getting-started/quickstart.md"):
+        content = path.read_text(encoding="utf-8")
+        assert expected in content
+        assert scoring in content
+
+
+def test_metric_reference_matches_runtime_catalog() -> None:
+    path = REPO_ROOT / "docs/user-guide/metric-reference.md"
+    rows = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| `"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        name = cells[0].strip("`")
+        rows[name] = tuple(cell.strip("`") for cell in cells[1:])
+
+    unit_labels = {
+        None: "unitless",
+        "angstrom": "Å",
+        "angstrom^2": "Å²",
+        "angstrom^2/heavy_atom": "Å²/heavy atom",
+        "percent_identity": "percent identity",
+        "tanimoto": "Tanimoto",
+    }
+    expected = {}
+    for name, definition in METRIC_CATALOG.items():
+        evidence = sorted(item.value for item in definition.allowed_evidence_regimes)
+        evidence_label = "all regimes" if len(evidence) == 3 else ", ".join(evidence)
+        expected[name] = (
+            definition.group,
+            definition.metric_class.value,
+            "JSON" if definition.value_type == "json" else definition.value_type,
+            unit_labels.get(definition.unit, definition.unit),
+            definition.direction.value,
+            ", ".join(sorted(definition.scopes)),
+            evidence_label,
+        )
+
+    assert rows == expected
+
+
+def test_current_public_docs_do_not_use_legacy_package_names() -> None:
+    paths = [REPO_ROOT / "README.md"]
+    paths.extend((REPO_ROOT / "docs").rglob("*.md"))
+    paths = [
+        path
+        for path in paths
+        if "release" not in path.parts and path.name != "changelog.md"
+    ]
+    content = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
+
+    assert "boltz-eval" not in content
+    assert "boltz_tools" not in content

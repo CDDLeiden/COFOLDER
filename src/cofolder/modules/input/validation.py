@@ -198,12 +198,26 @@ def _validated_chains(
                         character=symbol,
                     )
             payload[sequence_key] = normalized
-        if entity_type == "ligand" and not any(
-            payload.get(key) for key in ("smiles", "ccd", "ccd_codes")
-        ):
-            raise _error(
-                runner_name, f"ligand entry {index} requires 'smiles' or 'ccd'."
+        if entity_type == "ligand":
+            representation_keys = tuple(
+                key
+                for key in ("smiles", "ccd", "ccd_codes")
+                if _has_ligand_representation(payload.get(key))
             )
+            if not representation_keys:
+                raise _error(
+                    runner_name,
+                    f"ligand entry {index} requires exactly one of "
+                    "'smiles', 'ccd', or 'ccd_codes'.",
+                )
+            if len(representation_keys) > 1:
+                conflicting = ", ".join(repr(key) for key in representation_keys)
+                raise _error(
+                    runner_name,
+                    f"ligand entry {index} defines conflicting representations: "
+                    f"{conflicting}; provide exactly one of 'smiles', 'ccd', or "
+                    "'ccd_codes'.",
+                )
         for raw_id in ids:
             chain_id = str(raw_id)
             if chain_id in seen:
@@ -213,6 +227,14 @@ def _validated_chains(
             seen.add(chain_id)
             chains.append(SystemChain(chain_id, entity_type, payload, index))
     return chains
+
+
+def _has_ligand_representation(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(str(item).strip() for item in value)
+    return bool(value)
 
 
 def _validated_entities(chains: list[SystemChain]) -> tuple[ValidatedEntity, ...]:

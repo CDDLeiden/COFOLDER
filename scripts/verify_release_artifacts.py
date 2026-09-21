@@ -61,6 +61,7 @@ def _verify_sdist(sdist: Path, source_root: Path) -> str:
     required = {
         f"{root}/LICENSE",
         f"{root}/THIRD_PARTY_SOFTWARE.md",
+        f"{root}/CITATION.cff",
         f"{root}/README.md",
         f"{root}/pyproject.toml",
         f"{root}/.github/workflows/quality.yml",

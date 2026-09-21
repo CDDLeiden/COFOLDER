@@ -15,6 +15,19 @@ When runner work is ready for review, do not rely on unit tests alone.
 
 Before promoting runner-, backend-, or shared CLI-adjacent changes toward `main`, run the manual backend acceptance lane documented in [Backend Acceptance Tutorial](backend-acceptance.md). That lane verifies clean-install behavior and exercises the real `validate`, `screen`, and `oracle` CLI workflows in separate backend environments.
 
+## Supported runner capabilities
+
+| Runner | Components | Constraints | MSA behavior | Metric groups | Known limits |
+| --- | --- | --- | --- | --- | --- |
+| `boltz1` | Protein, ligand, DNA, RNA | Bond; one pocket at distance 6 | Supplied or generated/reused Boltz MSA | Confidence | No contact constraints or affinity groups |
+| `boltz2` | Protein, ligand, DNA, RNA | Bond, pocket, contact | Supplied or generated/reused Boltz MSA | Confidence, binding, affinity | Affinity depends on a compatible ligand/system activation |
+| `boltz-community` | Protein, ligand, DNA, RNA | Bond, pocket, contact | Supplied or generated/reused Boltz MSA | Confidence, binding, affinity | Must not share an environment with conflicting PyPI `boltz` lines |
+| `openfold3` | Protein, ligand, DNA, RNA | One pocket | Supplied MSA or OpenFold3 query setup | Confidence | No consumed bond/contact constraints and no affinity groups in the supported integration |
+
+All unsupported combinations fail during preflight or produce explicit
+`unsupported` metric states. Runner-specific confidence fields remain distinct when
+they are not semantically equivalent.
+
 ## Where Runners Live
 
 Runner modules are discovered from `src/cofolder/modules/runners/`.

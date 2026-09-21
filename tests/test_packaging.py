@@ -246,6 +246,17 @@ def test_package_declares_mit_license_metadata():
     assert "setuptools >= 77.0.3" in pyproject["build-system"]["requires"]
 
 
+def test_citation_metadata_identifies_release_without_invented_archive() -> None:
+    citation = yaml.safe_load((REPOSITORY / "CITATION.cff").read_text(encoding="utf-8"))
+
+    assert citation["cff-version"] == "1.2.0"
+    assert citation["title"] == "COFOLDER"
+    assert citation["version"] == "1.0.0"
+    assert citation["license"] == "MIT"
+    assert citation["repository-code"] == "https://github.com/CDDLeiden/COFOLDER"
+    assert "doi" not in citation
+
+
 def test_packaged_examples_match_canonical_examples_byte_for_byte():
     canonical_dir = REPOSITORY / "examples"
     packaged_dir = REPOSITORY / "src/cofolder/resources/examples"
@@ -278,6 +289,7 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
         "include README.md",
         "include LICENSE",
         "include THIRD_PARTY_SOFTWARE.md",
+        "include CITATION.cff",
         "include mkdocs.yml",
         "recursive-include .github/workflows *.yml",
         "recursive-include src/cofolder *.py",

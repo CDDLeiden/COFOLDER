@@ -16,6 +16,7 @@ cofolder oracle \
   -s examples/system.yaml -o examples/options.yaml \
   --input_smiles "CCO" \
   --output_metric ligand_B__affinity_pred_value \
+  --runner boltz2 --scoring_functions affinity_metrics \
   --aggregate first \
   -w oracle_affinity
 ```

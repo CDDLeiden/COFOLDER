@@ -315,7 +315,7 @@ def test_cli_preflight_rejects_ambiguous_ligands_before_writes(
 ):
     system = yaml.safe_load(sample_system_yaml.read_text(encoding="utf-8"))
     system["sequences"].append(
-        {"ligand": {"id": "C", "smiles": "CCN", "ccd": "EAM"}}
+        {"ligand": {"id": "C", "smiles": "CCN"}}
     )
     ambiguous_system = temp_dir / "ambiguous system.yaml"
     ambiguous_system.write_text(yaml.safe_dump(system), encoding="utf-8")

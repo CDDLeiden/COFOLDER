@@ -288,3 +288,4 @@ example `python -m pip install -e ".[analysis,boltz2]"`.
 ## Next Steps
 
 Once installed, proceed to the [Quick Start Guide](quickstart.md) to begin using COFOLDER.
+For runtime failures, use the consolidated [Troubleshooting guide](../user-guide/troubleshooting.md).

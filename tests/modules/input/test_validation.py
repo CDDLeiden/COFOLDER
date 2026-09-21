@@ -120,6 +120,48 @@ def test_duplicate_chain_ids_are_rejected():
 
 
 @pytest.mark.parametrize(
+    "representation",
+    [
+        {"smiles": "CCO"},
+        {"ccd": "ATP"},
+        {"ccd_codes": ["ATP", "MG"]},
+    ],
+)
+def test_ligand_accepts_exactly_one_nonempty_representation(representation):
+    value = System(
+        system={"sequences": [{"ligand": {"id": "L", **representation}}]}
+    )
+
+    Boltz2Runner().validate_system(value, {}, check_atom_names=False)
+
+
+@pytest.mark.parametrize(
+    ("representation", "message"),
+    [
+        ({}, "requires exactly one"),
+        ({"smiles": ""}, "requires exactly one"),
+        ({"smiles": "   "}, "requires exactly one"),
+        ({"ccd": ""}, "requires exactly one"),
+        ({"ccd": "   "}, "requires exactly one"),
+        ({"ccd_codes": []}, "requires exactly one"),
+        ({"ccd_codes": [""]}, "requires exactly one"),
+        ({"smiles": "CCO", "ccd": "ETH"}, "'smiles', 'ccd'"),
+        ({"smiles": "CCO", "ccd_codes": ["ETH"]}, "'smiles', 'ccd_codes'"),
+        ({"ccd": "ETH", "ccd_codes": ["ETH"]}, "'ccd', 'ccd_codes'"),
+    ],
+)
+def test_ligand_rejects_missing_or_conflicting_representations(
+    representation, message
+):
+    value = System(
+        system={"sequences": [{"ligand": {"id": "L", **representation}}]}
+    )
+
+    with pytest.raises(SystemInputValidationError, match=message):
+        Boltz2Runner().validate_system(value, {}, check_atom_names=False)
+
+
+@pytest.mark.parametrize(
     ("entity_type", "sequence", "normalized"),
     [
         ("protein", "ac dX\n", "ACDX"),

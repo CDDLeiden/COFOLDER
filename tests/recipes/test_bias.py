@@ -441,7 +441,7 @@ class TestBiasRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "sequence": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ]
                 }
             ),

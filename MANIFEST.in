@@ -2,6 +2,7 @@ include pyproject.toml
 include README.md
 include LICENSE
 include THIRD_PARTY_SOFTWARE.md
+include CITATION.cff
 include mkdocs.yml
 recursive-include .github/workflows *.yml
 

@@ -50,8 +50,23 @@ ligand:
   ccd: "ATP"  # Use pre-existing CCD entry
 ```
 
-Specify either `smiles` or `ccd`, not both. Conformer preparation replaces a
-SMILES representation with a generated CCD before validation and execution.
+Specify exactly one of `smiles`, `ccd`, or the advanced multi-component
+`ccd_codes` list. Conflicting or empty representations fail before backend
+execution. Conformer preparation may replace a validated SMILES representation
+with a generated backend CCD internally.
+
+Invalid:
+
+```yaml
+ligand:
+  id: L
+  smiles: CCO
+  ccd: EDO
+```
+
+SDF/MOL paths are not system-ligand keys. Validate receives a matching SDF through
+`--conformers sdf --sdf_file ...`; Screen receives CSV, SDF, or MOL through
+`--library`.
 
 ### DNA and RNA
 
@@ -66,6 +81,15 @@ SMILES representation with a generated CCD before validation and execution.
 
 Chain IDs must be non-empty and unique across every entity. A list-valued `id`
 creates identical copies in that exact order.
+
+### Protein MSAs
+
+A protein may provide `msa` as a path to an A3M file or the supported paired-MSA
+CSV representation. Relative paths resolve from the system YAML location. The query
+sequence must match the owning protein after normalization. Missing, inaccessible,
+malformed, or mismatched inputs fail before backend execution. When omitted, a
+runner may use its configured MSA service; Screen captures and reuses an eligible
+fixed-protein MSA across compounds and repeats.
 
 ### Runner input support
 
@@ -134,6 +158,12 @@ The format is strict and runner-specific. `version` and `runner` are required;
 are rejected before preparation or backend execution. Workflow-owned values such as
 the output directory, seed, model selection, and automatic MSA-server enablement
 belong to the workflow and cannot be set here.
+
+Keep the two configuration surfaces separate:
+
+| Options YAML | Workflow command line |
+| --- | --- |
+| Backend cache, device, recycling, sampling, and native inference sections | Runner choice, repeats, seed, output directory, scoring groups, bias/reference evidence, Oracle reducer/gates, Screen library behavior |
 
 ### Basic Options
 

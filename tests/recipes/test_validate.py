@@ -1070,7 +1070,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_system.yaml"
@@ -1229,7 +1229,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_outputs.yaml"
@@ -1531,7 +1531,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_outputs.yaml"
@@ -1711,7 +1711,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -2002,7 +2002,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -2084,7 +2084,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -2150,7 +2150,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }

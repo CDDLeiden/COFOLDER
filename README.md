@@ -93,7 +93,8 @@ cofolder oracle \
   -s examples/system.yaml \
   -o examples/options.yaml \
   --input_smiles "CCO" \
-  --output_metric affinity_pred_value \
+  --output_metric system__confidence_score \
+  --scoring_functions confidence_metrics \
   --aggregate first
 ```
 
@@ -148,3 +149,6 @@ The docs site complements, rather than replaces, the repository tutorials:
 ## Licenses
 
 COFOLDER is released under the MIT License. Third-party attributions for adapted or bundled components are listed in [THIRD_PARTY_SOFTWARE.md](THIRD_PARTY_SOFTWARE.md).
+
+Citation metadata for COFOLDER 1.0.0 is provided in [CITATION.cff](CITATION.cff).
+The publication and archival identifier will be added after those records are final.

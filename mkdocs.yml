@@ -83,6 +83,8 @@ nav:
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
       - Public output contract: user-guide/public-output-contract.md
+      - Metric reference: user-guide/metric-reference.md
+      - Troubleshooting: user-guide/troubleshooting.md
   - Tutorials:
       - Tutorial Map: tutorials/index.md
       - Basic Usage: tutorials/basic.md
@@ -92,6 +94,7 @@ nav:
       - Adding New Runners: tutorials/runners.md
       - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
+      - Command line: reference/cli.md
       - Python execution flows:
           - Overview: reference/python-api/index.md
           - Bias recipe: reference/python-api/bias-recipe-flow.md
@@ -112,6 +115,9 @@ nav:
           - Public Contracts: api/modules/contracts.md
   - Contributing: contributing.md
   - Changelog: changelog.md
+  - Release Evidence:
+      - Issue 16 tutorial acceptance: release/issue-16-tutorial-acceptance.md
+      - Issue 25 documentation acceptance: release/issue-25-documentation-acceptance.md
 
 extra:
   version:

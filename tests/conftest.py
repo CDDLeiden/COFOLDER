@@ -38,7 +38,6 @@ def sample_system_yaml(temp_dir):
                 "ligand": {
                     "id": "B",
                     "smiles": "CCO",
-                    "ccd": "ETH"
                 }
             }
         ]
