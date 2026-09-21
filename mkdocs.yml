@@ -118,6 +118,7 @@ nav:
   - Release Evidence:
       - Issue 16 tutorial acceptance: release/issue-16-tutorial-acceptance.md
       - Issue 25 documentation acceptance: release/issue-25-documentation-acceptance.md
+      - v1.0 documentation claim audit: release/documentation_claim_audit_21092026.md
 
 extra:
   version:
