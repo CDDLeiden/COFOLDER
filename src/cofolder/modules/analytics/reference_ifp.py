@@ -89,7 +89,12 @@ class InteractionKey:
             index += 1
         number_token = residue_token[:index]
         insertion_code = residue_token[index:]
-        if not chain_id or not number_token or len(insertion_code) > 1 or not interaction_type:
+        if (
+            not chain_id
+            or not number_token
+            or len(insertion_code) > 1
+            or not interaction_type
+        ):
             raise ReferenceIFPInputError(
                 f"Invalid interaction key {value!r}; expected CHAIN:RESNUM[ICODE]:TYPE."
             )
@@ -97,6 +102,73 @@ class InteractionKey:
             receptor=ResidueIdentity(chain_id, int(number_token), insertion_code),
             interaction_type=_normalize_interaction_type(interaction_type),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AtomIdentity:
+    """Stable atom identity reported for one typed interaction occurrence."""
+
+    chain_id: str
+    residue_number: int
+    insertion_code: str
+    residue_name: str | None
+    atom_name: str
+    element: str | None = None
+    atom_serial: int | None = None
+    source_index: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "chain_id": self.chain_id,
+            "residue_number": self.residue_number,
+            "insertion_code": self.insertion_code,
+            "residue_name": self.residue_name,
+            "atom_name": self.atom_name,
+            "element": self.element,
+            "atom_serial": self.atom_serial,
+            "source_index": self.source_index,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionGeometry:
+    """Named ProLIF geometry value with an explicit physical unit."""
+
+    name: str
+    value: float
+    unit: str
+
+    def __post_init__(self) -> None:
+        if not self.name or not math.isfinite(self.value):
+            raise ReferenceIFPInputError(
+                "Interaction geometry must be named and finite."
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"name": self.name, "value": self.value, "unit": self.unit}
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionEvent:
+    """One atom-level occurrence contributing to a deduplicated interaction key."""
+
+    interaction: InteractionKey
+    ligand_atoms: tuple[AtomIdentity, ...]
+    protein_atoms: tuple[AtomIdentity, ...]
+    ligand_role: str
+    protein_role: str
+    geometry: tuple[InteractionGeometry, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "interaction_key": str(self.interaction),
+            "interaction_type": self.interaction.interaction_type,
+            "ligand_role": self.ligand_role,
+            "protein_role": self.protein_role,
+            "ligand_atoms": [atom.to_dict() for atom in self.ligand_atoms],
+            "protein_atoms": [atom.to_dict() for atom in self.protein_atoms],
+            "geometry": [measurement.to_dict() for measurement in self.geometry],
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,13 +187,25 @@ class IFPExtractionConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "taxonomy", IFPTaxonomy(self.taxonomy))
-        if not math.isfinite(self.distance_cutoff_angstrom) or self.distance_cutoff_angstrom <= 0:
-            raise ReferenceIFPInputError("distance_cutoff_angstrom must be positive and finite.")
-        if not math.isfinite(self.prolif_timeout_seconds) or self.prolif_timeout_seconds <= 0:
-            raise ReferenceIFPInputError("prolif_timeout_seconds must be positive and finite.")
+        if (
+            not math.isfinite(self.distance_cutoff_angstrom)
+            or self.distance_cutoff_angstrom <= 0
+        ):
+            raise ReferenceIFPInputError(
+                "distance_cutoff_angstrom must be positive and finite."
+            )
+        if (
+            not math.isfinite(self.prolif_timeout_seconds)
+            or self.prolif_timeout_seconds <= 0
+        ):
+            raise ReferenceIFPInputError(
+                "prolif_timeout_seconds must be positive and finite."
+            )
         unknown = set(self.prolif_interactions) - set(DEFAULT_PROLIF_INTERACTIONS)
         if unknown:
-            raise ReferenceIFPInputError(f"Unsupported ProLIF interactions: {sorted(unknown)}")
+            raise ReferenceIFPInputError(
+                f"Unsupported ProLIF interactions: {sorted(unknown)}"
+            )
 
 
 DEFAULT_IFP_EXTRACTION_CONFIG = IFPExtractionConfig()
@@ -134,9 +218,15 @@ class InteractionFingerprint:
     receptor_chains: tuple[str, ...]
     interactions: frozenset[InteractionKey]
     source_path: Path
+    events: tuple[InteractionEvent, ...] = ()
 
     def serialized_interactions(self) -> list[str]:
         return [str(item) for item in sorted(self.interactions)]
+
+    def serialized_events(self) -> list[dict[str, object]]:
+        """Return occurrence-level events in a deterministic JSON-safe form."""
+
+        return [event.to_dict() for event in self.events]
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,7 +295,9 @@ def _load_structure(path: Path):
     try:
         return parser.get_structure(path.stem, str(path))
     except Exception as exc:
-        raise ReferenceIFPExtractionError(f"Unable to read structure {path}: {exc}") from exc
+        raise ReferenceIFPExtractionError(
+            f"Unable to read structure {path}: {exc}"
+        ) from exc
 
 
 def _residue_identity(chain_id: str, residue) -> ResidueIdentity:
@@ -217,10 +309,16 @@ def _residue_identity(chain_id: str, residue) -> ResidueIdentity:
     )
 
 
-def _eligible_ligands(model, selector: LigandSelector | None) -> list[tuple[object, object]]:
+def _eligible_ligands(
+    model, selector: LigandSelector | None
+) -> list[tuple[object, object]]:
     selected = []
     for chain in model:
-        if selector is not None and selector.chain_id is not None and chain.id != selector.chain_id:
+        if (
+            selector is not None
+            and selector.chain_id is not None
+            and chain.id != selector.chain_id
+        ):
             continue
         for residue in chain:
             if str(residue.get_resname()).strip().upper() in _WATER_NAMES:
@@ -242,7 +340,11 @@ def _select_ligand(model, selector: LigandSelector | None):
     if not candidates:
         raise ReferenceEntitySelectionError("ligand_not_found")
     if len(candidates) != 1:
-        reason = "ambiguous_reference_ligand" if selector is None else "ambiguous_ligand_selector"
+        reason = (
+            "ambiguous_reference_ligand"
+            if selector is None
+            else "ambiguous_ligand_selector"
+        )
         raise ReferenceEntitySelectionError(reason)
     return candidates[0]
 
@@ -285,29 +387,34 @@ def extract_interaction_fingerprint(
     ligand_chain, ligand_residue = _select_ligand(model, ligand)
     proteins = _protein_residues(model, receptor_chains, str(ligand_chain.id))
     ligand_atoms = [
-        atom for atom in ligand_residue
+        atom
+        for atom in ligand_residue
         if str(getattr(atom, "element", "")).strip().upper() != "H"
     ]
     if not ligand_atoms:
         raise ReferenceIFPExtractionError("selected_ligand_has_no_heavy_atoms")
-    cutoff_squared = config.distance_cutoff_angstrom ** 2
+    cutoff_squared = config.distance_cutoff_angstrom**2
     interactions: set[InteractionKey] = set()
     for chain_id, residues in proteins.items():
         for residue in residues:
             contact = any(
-                float(((protein_atom.coord - ligand_atom.coord) ** 2).sum()) <= cutoff_squared
+                float(((protein_atom.coord - ligand_atom.coord) ** 2).sum())
+                <= cutoff_squared
                 for protein_atom in residue
                 if str(getattr(protein_atom, "element", "")).strip().upper() != "H"
                 for ligand_atom in ligand_atoms
             )
             if contact:
                 interactions.add(
-                    InteractionKey(_residue_identity(chain_id, residue), "distance_contact")
+                    InteractionKey(
+                        _residue_identity(chain_id, residue), "distance_contact"
+                    )
                 )
     return InteractionFingerprint(
         taxonomy=IFPTaxonomy.DISTANCE,
         ligand=LigandIdentity(
-            str(ligand_chain.id), int(ligand_residue.id[1]),
+            str(ligand_chain.id),
+            int(ligand_residue.id[1]),
             str(ligand_residue.id[2]).strip(),
             str(ligand_residue.get_resname()).strip().upper() or None,
         ),
@@ -318,7 +425,9 @@ def extract_interaction_fingerprint(
 
 
 def _extract_prolif(path, ligand, receptor_chains, config):
-    from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
+    from cofolder.modules.utils._optional_dependencies import (
+        require_analysis_dependency,
+    )
 
     require_analysis_dependency(
         "MDAnalysis",
@@ -355,8 +464,11 @@ def _extract_prolif(path, ligand, receptor_chains, config):
     try:
         completed = subprocess.run(
             [sys.executable, "-m", "cofolder.modules.analytics._prolif_worker"],
-            input=json.dumps(request), text=True, capture_output=True,
-            timeout=config.prolif_timeout_seconds, check=False,
+            input=json.dumps(request),
+            text=True,
+            capture_output=True,
+            timeout=config.prolif_timeout_seconds,
+            check=False,
         )
     except subprocess.TimeoutExpired as exc:
         raise ProLIFWorkerTimeoutError("prolif_worker_timeout") from exc
@@ -367,15 +479,74 @@ def _extract_prolif(path, ligand, receptor_chains, config):
     try:
         payload = json.loads(completed.stdout)
         ligand_payload = payload["ligand"]
-        interactions = frozenset(InteractionKey.parse(item) for item in payload["interactions"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        interactions = frozenset(
+            InteractionKey.parse(item) for item in payload["interactions"]
+        )
+        events = tuple(
+            _interaction_event_from_payload(item) for item in payload.get("events", ())
+        )
+    except (
+        AttributeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as exc:
         raise ProLIFWorkerError("prolif_worker_malformed_output") from exc
+    if events and frozenset(event.interaction for event in events) != interactions:
+        raise ProLIFWorkerError("prolif_worker_malformed_output")
     return InteractionFingerprint(
         taxonomy=IFPTaxonomy.PROLIF,
         ligand=LigandIdentity(**ligand_payload),
         receptor_chains=tuple(payload["receptor_chains"]),
         interactions=interactions,
         source_path=path,
+        events=events,
+    )
+
+
+def _interaction_event_from_payload(payload: Mapping[str, object]) -> InteractionEvent:
+    def atom(value: Mapping[str, object]) -> AtomIdentity:
+        return AtomIdentity(
+            chain_id=str(value["chain_id"]),
+            residue_number=int(value["residue_number"]),
+            insertion_code=str(value.get("insertion_code") or ""),
+            residue_name=(
+                str(value["residue_name"]) if value.get("residue_name") else None
+            ),
+            atom_name=str(value["atom_name"]),
+            element=str(value["element"]) if value.get("element") else None,
+            atom_serial=(
+                int(value["atom_serial"])
+                if value.get("atom_serial") is not None
+                else None
+            ),
+            source_index=(
+                int(value["source_index"])
+                if value.get("source_index") is not None
+                else None
+            ),
+        )
+
+    geometry = tuple(
+        InteractionGeometry(
+            name=str(item["name"]),
+            value=float(item["value"]),
+            unit=str(item["unit"]),
+        )
+        for item in payload.get("geometry", ())
+    )
+    ligand_atoms = tuple(atom(item) for item in payload["ligand_atoms"])
+    protein_atoms = tuple(atom(item) for item in payload["protein_atoms"])
+    if not ligand_atoms or not protein_atoms:
+        raise ValueError("Interaction events require ligand and protein atoms.")
+    return InteractionEvent(
+        interaction=InteractionKey.parse(str(payload["interaction_key"])),
+        ligand_atoms=ligand_atoms,
+        protein_atoms=protein_atoms,
+        ligand_role=str(payload["ligand_role"]),
+        protein_role=str(payload["protein_role"]),
+        geometry=geometry,
     )
 
 
@@ -387,7 +558,9 @@ def _chain_data(path: Path) -> dict[str, tuple[str, list[ResidueIdentity]]]:
         if not residues:
             continue
         identities = [_residue_identity(chain.id, residue) for residue in residues]
-        sequence = "".join(seq1(item.residue_name or "UNK", undef_code="X") for item in identities)
+        sequence = "".join(
+            seq1(item.residue_name or "UNK", undef_code="X") for item in identities
+        )
         output[str(chain.id)] = (sequence, identities)
     return output
 
@@ -404,9 +577,13 @@ def _alignment_pairs(ref_sequence, pred_sequence):
     coordinates = alignment.coordinates
     for index in range(coordinates.shape[1] - 1):
         ref_start, ref_end = int(coordinates[0, index]), int(coordinates[0, index + 1])
-        pred_start, pred_end = int(coordinates[1, index]), int(coordinates[1, index + 1])
+        pred_start, pred_end = int(coordinates[1, index]), int(
+            coordinates[1, index + 1]
+        )
         span = min(ref_end - ref_start, pred_end - pred_start)
-        pairs.extend((ref_start + offset, pred_start + offset) for offset in range(max(0, span)))
+        pairs.extend(
+            (ref_start + offset, pred_start + offset) for offset in range(max(0, span))
+        )
     return float(alignment.score), pairs
 
 
@@ -434,9 +611,16 @@ def map_reference_identities(
         candidates = (
             [hints[ref_chain]]
             if ref_chain in hints
-            else [ref_chain]
-            if ref_chain in prediction.receptor_chains and ref_chain not in used_prediction
-            else [chain for chain in prediction.receptor_chains if chain not in used_prediction]
+            else (
+                [ref_chain]
+                if ref_chain in prediction.receptor_chains
+                and ref_chain not in used_prediction
+                else [
+                    chain
+                    for chain in prediction.receptor_chains
+                    if chain not in used_prediction
+                ]
+            )
         )
         candidates = [chain for chain in candidates if chain in pred_data]
         if ref_chain not in ref_data or not candidates:
@@ -444,7 +628,9 @@ def map_reference_identities(
             continue
         scored = []
         for pred_chain in candidates:
-            score, pairs = _alignment_pairs(ref_data[ref_chain][0], pred_data[pred_chain][0])
+            score, pairs = _alignment_pairs(
+                ref_data[ref_chain][0], pred_data[pred_chain][0]
+            )
             scored.append((score, pred_chain, pairs))
         best_score = max(item[0] for item in scored)
         best = [item for item in scored if math.isclose(item[0], best_score)]
@@ -482,19 +668,34 @@ def compare_interaction_fingerprints(
 ) -> IFPComparison:
     """Compare two fingerprints after reference-to-prediction identity mapping."""
 
-    if reference.taxonomy != prediction.taxonomy or mapping.status is IFPMappingStatus.UNMAPPABLE:
+    if (
+        reference.taxonomy != prediction.taxonomy
+        or mapping.status is IFPMappingStatus.UNMAPPABLE
+    ):
         return IFPComparison(
-            IFPComparisonStatus.NOT_EVALUABLE, mapping, {}, (), (), (),
+            IFPComparisonStatus.NOT_EVALUABLE,
+            mapping,
+            {},
+            (),
+            (),
+            (),
             tuple(sorted(prediction.interactions)),
         )
     if not reference.interactions:
         return IFPComparison(
-            IFPComparisonStatus.NOT_EVALUABLE, mapping, {}, (), (),
-            tuple(sorted(prediction.interactions)), (),
+            IFPComparisonStatus.NOT_EVALUABLE,
+            mapping,
+            {},
+            (),
+            (),
+            tuple(sorted(prediction.interactions)),
+            (),
         )
 
     mapped: dict[InteractionKey, InteractionKey] = {
-        item: InteractionKey(mapping.residue_mapping[item.receptor], item.interaction_type)
+        item: InteractionKey(
+            mapping.residue_mapping[item.receptor], item.interaction_type
+        )
         for item in reference.interactions
     }
     mapped_residues = frozenset(mapping.residue_mapping.values())
@@ -503,23 +704,35 @@ def compare_interaction_fingerprints(
     }
     ignored = prediction.interactions - relevant_prediction
     mapped_reference = set(mapped.values())
-    matched_reference = tuple(sorted(ref for ref, pred in mapped.items() if pred in relevant_prediction))
-    missing_reference = tuple(sorted(set(reference.interactions) - set(matched_reference)))
+    matched_reference = tuple(
+        sorted(ref for ref, pred in mapped.items() if pred in relevant_prediction)
+    )
+    missing_reference = tuple(
+        sorted(set(reference.interactions) - set(matched_reference))
+    )
     extras = tuple(sorted(relevant_prediction - mapped_reference))
     intersection_size = len(mapped_reference & relevant_prediction)
     union_size = len(mapped_reference | relevant_prediction)
     similarities = {
         IFPSimilarityMetric.JACCARD: intersection_size / union_size,
-        IFPSimilarityMetric.REFERENCE_COVERAGE: intersection_size / len(mapped_reference),
+        IFPSimilarityMetric.REFERENCE_COVERAGE: intersection_size
+        / len(mapped_reference),
     }
     return IFPComparison(
-        IFPComparisonStatus.COMPARABLE, mapping, similarities,
-        matched_reference, missing_reference, extras, tuple(sorted(ignored)),
+        IFPComparisonStatus.COMPARABLE,
+        mapping,
+        similarities,
+        matched_reference,
+        missing_reference,
+        extras,
+        tuple(sorted(ignored)),
     )
 
 
 def _normalize_interaction_type(value: str) -> str:
-    token = "".join(character.lower() if character.isalnum() else "_" for character in str(value))
+    token = "".join(
+        character.lower() if character.isalnum() else "_" for character in str(value)
+    )
     while "__" in token:
         token = token.replace("__", "_")
     canonical = (

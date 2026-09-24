@@ -11,7 +11,11 @@ import pandas as pd
 import pytest
 import yaml
 
-from cofolder.modules.contracts import OutputIdentity, WorkflowExecutionError, WorkflowKind
+from cofolder.modules.contracts import (
+    OutputIdentity,
+    WorkflowExecutionError,
+    WorkflowKind,
+)
 from cofolder.recipes._results import write_frame_bundle
 from cofolder.recipes.screen import Screen
 from tests.modules.analytics.test_reproduction import _write_predicted_pdb
@@ -132,6 +136,40 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
             },
             "receptor_chains": ["A"],
             "interactions": ["A:1:HBAcceptor"],
+            "events": [
+                {
+                    "interaction_key": "A:1:HBAcceptor",
+                    "ligand_role": "acceptor",
+                    "protein_role": "donor",
+                    "ligand_atoms": [
+                        {
+                            "chain_id": "Z",
+                            "residue_number": 1,
+                            "insertion_code": "",
+                            "residue_name": "LIG",
+                            "atom_name": "O1",
+                            "element": "O",
+                            "atom_serial": 3,
+                            "source_index": 2,
+                        }
+                    ],
+                    "protein_atoms": [
+                        {
+                            "chain_id": "A",
+                            "residue_number": 1,
+                            "insertion_code": "",
+                            "residue_name": "ALA",
+                            "atom_name": "N",
+                            "element": "N",
+                            "atom_serial": 1,
+                            "source_index": 0,
+                        }
+                    ],
+                    "geometry": [
+                        {"name": "distance", "value": 3.0, "unit": "angstrom"}
+                    ],
+                }
+            ],
         }
         monkeypatch.setattr(
             subprocess,
@@ -150,7 +188,10 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
         cluster_ifps=True,
         ifp_taxonomy=taxonomy,
     )
-    fingerprint, reason = screen._screen_postprocessor()._load_selected_interaction_fingerprint(
+    (
+        fingerprint,
+        reason,
+    ) = screen._screen_postprocessor()._load_selected_interaction_fingerprint(
         run_dir,
         repeat_id=2,
         sample_id=1,
@@ -173,6 +214,7 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
                 "run_dir": str(run_dir),
                 "repeat_id": 2,
                 "sample_id": 1,
+                "model_id": "model-a",
                 "status": "success",
                 **screen._default_cluster_result(),
             }
@@ -180,9 +222,25 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
     )
     detailed_rows = clustered_rows.copy()
     screen._apply_ifp_clustering(clustered_rows, detailed_rows)
+    screen._publish_prolif_events(clustered_rows)
     assert clustered_rows["ifp_cluster_status"].tolist() == ["clustered"]
     assert detailed_rows["ifp_cluster_id"].tolist() == ["IFP001"]
     assert (temp_dir / "screen" / "results" / "ifp_cluster_summary.csv").is_file()
+    linkage = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_linkage.csv")
+    leaves = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_leaf_order.csv")
+    assert linkage.empty
+    assert leaves["member_id"].tolist() == [
+        "identity-proof|repeat=2|model=model-a|sample=1"
+    ]
+    if taxonomy == "prolif":
+        event_path = temp_dir / "screen" / "results" / "ifp_interaction_events.jsonl"
+        event = json.loads(event_path.read_text(encoding="utf-8"))
+        assert event["compound_id"] == "identity-proof"
+        assert event["protein_atoms"][0]["atom_name"] == "N"
+    else:
+        assert not (
+            temp_dir / "screen" / "results" / "ifp_interaction_events.jsonl"
+        ).exists()
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
@@ -227,6 +285,20 @@ def test_screen_does_not_cluster_vector_only_ifps_without_residue_identities(
 
     summary = pd.read_csv(temp_dir / "screen" / "results" / "ifp_cluster_summary.csv")
     assert summary.empty
+    assert pd.read_csv(
+        temp_dir / "screen" / "results" / "ifp_cluster_linkage.csv"
+    ).empty
+    assert pd.read_csv(
+        temp_dir / "screen" / "results" / "ifp_cluster_leaf_order.csv"
+    ).empty
+    manifest = json.loads(
+        (temp_dir / "screen" / "results" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert {artifact["label"] for artifact in manifest["artifacts"]} >= {
+        "ifp_cluster_summary",
+        "ifp_cluster_linkage",
+        "ifp_cluster_leaf_order",
+    }
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)
@@ -294,6 +366,8 @@ def test_clustering_disabled_keeps_stable_columns_without_summary(
     assert results["ifp_cluster_status"].tolist() == ["not_applied", "not_applied"]
     assert results["ifp_cluster_id"].isna().all()
     assert not (temp_dir / "results" / "ifp_cluster_summary.csv").exists()
+    assert not (temp_dir / "results" / "ifp_cluster_linkage.csv").exists()
+    assert not (temp_dir / "results" / "ifp_cluster_leaf_order.csv").exists()
 
 
 @pytest.mark.parametrize("threshold", [-0.01, 1.01, float("nan")])

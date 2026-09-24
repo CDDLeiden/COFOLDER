@@ -154,10 +154,18 @@ cofolder screen \
   -w ./screening_output
 ```
 
-Read `ifp_cluster_summary.csv` to inspect cluster sizes, member IDs, medoids,
+Read `results/ifp_cluster_summary.csv` to inspect cluster sizes, member IDs, medoids,
 consensus fingerprints, and within-cluster Jaccard similarity. The row-level
 `ifp_cluster_id` is also present in both consolidated screening CSVs. This workflow
 does not need `--reference_path` or `--pocket_coverage_reference`.
+
+For publication plots, read `results/ifp_cluster_linkage.csv` as the four-column
+SciPy linkage matrix and use `results/ifp_cluster_leaf_order.csv` for the recorded
+leaf positions and stable execution-key labels. This reproduces the tree generated
+by Screen instead of reclustering the exported fingerprints. With
+`--ifp_taxonomy prolif`, `results/ifp_interaction_events.jsonl` also provides the
+atom identities, roles, distances, and angles needed for atom-specific interaction
+tables.
 
 Reference-overlap filtering is a separate, non-destructive decision layer. It marks
 every result as accepted, rejected, not evaluable, or not applied and never removes

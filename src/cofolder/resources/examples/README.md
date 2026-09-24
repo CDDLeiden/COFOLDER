@@ -55,6 +55,9 @@ cofolder screen \
   -w ./screen_out
 ```
 
+`ifp_clustering_demo.py` shows the corresponding Python API, including the native
+linkage matrix and stable dendrogram leaf labels.
+
 For Boltz-family runners the first row generates a missing fixed-protein MSA and all
 later rows reuse it. To skip the MSA server entirely, add an `msa` path to the protein
 entry in `system_screen.yaml`; relative paths are resolved from that YAML's directory.

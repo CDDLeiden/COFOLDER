@@ -91,7 +91,9 @@
     "artifacts": [
       "executions.csv",
       "compound_members.csv",
-      "ifp_cluster_summary.csv"
+      "ifp_cluster_summary.csv",
+      "ifp_cluster_linkage.csv",
+      "ifp_cluster_leaf_order.csv"
     ],
     "decisions": [
       ["hit", "success", "accepted", null],
@@ -101,12 +103,14 @@
       ["miss", "success", "rejected", null],
       ["miss", "unavailable", "not_evaluable", null]
     ],
-    "digest": "43e4b362fe4f82524a63600795adda64ca8561c4b7cc6200e78f81387a19d7eb",
+    "digest": "59c7ac062acbe5db78e9c438efb53b97b44abe1885388b8d28a0799c13a8cfba",
     "failures": [["backend_execution", "screen_compound_failed"]],
     "files": [
       "compound_members.csv",
       "executions.csv",
       "failures.csv",
+      "ifp_cluster_leaf_order.csv",
+      "ifp_cluster_linkage.csv",
       "ifp_cluster_summary.csv",
       "manifest.json",
       "metrics.csv",
@@ -126,7 +130,7 @@
       ["miss", 17, 1, "boltz2", 0, "entity:1", "B"],
       ["miss", 17, 1, "boltz2", 1, null, null]
     ],
-    "record_counts": {"execution": 6, "failure": 1, "metric": 128, "success": 0},
+    "record_counts": {"execution": 6, "failure": 1, "metric": 132, "success": 0},
     "status": "partial"
   },
   "validate": {

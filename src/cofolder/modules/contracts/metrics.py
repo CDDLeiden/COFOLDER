@@ -263,6 +263,13 @@ _DEFINITIONS = [
         value_type="json",
         scopes=("chain",),
     ),
+    _metric(
+        "ifp_prolif_events",
+        "structure_metrics",
+        MetricClass.STRUCTURAL,
+        value_type="string",
+        scopes=("chain",),
+    ),
 ]
 
 for name in (
@@ -370,9 +377,9 @@ for name, value_type in (
                 if name in {"ifp_filter_overlap", "ifp_filter_similarity"}
                 else OptimizationDirection.NEUTRAL
             ),
-            valid_range=UNIT_INTERVAL
-            if "overlap" in name or "threshold" in name
-            else None,
+            valid_range=(
+                UNIT_INTERVAL if "overlap" in name or "threshold" in name else None
+            ),
             scopes=("compound",),
             evidence=IFP_FILTER_EVIDENCE,
         )
@@ -480,6 +487,7 @@ SCREEN_METRIC_PROFILES = MappingProxyType(
             "ifp_distance_features",
             "ifp_prolif",
             "ifp_prolif_features",
+            "ifp_prolif_events",
             "bias_lig_sim_train",
             "pocket_coverage_ref",
             "pocket_coverage_custom",
@@ -637,9 +645,11 @@ def resolve_evidence_regime(
     preferred = (
         EvidenceRegime.REFERENCE_STRUCTURE
         if "reference_structure" in kinds
-        else EvidenceRegime.CUSTOM_POCKET
-        if "custom_pocket" in kinds
-        else EvidenceRegime.REFERENCE_FREE
+        else (
+            EvidenceRegime.CUSTOM_POCKET
+            if "custom_pocket" in kinds
+            else EvidenceRegime.REFERENCE_FREE
+        )
     )
     if preferred in definition.allowed_evidence_regimes:
         return preferred

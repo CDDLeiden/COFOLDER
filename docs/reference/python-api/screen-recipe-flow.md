@@ -112,8 +112,10 @@ results = Screen(
     Each successful prediction can be compared with a reference complex or custom
     pocket. Screen records similarity, required-interaction, pass/fail, and
     not-evaluable states. Optional clustering groups compatible interaction
-    fingerprints after all rows have been processed and can write
-    `results/ifp_cluster_summary.csv`.
+    fingerprints after all rows have been processed and writes the cluster summary,
+    native SciPy linkage matrix, and deterministic leaf order. ProLIF filtering or
+    clustering also writes occurrence-level atom identities, roles, and geometry to
+    `results/ifp_interaction_events.jsonl`.
 
 11. **Screen-level outputs are assembled.**
 
@@ -122,7 +124,7 @@ results = Screen(
     typed `ExecutionRecord` per compound/repeat/model/sample, rebases child metric and
     failure records to Screen identities, adds Screen-derived metrics, and writes the
     public bundle. The manifest points to `executions.csv`,
-    `compound_members.csv`, and the optional cluster summary.
+    `compound_members.csv`, and the optional IFP cluster and event artifacts.
 
 12. **At least one success is required.**
 

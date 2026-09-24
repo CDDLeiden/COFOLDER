@@ -40,6 +40,7 @@ scientific threshold.
 | `ifp_distance_features` | `structure_metrics` | structural | JSON | unitless | neutral | chain | reference_free |
 | `ifp_prolif` | `structure_metrics` | structural | JSON | unitless | neutral | chain | reference_free |
 | `ifp_prolif_features` | `structure_metrics` | structural | JSON | unitless | neutral | chain | reference_free |
+| `ifp_prolif_events` | `structure_metrics` | structural | string | unitless | neutral | chain | reference_free |
 | `ligand_rmsd_ref` | `reproduction_metrics` | reproduction | float | Å | minimize | chain, system | reference_structure |
 | `protein_rmsd_ref` | `reproduction_metrics` | reproduction | float | Å | minimize | chain, system | reference_structure |
 | `ligand_rmsd_ref_mean` | `reproduction_metrics` | reproduction | float | Å | minimize | chain, system | reference_structure |

@@ -29,6 +29,16 @@ def test_fixed_matrix_has_stable_assignments_and_summary():
         "IFP003",
         "IFP003",
     ]
+    assert result.member_ids == ("A", "B", "C", "D", "E", "F")
+    assert result.linkage_matrix == (
+        (2.0, 3.0, 0.0, 2.0),
+        (4.0, 5.0, 0.0, 2.0),
+        (0.0, 1.0, 0.5, 2.0),
+        (6.0, 8.0, 1.0, 4.0),
+        (7.0, 9.0, 1.0, 6.0),
+    )
+    assert result.leaf_indices == (4, 5, 2, 3, 0, 1)
+    assert result.leaf_member_ids == ("E", "F", "C", "D", "A", "B")
     summary = result.summary.set_index("ifp_cluster_id")
     assert summary["size"].to_dict() == {"IFP001": 2, "IFP002": 2, "IFP003": 2}
     assert json.loads(summary.at["IFP001", "member_ids"]) == ["A", "B"]
@@ -46,9 +56,7 @@ def test_similarity_threshold_changes_assignments_at_inclusive_boundary():
     fingerprints = [[1, 1, 0], [1, 0, 0], [0, 0, 1]]
     member_ids = ["first", "second", "third"]
 
-    inclusive = cluster_binary_ifps(
-        fingerprints, member_ids, similarity_threshold=0.5
-    )
+    inclusive = cluster_binary_ifps(fingerprints, member_ids, similarity_threshold=0.5)
     strict = cluster_binary_ifps(
         fingerprints, member_ids, similarity_threshold=0.500001
     )
@@ -63,3 +71,19 @@ def test_single_fingerprint_is_a_complete_cluster():
     assert result.cluster_ids == ["IFP001"]
     assert result.summary.loc[0, "medoid_compound_id"] == "empty"
     assert result.summary.loc[0, "mean_within_cluster_jaccard_similarity"] == 1.0
+    assert result.linkage_matrix == ()
+    assert result.leaf_indices == (0,)
+    assert result.leaf_member_ids == ("empty",)
+
+
+def test_empty_input_and_ambiguous_member_ids_are_explicit():
+    empty = cluster_binary_ifps([], [], similarity_threshold=0.5)
+    assert empty.member_ids == ()
+    assert empty.linkage_matrix == ()
+    assert empty.leaf_indices == ()
+    assert empty.leaf_member_ids == ()
+
+    with pytest.raises(ValueError, match="unique"):
+        cluster_binary_ifps([[1], [0]], ["same", "same"], similarity_threshold=0.5)
+    with pytest.raises(ValueError, match="non-empty"):
+        cluster_binary_ifps([[1]], ["  "], similarity_threshold=0.5)

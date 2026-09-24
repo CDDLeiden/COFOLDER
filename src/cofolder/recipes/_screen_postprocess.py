@@ -13,6 +13,12 @@ from typing import Any
 import pandas as pd
 
 from cofolder.modules.analytics.ifp_clustering import (
+    LEAF_ORDER_COLUMNS as IFP_CLUSTER_LEAF_ORDER_COLUMNS,
+)
+from cofolder.modules.analytics.ifp_clustering import (
+    LINKAGE_COLUMNS as IFP_CLUSTER_LINKAGE_COLUMNS,
+)
+from cofolder.modules.analytics.ifp_clustering import (
     SUMMARY_COLUMNS as IFP_CLUSTER_SUMMARY_COLUMNS,
 )
 from cofolder.modules.analytics.ifp_clustering import cluster_interaction_fingerprints
@@ -41,7 +47,6 @@ from cofolder.modules.contracts import (
 from cofolder.modules.input.system import iter_system_chains
 from cofolder.modules.runners import PlannedExecution, RunnerExecutionPlan
 from cofolder.recipes._metrics import primary_metric_values, read_metric_frames
-
 
 SYSTEM_SCREEN_METRICS = SCREEN_METRIC_PROFILES["system"]
 PROTEIN_SCREEN_METRICS = SCREEN_METRIC_PROFILES["protein"]
@@ -132,7 +137,10 @@ class ScreenPostprocessor:
         return self._ifp_filter_policy_config is not None
 
     def _prepare_reference_ifp(self) -> None:
-        if not self._ifp_filter_enabled() or self._resolved_ifp_filter_source != "reference_complex":
+        if (
+            not self._ifp_filter_enabled()
+            or self._resolved_ifp_filter_source != "reference_complex"
+        ):
             return
         reference_path = Path(self.validate_kwargs["reference_path"])
         try:
@@ -150,13 +158,17 @@ class ScreenPostprocessor:
                 raise
             message = str(exc)
             self._reference_ifp_failure = (
-                "prolif_worker_timeout" if "timeout" in message else "prolif_worker_crashed"
+                "prolif_worker_timeout"
+                if "timeout" in message
+                else "prolif_worker_crashed"
             )
             return
         try:
             policy = self._ifp_filter_policy_config
             if policy is not None and policy.required_interactions:
-                unknown = policy.required_interactions - self._reference_ifp.interactions
+                unknown = (
+                    policy.required_interactions - self._reference_ifp.interactions
+                )
                 if unknown:
                     raise ValueError(
                         "Required interactions are absent from the reference fingerprint: "
@@ -181,9 +193,12 @@ class ScreenPostprocessor:
         """Annotate both outputs and write a deterministic cluster summary."""
 
         if not self.cluster_ifps:
-            (self.wrk_dir / "results" / "ifp_cluster_summary.csv").unlink(
-                missing_ok=True
-            )
+            for name in (
+                "ifp_cluster_summary.csv",
+                "ifp_cluster_linkage.csv",
+                "ifp_cluster_leaf_order.csv",
+            ):
+                (self.wrk_dir / "results" / name).unlink(missing_ok=True)
             return
 
         parsed_rows: list[tuple[int, InteractionFingerprint, str]] = []
@@ -194,9 +209,7 @@ class ScreenPostprocessor:
                 Path(row["run_dir"]),
                 repeat_id=int(row["repeat_id"]),
                 sample_id=(
-                    int(row["sample_id"])
-                    if pd.notna(row.get("sample_id"))
-                    else None
+                    int(row["sample_id"]) if pd.notna(row.get("sample_id")) else None
                 ),
             )
             if fingerprint is None:
@@ -214,6 +227,31 @@ class ScreenPostprocessor:
                     frame.at[position, "ifp_cluster_id"] = cluster_id
                     frame.at[position, "ifp_cluster_status"] = "clustered"
             cluster_summary = clustered.summary.copy()
+            cluster_linkage = pd.DataFrame(
+                [
+                    {
+                        "merge_index": len(clustered.member_ids) + offset,
+                        "left_child": int(row[0]),
+                        "right_child": int(row[1]),
+                        "jaccard_distance": row[2],
+                        "member_count": int(row[3]),
+                    }
+                    for offset, row in enumerate(clustered.linkage_matrix)
+                ],
+                columns=IFP_CLUSTER_LINKAGE_COLUMNS,
+            )
+            cluster_leaf_order = pd.DataFrame(
+                [
+                    {
+                        "leaf_position": position,
+                        "input_index": input_index,
+                        "member_id": clustered.member_ids[input_index],
+                        "ifp_cluster_id": clustered.cluster_ids[input_index],
+                    }
+                    for position, input_index in enumerate(clustered.leaf_indices)
+                ],
+                columns=IFP_CLUSTER_LEAF_ORDER_COLUMNS,
+            )
             cluster_summary["ifp_taxonomy"] = self.ifp_taxonomy.value
             if self._ifp_filter_enabled():
                 annotations = []
@@ -224,34 +262,100 @@ class ScreenPostprocessor:
                         errors="coerce",
                     ).dropna()
                     accepted = members[
-                        members.get("ifp_filter_status", pd.Series(index=members.index, dtype=object))
+                        members.get(
+                            "ifp_filter_status",
+                            pd.Series(index=members.index, dtype=object),
+                        )
                         == "accepted"
                     ]
-                    annotations.append({
-                        "ifp_cluster_id": cluster_id,
-                        "reference_evaluable_count": int(similarities.size),
-                        "reference_accepted_count": len(accepted),
-                        "reference_accepted_member_ids": json.dumps(
-                            accepted[self.col_id].astype(str).tolist()
-                        ),
-                        "mean_reference_similarity": (
-                            float(similarities.mean()) if not similarities.empty else None
-                        ),
-                        "max_reference_similarity": (
-                            float(similarities.max()) if not similarities.empty else None
-                        ),
-                    })
+                    annotations.append(
+                        {
+                            "ifp_cluster_id": cluster_id,
+                            "reference_evaluable_count": int(similarities.size),
+                            "reference_accepted_count": len(accepted),
+                            "reference_accepted_member_ids": json.dumps(
+                                accepted[self.col_id].astype(str).tolist()
+                            ),
+                            "mean_reference_similarity": (
+                                float(similarities.mean())
+                                if not similarities.empty
+                                else None
+                            ),
+                            "max_reference_similarity": (
+                                float(similarities.max())
+                                if not similarities.empty
+                                else None
+                            ),
+                        }
+                    )
                 cluster_summary = cluster_summary.merge(
                     pd.DataFrame(annotations), on="ifp_cluster_id", how="left"
                 )
         else:
             cluster_summary = pd.DataFrame(columns=IFP_CLUSTER_SUMMARY_COLUMNS)
+            cluster_linkage = pd.DataFrame(columns=IFP_CLUSTER_LINKAGE_COLUMNS)
+            cluster_leaf_order = pd.DataFrame(columns=IFP_CLUSTER_LEAF_ORDER_COLUMNS)
 
         public_results_dir = self.wrk_dir / "results"
         public_results_dir.mkdir(parents=True, exist_ok=True)
         cluster_summary.to_csv(
             public_results_dir / "ifp_cluster_summary.csv", index=False
         )
+        cluster_linkage.to_csv(
+            public_results_dir / "ifp_cluster_linkage.csv", index=False
+        )
+        cluster_leaf_order.to_csv(
+            public_results_dir / "ifp_cluster_leaf_order.csv", index=False
+        )
+
+    def _publish_prolif_events(self, summary_df: pd.DataFrame) -> None:
+        """Publish occurrence-level ProLIF events with stable Screen identities."""
+
+        path = self.wrk_dir / "results" / "ifp_interaction_events.jsonl"
+        if self.ifp_taxonomy is not IFPTaxonomy.PROLIF or not (
+            self.cluster_ifps or self._ifp_filter_enabled()
+        ):
+            path.unlink(missing_ok=True)
+            return
+
+        records: list[dict[str, object]] = []
+        for _, row in summary_df.iterrows():
+            if row.get("status") != "success":
+                continue
+            fingerprint, _ = self._load_selected_interaction_fingerprint(
+                Path(row["run_dir"]),
+                repeat_id=int(row["repeat_id"]),
+                sample_id=(
+                    int(row["sample_id"]) if pd.notna(row.get("sample_id")) else None
+                ),
+            )
+            if fingerprint is None:
+                continue
+            identity = {
+                "compound_id": str(row[self.col_id]),
+                "execution_key": str(row["execution_key"]),
+                "repeat_id": int(row["repeat_id"]),
+                "model_id": str(row["model_id"]),
+                "sample_id": (
+                    int(row["sample_id"]) if pd.notna(row.get("sample_id")) else None
+                ),
+            }
+            records.extend(
+                {**identity, **event} for event in fingerprint.serialized_events()
+            )
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_name(f".{path.name}.tmp")
+        try:
+            temporary_path.write_text(
+                "".join(
+                    json.dumps(record, sort_keys=True) + "\n" for record in records
+                ),
+                encoding="utf-8",
+            )
+            temporary_path.replace(path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def _load_selected_interaction_fingerprint(
         self,
@@ -265,7 +369,9 @@ class ScreenPostprocessor:
         if cache_key in self._prediction_ifp_cache:
             return self._prediction_ifp_cache[cache_key]
         _, chain_df = read_metric_frames(run_dir)
-        if chain_df.empty or not {"CHAIN_ID", "ENTITY_TYPE", "cif_file"}.issubset(chain_df.columns):
+        if chain_df.empty or not {"CHAIN_ID", "ENTITY_TYPE", "cif_file"}.issubset(
+            chain_df.columns
+        ):
             result = (None, "missing_chain_metrics")
             self._prediction_ifp_cache[cache_key] = result
             return result
@@ -285,15 +391,21 @@ class ScreenPostprocessor:
         receptor_chains = tuple(
             selected.loc[
                 selected["ENTITY_TYPE"].astype(str).str.lower() == "protein", "CHAIN_ID"
-            ].dropna().astype(str).unique()
+            ]
+            .dropna()
+            .astype(str)
+            .unique()
         )
         try:
-            result = (extract_interaction_fingerprint(
-                path,
-                ligand=LigandSelector(chain_id=self.ligand_chain),
-                receptor_chains=receptor_chains or None,
-                config=IFPExtractionConfig(taxonomy=self.ifp_taxonomy),
-            ), "")
+            result = (
+                extract_interaction_fingerprint(
+                    path,
+                    ligand=LigandSelector(chain_id=self.ligand_chain),
+                    receptor_chains=receptor_chains or None,
+                    config=IFPExtractionConfig(taxonomy=self.ifp_taxonomy),
+                ),
+                "",
+            )
         except ReferenceIFPError as exc:
             result = (None, str(exc))
         self._prediction_ifp_cache[cache_key] = result
@@ -334,18 +446,27 @@ class ScreenPostprocessor:
             ),
             "ifp_filter_similarity_metric": (
                 self._ifp_filter_policy_config.similarity_metric.value
-                if self._ifp_filter_policy_config else None
+                if self._ifp_filter_policy_config
+                else None
             ),
             "ifp_filter_policy": (
                 self._ifp_filter_policy_config.mode.value
-                if self._ifp_filter_policy_config else None
+                if self._ifp_filter_policy_config
+                else None
             ),
             "ifp_filter_taxonomy": self.ifp_taxonomy.value,
-            "ifp_filter_required_interactions": json.dumps(
-                [str(item) for item in sorted(
-                    self._ifp_filter_policy_config.required_interactions or ()
-                )]
-            ) if self._ifp_filter_policy_config else None,
+            "ifp_filter_required_interactions": (
+                json.dumps(
+                    [
+                        str(item)
+                        for item in sorted(
+                            self._ifp_filter_policy_config.required_interactions or ()
+                        )
+                    ]
+                )
+                if self._ifp_filter_policy_config
+                else None
+            ),
             "ifp_filter_missing_interactions": json.dumps([]),
             "ifp_filter_mapping_status": "unmappable",
             "ifp_filter_mapping_failures": json.dumps([reason]),
@@ -412,7 +533,8 @@ class ScreenPostprocessor:
         assert self._ifp_filter_policy_config is not None
         score = (
             jaccard
-            if self._ifp_filter_policy_config.similarity_metric is IFPSimilarityMetric.JACCARD
+            if self._ifp_filter_policy_config.similarity_metric
+            is IFPSimilarityMetric.JACCARD
             else overlap
         )
         passed = score >= float(self.ifp_filter_threshold)
@@ -450,9 +572,13 @@ class ScreenPostprocessor:
             )
             if prediction is None:
                 reason = (
-                    "prolif_worker_timeout" if "timeout" in extraction_reason
-                    else "prolif_worker_crashed" if "crashed" in extraction_reason
-                    else extraction_reason or "prediction_ifp_extraction_failed"
+                    "prolif_worker_timeout"
+                    if "timeout" in extraction_reason
+                    else (
+                        "prolif_worker_crashed"
+                        if "crashed" in extraction_reason
+                        else extraction_reason or "prediction_ifp_extraction_failed"
+                    )
                 )
                 return self._not_evaluable_filter_result(reason)
             predicted_path = prediction.source_path
@@ -471,9 +597,13 @@ class ScreenPostprocessor:
         except ReferenceIFPError as exc:
             message = str(exc)
             reason = (
-                "prolif_worker_timeout" if "prolif_worker_timeout" in message
-                else "prolif_worker_crashed" if "prolif_worker_crashed" in message
-                else "prediction_ifp_extraction_failed"
+                "prolif_worker_timeout"
+                if "prolif_worker_timeout" in message
+                else (
+                    "prolif_worker_crashed"
+                    if "prolif_worker_crashed" in message
+                    else "prediction_ifp_extraction_failed"
+                )
             )
             return self._not_evaluable_filter_result(reason)
 
@@ -493,19 +623,24 @@ class ScreenPostprocessor:
             "ifp_filter_similarity_metric": self._ifp_filter_policy_config.similarity_metric.value,
             "ifp_filter_policy": self._ifp_filter_policy_config.mode.value,
             "ifp_filter_taxonomy": self.ifp_taxonomy.value,
-            "ifp_filter_required_interactions": json.dumps([
-                str(item) for item in sorted(
-                    self._ifp_filter_policy_config.required_interactions
-                    or self._reference_ifp.interactions
-                    if self._ifp_filter_policy_config.mode is IFPFilterMode.REQUIRED
-                    else ()
-                )
-            ]),
-            "ifp_filter_missing_interactions": json.dumps([
-                str(item) for item in comparison.missing_interactions
-            ]),
+            "ifp_filter_required_interactions": json.dumps(
+                [
+                    str(item)
+                    for item in sorted(
+                        self._ifp_filter_policy_config.required_interactions
+                        or self._reference_ifp.interactions
+                        if self._ifp_filter_policy_config.mode is IFPFilterMode.REQUIRED
+                        else ()
+                    )
+                ]
+            ),
+            "ifp_filter_missing_interactions": json.dumps(
+                [str(item) for item in comparison.missing_interactions]
+            ),
             "ifp_filter_mapping_status": comparison.mapping.status.value,
-            "ifp_filter_mapping_failures": json.dumps(list(comparison.mapping.failures)),
+            "ifp_filter_mapping_failures": json.dumps(
+                list(comparison.mapping.failures)
+            ),
         }
 
     def _resolve_filter_reference(
@@ -613,9 +748,9 @@ class ScreenPostprocessor:
                     slot.repeat_id
                 )
             if "diffusion_sample" in frame and slot.sample_id is not None:
-                mask &= pd.to_numeric(
-                    frame["diffusion_sample"], errors="coerce"
-                ).eq(slot.sample_id)
+                mask &= pd.to_numeric(frame["diffusion_sample"], errors="coerce").eq(
+                    slot.sample_id
+                )
             if "model_name" in frame:
                 observed_models = set(frame["model_name"].dropna().astype(str))
                 if slot.model_id in observed_models:
@@ -632,9 +767,7 @@ class ScreenPostprocessor:
             )
         observed = not selected_system.empty or not selected_chain.empty
         values = (
-            primary_metric_values(selected_system, selected_chain)
-            if observed
-            else {}
+            primary_metric_values(selected_system, selected_chain) if observed else {}
         )
         self._ensure_screen_metric_schema(values)
         return values, observed
@@ -709,9 +842,9 @@ class ScreenPostprocessor:
             selected = df[pd.to_numeric(df["repeat"], errors="coerce").eq(repeat_id)]
             if sample_id is not None and "diffusion_sample" in selected.columns:
                 selected = selected[
-                    pd.to_numeric(
-                        selected["diffusion_sample"], errors="coerce"
-                    ).eq(sample_id)
+                    pd.to_numeric(selected["diffusion_sample"], errors="coerce").eq(
+                        sample_id
+                    )
                 ]
             return selected
         if {"repeat", "diffusion_sample"}.issubset(df.columns):
@@ -721,4 +854,3 @@ class ScreenPostprocessor:
         if "CHAIN_ID" in df.columns:
             return df.drop_duplicates(subset=["CHAIN_ID"], keep="first")
         return df
-

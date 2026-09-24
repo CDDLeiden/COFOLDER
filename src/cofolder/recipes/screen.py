@@ -95,9 +95,9 @@ class Screen:
 
     ``cluster_ifps`` applies deterministic average-linkage clustering to compatible
     binary distance IFPs after prediction. ``ifp_cluster_similarity_threshold`` is
-    the inclusive Jaccard-similarity cut and defaults to ``0.5``. Both consolidated
-    Returned rows always contain cluster ID/status columns; an enabled run additionally
-    publishes ``results/ifp_cluster_summary.csv``.
+    the inclusive Jaccard-similarity cut and defaults to ``0.5``. Returned rows always
+    contain cluster ID/status columns; an enabled run additionally publishes the
+    cluster summary, linkage matrix, and deterministic leaf order.
     """
 
     def __init__(
@@ -172,7 +172,8 @@ class Screen:
         self.ifp_taxonomy = IFPTaxonomy(ifp_taxonomy)
         self.ifp_similarity_metric = (
             IFPSimilarityMetric(ifp_similarity_metric)
-            if ifp_similarity_metric is not None else None
+            if ifp_similarity_metric is not None
+            else None
         )
         self.ifp_filter_mode = IFPFilterMode(ifp_filter_policy)
         self.ifp_required_interaction_values = tuple(ifp_required_interactions or ())
@@ -276,12 +277,16 @@ class Screen:
                     and not self.validate_kwargs["build_bias_training_data"]
                 )
             ),
-            protein_database_path=self.validate_kwargs["bias_training_data_protein_path"],
+            protein_database_path=self.validate_kwargs[
+                "bias_training_data_protein_path"
+            ],
             ligand_database_path=self.validate_kwargs["bias_training_data_ligand_path"],
             release_cutoff=self.validate_kwargs["bias_release_cutoff"],
             bias_chains=self.validate_kwargs["bias_chains"],
             bias_query_cache_path=self.validate_kwargs["bias_query_cache_path"],
-            custom_bias_reference_path=self.validate_kwargs["custom_bias_reference_path"],
+            custom_bias_reference_path=self.validate_kwargs[
+                "custom_bias_reference_path"
+            ],
             protein_similarity_threshold=self.validate_kwargs[
                 "bias_protein_similarity_threshold"
             ],
@@ -311,7 +316,6 @@ class Screen:
             seed=self.validate_kwargs.get("seed"),
             logger=self.logger,
         )
-
 
     def _validate_config(self) -> None:
         if self.library is None:
@@ -371,33 +375,50 @@ class Screen:
                 raise ValueError(
                     "Similarity IFP filtering requires --ifp_filter_threshold in [0, 1]."
                 ) from exc
-            if not math.isfinite(self.ifp_filter_threshold) or not 0 <= self.ifp_filter_threshold <= 1:
+            if (
+                not math.isfinite(self.ifp_filter_threshold)
+                or not 0 <= self.ifp_filter_threshold <= 1
+            ):
                 raise ValueError("--ifp_filter_threshold must be in [0, 1].")
         elif self.ifp_filter_threshold is not None:
-            raise ValueError("Required-interaction filtering does not accept --ifp_filter_threshold.")
+            raise ValueError(
+                "Required-interaction filtering does not accept --ifp_filter_threshold."
+            )
         self._validate_filter_reference()
 
     def _validate_filter_reference(self) -> None:
         """Parse the filter reference before any prediction work starts."""
         if self.ifp_filter_source not in {"auto", "reference_complex", "custom_pocket"}:
-            raise ValueError("--ifp_filter_source must be auto, reference_complex, or custom_pocket.")
+            raise ValueError(
+                "--ifp_filter_source must be auto, reference_complex, or custom_pocket."
+            )
         reference_path = self.validate_kwargs.get("reference_path")
         self._resolved_ifp_filter_source = (
-            "custom_pocket" if self.ifp_filter_source == "auto" and self.pocket_coverage_reference
-            else "reference_complex" if self.ifp_filter_source == "auto" and reference_path
-            else self.ifp_filter_source
+            "custom_pocket"
+            if self.ifp_filter_source == "auto" and self.pocket_coverage_reference
+            else (
+                "reference_complex"
+                if self.ifp_filter_source == "auto" and reference_path
+                else self.ifp_filter_source
+            )
         )
         if self._resolved_ifp_filter_source == "auto":
-            raise ValueError("IFP filtering requires a reference complex or custom pocket.")
+            raise ValueError(
+                "IFP filtering requires a reference complex or custom pocket."
+            )
 
         metric = self.ifp_similarity_metric or (
             IFPSimilarityMetric.REFERENCE_COVERAGE
             if self._resolved_ifp_filter_source == "custom_pocket"
             else IFPSimilarityMetric.JACCARD
         )
-        required = frozenset(
-            InteractionKey.parse(item) for item in self.ifp_required_interaction_values
-        ) or None
+        required = (
+            frozenset(
+                InteractionKey.parse(item)
+                for item in self.ifp_required_interaction_values
+            )
+            or None
+        )
         self._ifp_filter_policy_config = ReferenceIFPFilterPolicy(
             mode=self.ifp_filter_mode,
             similarity_metric=metric,
@@ -407,15 +428,21 @@ class Screen:
 
         if self._resolved_ifp_filter_source == "reference_complex":
             if reference_path is None:
-                raise ValueError("Reference-complex IFP filtering requires --reference_path.")
+                raise ValueError(
+                    "Reference-complex IFP filtering requires --reference_path."
+                )
             self._reference_ligand_selector = self._parse_ligand_selector(
                 self.ifp_reference_ligand_value
             )
             return
         if self.ifp_taxonomy is IFPTaxonomy.PROLIF:
-            raise ValueError("ProLIF filtering requires --ifp_filter_source reference_complex.")
+            raise ValueError(
+                "ProLIF filtering requires --ifp_filter_source reference_complex."
+            )
         if self.ifp_filter_mode is IFPFilterMode.REQUIRED:
-            raise ValueError("Required-interaction filtering requires a reference complex.")
+            raise ValueError(
+                "Required-interaction filtering requires a reference complex."
+            )
         value = self.pocket_coverage_reference
         if value is None or not str(value).strip():
             raise ValueError(
@@ -448,13 +475,17 @@ class Screen:
         if len(tokens) == 1:
             return LigandSelector(chain_id=tokens[0])
         if len(tokens) != 2 or not tokens[0] or not tokens[1]:
-            raise ValueError("--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE].")
+            raise ValueError(
+                "--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE]."
+            )
         residue = tokens[1]
         index = 1 if residue.startswith("-") else 0
         while index < len(residue) and residue[index].isdigit():
             index += 1
         if not residue[:index] or len(residue[index:]) > 1:
-            raise ValueError("--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE].")
+            raise ValueError(
+                "--ifp_reference_ligand expects CHAIN or CHAIN:RESNUM[ICODE]."
+            )
         return LigandSelector(tokens[0], int(residue[:index]), residue[index:])
 
     @report_completion(WorkflowKind.SCREEN)
@@ -554,7 +585,9 @@ class Screen:
         }
         if self.validate_kwargs.get("conformers") == "sdf":
             if compound_library.source_format is CompoundLibraryFormat.CSV:
-                raise ValueError("--conformers sdf requires an SDF/MOL screening library.")
+                raise ValueError(
+                    "--conformers sdf requires an SDF/MOL screening library."
+                )
             capabilities = self.runner_impl.ligand_preparation_capabilities
             if "sdf" not in capabilities.conformer_modes:
                 raise ValueError(
@@ -608,9 +641,7 @@ class Screen:
             sys_obj: system.System | None = None
             row_stage = FailureStage.INPUT_VALIDATION
             coordinate_mode = (
-                outcome.coordinate_mode
-                if isinstance(outcome, CompoundMember)
-                else None
+                outcome.coordinate_mode if isinstance(outcome, CompoundMember) else None
             )
             row_exception: BaseException | None = None
             try:
@@ -721,7 +752,11 @@ class Screen:
                     summary.update(filter_result)
                     detailed.update(filter_result)
                 self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
-                source_exc = exc if isinstance(outcome, CompoundMemberFailure) else exc.__cause__ or exc
+                source_exc = (
+                    exc
+                    if isinstance(outcome, CompoundMemberFailure)
+                    else exc.__cause__ or exc
+                )
                 if isinstance(exc, WorkflowExecutionError) and exc.failures:
                     row_stage = exc.failures[0].stage
                 failure_details = {
@@ -825,17 +860,11 @@ class Screen:
                     failure
                     for failure in known_child_failures
                     if failure.envelope.identity.repeat_id in {None, slot.repeat_id}
-                    and (
-                        failure.envelope.identity.model_id in {None, slot.model_id}
-                    )
-                    and (
-                        failure.envelope.identity.sample_id in {None, slot.sample_id}
-                    )
+                    and (failure.envelope.identity.model_id in {None, slot.model_id})
+                    and (failure.envelope.identity.sample_id in {None, slot.sample_id})
                 ]
                 slot_failure = (
-                    matching_child_failures[0]
-                    if matching_child_failures
-                    else None
+                    matching_child_failures[0] if matching_child_failures else None
                 )
                 execution_row = dict(detailed)
                 execution_row.update(
@@ -875,7 +904,9 @@ class Screen:
                     )
                     if has_normalized_output and not observed:
                         execution_row["status"] = "unavailable"
-                        execution_row["error_stage"] = FailureStage.OUTPUT_VALIDATION.value
+                        execution_row["error_stage"] = (
+                            FailureStage.OUTPUT_VALIDATION.value
+                        )
                         execution_row["exception_type"] = "MissingExecutionOutput"
                         execution_row["error_code"] = "screen_execution_output_missing"
                         execution_row["error_message"] = (
@@ -923,9 +954,11 @@ class Screen:
                         else getattr(
                             row_exception,
                             "error_code",
-                            "screen_compound_failed"
-                            if attempted
-                            else "screen_execution_unavailable",
+                            (
+                                "screen_compound_failed"
+                                if attempted
+                                else "screen_execution_unavailable"
+                            ),
                         )
                     )
                     execution_row["error_message"] = (
@@ -962,6 +995,7 @@ class Screen:
 
         summary_df = pd.DataFrame(records)
         results_df = pd.DataFrame(records_with_scores)
+        self._publish_prolif_events(summary_df)
         self._apply_ifp_clustering(summary_df, results_df)
 
         self._set_filter_dtypes(summary_df)
@@ -1030,9 +1064,7 @@ class Screen:
                 repeat_id=int(row["repeat_id"]),
                 model_id=str(row["model_id"]),
                 sample_id=(
-                    int(row["sample_id"])
-                    if pd.notna(row.get("sample_id"))
-                    else None
+                    int(row["sample_id"]) if pd.notna(row.get("sample_id")) else None
                 ),
             )
             execution_status = ExecutionStatus(str(row.get("status")))
@@ -1040,8 +1072,12 @@ class Screen:
             if execution_status is not ExecutionStatus.SUCCESS:
                 execution_error = StructuredExecutionError(
                     stage=FailureStage(str(row.get("error_stage"))),
-                    exception_type=str(row.get("exception_type") or "ExecutionUnavailable"),
-                    error_code=str(row.get("error_code") or "screen_execution_unavailable"),
+                    exception_type=str(
+                        row.get("exception_type") or "ExecutionUnavailable"
+                    ),
+                    error_code=str(
+                        row.get("error_code") or "screen_execution_unavailable"
+                    ),
                     message=str(row.get("error_message") or "Execution unavailable."),
                     details={
                         "source_format": str(row.get("source_format")),
@@ -1056,9 +1092,7 @@ class Screen:
                 )
             public_records.append(
                 ExecutionRecord(
-                    envelope=make_envelope(
-                        RecordKind.EXECUTION, identity, "execution"
-                    ),
+                    envelope=make_envelope(RecordKind.EXECUTION, identity, "execution"),
                     status=execution_status,
                     execution_directory=str(row["execution_directory"]),
                     error=execution_error,
@@ -1199,8 +1233,7 @@ class Screen:
                     {
                         name: (
                             EvidenceRegime.REFERENCE_STRUCTURE
-                            if self._resolved_ifp_filter_source
-                            == "reference_complex"
+                            if self._resolved_ifp_filter_source == "reference_complex"
                             else EvidenceRegime.CUSTOM_POCKET
                         )
                         for name in METRIC_CATALOG
@@ -1216,9 +1249,7 @@ class Screen:
                 if not isinstance(record, SuccessRecord)
                 and record.envelope.record_id not in preserved_metric_ids
             )
-        existing_record_ids = {
-            record.envelope.record_id for record in public_records
-        }
+        existing_record_ids = {record.envelope.record_id for record in public_records}
         public_records.extend(
             failure
             for failure in failures
@@ -1237,9 +1268,7 @@ class Screen:
         status = (
             "partial"
             if has_success and (failures or has_unsuccessful_execution)
-            else "success"
-            if has_success
-            else "failed"
+            else "success" if has_success else "failed"
         )
         backend = self.execution_plan.backend if self.execution_plan else None
         manifest_identity = OutputIdentity(
@@ -1278,14 +1307,38 @@ class Screen:
                                 "ifp_cluster_summary.csv",
                                 "table",
                             ),
+                            ArtifactReference(
+                                "ifp_cluster_linkage",
+                                "ifp_cluster_linkage.csv",
+                                "table",
+                                "Native SciPy average-linkage matrix.",
+                            ),
+                            ArtifactReference(
+                                "ifp_cluster_leaf_order",
+                                "ifp_cluster_leaf_order.csv",
+                                "table",
+                                "Deterministic dendrogram leaves and stable member IDs.",
+                            ),
                         )
                         if self.cluster_ifps
                         else ()
                     ),
+                    *(
+                        (
+                            ArtifactReference(
+                                "ifp_interaction_events",
+                                "ifp_interaction_events.jsonl",
+                                "jsonl",
+                                "Atom-level typed ProLIF interaction occurrences.",
+                            ),
+                        )
+                        if (
+                            self.wrk_dir / "results" / "ifp_interaction_events.jsonl"
+                        ).is_file()
+                        else ()
+                    ),
                 ),
-                backend=(
-                    backend
-                ),
+                backend=(backend),
                 seed_plan=(
                     self.execution_plan.seed_plan
                     if self.execution_plan is not None
@@ -1308,6 +1361,9 @@ class Screen:
         results_df: pd.DataFrame,
     ) -> None:
         self._screen_postprocessor()._apply_ifp_clustering(summary_df, results_df)
+
+    def _publish_prolif_events(self, summary_df: pd.DataFrame) -> None:
+        self._screen_postprocessor()._publish_prolif_events(summary_df)
 
     def _default_filter_result(self) -> dict[str, Any]:
         return self._screen_postprocessor()._default_filter_result()
@@ -1349,6 +1405,7 @@ class Screen:
 
     def _ensure_screen_metric_schema(self, output: dict[str, Any]) -> None:
         self._screen_postprocessor()._ensure_screen_metric_schema(output)
+
     @staticmethod
     def _parse_list(input_str: str | None) -> list[str]:
         if not input_str:

@@ -43,6 +43,10 @@ def main() -> None:
     print(compounds.to_string(index=False))
     print("\nCluster summary")
     print(result.summary.to_string(index=False))
+    print("\nNative linkage matrix")
+    print(result.linkage_matrix)
+    print("\nDeterministic leaf labels")
+    print(result.leaf_member_ids)
 
     print("\nDecoded JSON fields")
     for row in result.summary.itertuples(index=False):

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Atom-level ProLIF interaction events with protein/ligand roles, atom identities,
+  and named geometry in the Python API and public Validate/Screen artifacts.
+- Native IFP clustering linkage matrices and deterministic, stable-ID leaf-order
+  artifacts for direct dendrogram reproduction.
+
+### Fixed
+- Public ProLIF extraction now accepts COFOLDER-produced mmCIF structures through
+  isolated temporary conversion while preserving original structural identities.
+
 ## [1.0.0] - 2026-09-20
 
 ### Added

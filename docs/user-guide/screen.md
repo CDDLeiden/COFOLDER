@@ -64,7 +64,7 @@ libraries use `--id_property` (default `_Name`).
 - `--ifp_reference_ligand CHAIN[:RESNUM[ICODE]]` and repeatable
   `--ifp_reference_receptor_chain CHAIN`: disambiguate reference entities.
 - `--ligand_chain CHAIN` also selects the ligand evaluated by IFP filtering and clustering.
-- `--cluster_ifps`: cluster evaluable binary distance IFPs after all rows finish.
+- `--cluster_ifps`: cluster evaluable typed IFPs after all rows finish.
 - `--ifp_cluster_similarity_threshold FLOAT`: inclusive Jaccard-similarity cut
   for clustering (`0` to `1`, default `0.5`).
 
@@ -178,7 +178,10 @@ or settings-incompatible cached artifact is not silently injected.
 - Canonical records: `<wrk_dir>/results/records.jsonl`
 - Long-form views: `<wrk_dir>/results/{successes,metrics,failures}.csv`
 - Manifest: `<wrk_dir>/results/manifest.json`
-- Cluster summary (when enabled): `<wrk_dir>/ifp_cluster_summary.csv`
+- Cluster summary, native linkage matrix, and leaf order (when enabled):
+  `<wrk_dir>/results/ifp_cluster_{summary,linkage,leaf_order}.csv`
+- Consolidated atom-level ProLIF occurrences (when ProLIF filtering or clustering is
+  enabled): `<wrk_dir>/results/ifp_interaction_events.jsonl`
 
 Summary columns include:
 
@@ -235,6 +238,53 @@ IDs, using empty values when a backend or run does not provide a metric:
 `mean_within_cluster_jaccard_similarity`. Consensus bits are present in at least
 half of cluster members; medoid ties resolve to the earliest input row. A singleton
 cluster has mean within-cluster similarity `1.0`.
+
+`ifp_cluster_linkage.csv` is the native SciPy average-linkage matrix with explicit
+merge indices. `ifp_cluster_leaf_order.csv` maps every dendrogram leaf back to its
+input index, stable Screen execution key, and cluster ID. Empty and singleton runs
+still publish these files with a complete header.
+
+ProLIF fingerprints retain two representations. The compact `InteractionKey` set is
+deduplicated by receptor residue and interaction type and remains the input to
+filtering and clustering. The occurrence-level event records additionally retain
+protein and ligand atom identities, ligand/protein roles, and named geometry.
+Distances are in Å and angles are in degrees. PDB inputs are read directly; mmCIF
+inputs are converted inside the isolated worker with original chain and residue
+identities restored in the returned records.
+
+The recorded linkage can be plotted without reclustering:
+
+```python
+from pathlib import Path
+
+import pandas as pd
+from scipy.cluster.hierarchy import dendrogram
+
+results = Path("screen_output/results")
+linkage = pd.read_csv(results / "ifp_cluster_linkage.csv")
+leaves = pd.read_csv(results / "ifp_cluster_leaf_order.csv")
+labels = leaves.sort_values("input_index")["member_id"].tolist()
+dendrogram(
+    linkage[["left_child", "right_child", "jaccard_distance", "member_count"]]
+    .to_numpy(float),
+    labels=labels,
+)
+```
+
+Atom-specific classifications can be made from public event records. For example,
+an Asp168 backbone-N contact is selected without invoking ProLIF directly:
+
+```python
+events = pd.read_json(results / "ifp_interaction_events.jsonl", lines=True)
+asp168_n = events[events["protein_atoms"].apply(
+    lambda atoms: any(
+        atom["residue_name"] == "ASP"
+        and atom["residue_number"] == 168
+        and atom["atom_name"] == "N"
+        for atom in atoms
+    )
+)]
+```
 
 When used from Python, `Screen.run()` returns the same merged results as a
 `pandas.DataFrame` after writing the CSV files.
