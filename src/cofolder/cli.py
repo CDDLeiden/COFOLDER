@@ -620,6 +620,17 @@ class ScreenRecipe(BaseRecipe):
         )
         parser.add_argument('--smiles_column', type=str, default=None)
         parser.add_argument('--col_id', type=str, default=None)
+        parser.add_argument(
+            '--map',
+            dest='mappings',
+            action='append',
+            default=None,
+            metavar='COLUMN=YAML_PATH',
+            help=(
+                'Map a CSV column to an existing system YAML field. Repeat for '
+                'multi-parameter screens; list indices are zero-based.'
+            ),
+        )
         parser.add_argument('--id_property', type=str, default='_Name')
         parser.add_argument(
             '--duplicate_id_policy',
@@ -712,6 +723,7 @@ class ScreenRecipe(BaseRecipe):
             col_id=args.col_id,
             id_property=args.id_property,
             duplicate_id_policy=args.duplicate_id_policy,
+            mappings=args.mappings,
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
             ifp_filter_source=args.ifp_filter_source,

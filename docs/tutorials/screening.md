@@ -1,5 +1,31 @@
 # Virtual Screening Tutorial
 
+## Screen complete system variants
+
+The regular workflow below replaces one ligand per row. To vary several system
+parameters together, use the bundled `parameter_screen.csv`; each row maps to one
+completed system:
+
+```bash
+cofolder screen \
+  -s examples/system_screen.yaml \
+  -o examples/options.yaml \
+  -c examples/parameter_screen.csv \
+  --col_id experiment \
+  --map 'protein_sequence=sequences.0.protein.sequence' \
+  --map 'ligand_smiles=sequences.1.ligand.smiles' \
+  -w screen_variants
+```
+
+Run the same command with `--preflight_only` first to validate every row and inspect
+the planned execution count without inference.
+
+If the system template contains a fixed protein `msa`, map a matching MSA column
+alongside every varying sequence. Otherwise preflight rejects the screen because the
+template alignment belongs to only its original sequence. Removing the template MSA
+enables automatic generation: each unique sequence is searched once and reused when
+it appears again.
+
 Learn how to screen compound libraries with COFOLDER.
 
 ## Overview

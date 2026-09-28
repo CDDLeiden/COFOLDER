@@ -125,6 +125,15 @@ class ScreenPostprocessor:
             tuple[Path, int | None, int | None],
             tuple[InteractionFingerprint | None, str],
         ] = {}
+        self._row_ligand_chains: dict[Path, str] = {}
+
+    def register_row_ligand_chain(self, run_dir: Path, chain_id: str) -> None:
+        """Record the analysis ligand selected for one mapped system row."""
+
+        self._row_ligand_chains[Path(run_dir)] = str(chain_id)
+
+    def _ligand_chain_for(self, run_dir: Path) -> str:
+        return self._row_ligand_chains.get(Path(run_dir), self.ligand_chain)
 
     def __getattr__(self, name: str) -> Any:
         target = self._CONFIG_ALIASES.get(name, name)
@@ -365,6 +374,7 @@ class ScreenPostprocessor:
         sample_id: int | None = None,
     ) -> tuple[InteractionFingerprint | None, str]:
         run_dir = Path(run_dir)
+        ligand_chain = self._ligand_chain_for(run_dir)
         cache_key = (run_dir, repeat_id, sample_id)
         if cache_key in self._prediction_ifp_cache:
             return self._prediction_ifp_cache[cache_key]
@@ -380,7 +390,7 @@ class ScreenPostprocessor:
         )
         ligand_rows = selected[
             (selected["ENTITY_TYPE"].astype(str).str.lower() == "ligand")
-            & (selected["CHAIN_ID"].astype(str) == self.ligand_chain)
+            & (selected["CHAIN_ID"].astype(str) == ligand_chain)
         ]
         if ligand_rows.empty:
             result = (None, "ligand_chain_not_found")
@@ -400,7 +410,7 @@ class ScreenPostprocessor:
             result = (
                 extract_interaction_fingerprint(
                     path,
-                    ligand=LigandSelector(chain_id=self.ligand_chain),
+                    ligand=LigandSelector(chain_id=ligand_chain),
                     receptor_chains=receptor_chains or None,
                     config=IFPExtractionConfig(taxonomy=self.ifp_taxonomy),
                 ),
@@ -488,6 +498,7 @@ class ScreenPostprocessor:
             )
 
         _, chain_df = read_metric_frames(run_dir)
+        ligand_chain = self._ligand_chain_for(run_dir)
         if chain_df.empty:
             return self._not_evaluable_filter_result("missing_chain_metrics")
         required = {"CHAIN_ID", "ENTITY_TYPE", "ifp_distance"}
@@ -500,9 +511,9 @@ class ScreenPostprocessor:
         ligand_rows = chain_df[
             chain_df["ENTITY_TYPE"].astype(str).str.lower() == "ligand"
         ]
-        if self.ligand_chain:
+        if ligand_chain:
             ligand_rows = ligand_rows[
-                ligand_rows["CHAIN_ID"].astype(str) == self.ligand_chain
+                ligand_rows["CHAIN_ID"].astype(str) == ligand_chain
             ]
         elif ligand_rows["CHAIN_ID"].astype(str).nunique() != 1:
             return self._not_evaluable_filter_result("ambiguous_ligand_chain")
@@ -795,13 +806,15 @@ class ScreenPostprocessor:
                 f"Validate produced executions outside the planned matrix: {extras}."
             )
 
-    def _ensure_screen_metric_schema(self, output: dict[str, Any]) -> None:
+    def _ensure_screen_metric_schema(
+        self, output: dict[str, Any], system_obj: Any | None = None
+    ) -> None:
         """Populate stable manuscript-facing score columns, using nulls when unavailable."""
 
         for column in SYSTEM_SCREEN_METRICS:
             output.setdefault(f"system__{column}", None)
 
-        chains = list(iter_system_chains(self.base_system_obj))
+        chains = list(iter_system_chains(system_obj or self.base_system_obj))
         protein_ids = [
             chain.chain_id for chain in chains if chain.entity_type == "protein"
         ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -56,6 +57,7 @@ from cofolder.modules.input import (
     WorkflowInputRequirements,
     load_yaml_document,
     system,
+    validate_declared_msas,
 )
 from cofolder.modules.input.compound_library import (
     CompoundLibraryFormat,
@@ -69,12 +71,18 @@ from cofolder.modules.input.ligand import (
     resolve_ligand_target,
 )
 from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.input.system_mapping import (
+    MappedSystemMember,
+    MappedSystemMemberFailure,
+    load_mapped_system_library,
+)
 from cofolder.modules.runners import (
     PlannedExecution,
     RunnerExecutionPlan,
     get_runner,
 )
 from cofolder.modules.runners.msa import resolve_declared_msa_paths
+from cofolder.modules.runners.msa import protein_payloads, protein_sequence, sequence_key
 from cofolder.modules.utils import write
 from cofolder.recipes._metrics import read_metric_frames
 from cofolder.recipes._completion import report_completion
@@ -148,6 +156,7 @@ class Screen:
         ifp_reference_receptor_chains: list[str] | None = None,
         cluster_ifps: bool = False,
         ifp_cluster_similarity_threshold: float = 0.5,
+        mappings: list[str] | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
@@ -156,6 +165,7 @@ class Screen:
         self.run_id = str(uuid4())
 
         self.ligand_chain = str(ligand_chain).strip() if ligand_chain else ""
+        self._ligand_chain_configured = bool(self.ligand_chain)
         self._smiles_column_configured = smiles_column is not None
         self._col_id_configured = col_id is not None
         self.smiles_column = str(smiles_column).strip() if smiles_column else "smiles"
@@ -166,6 +176,7 @@ class Screen:
         )
         self.id_property = str(id_property)
         self.duplicate_id_policy = DuplicateIdPolicy(duplicate_id_policy)
+        self.mappings = tuple(mappings or ())
         self.merge_data = self._parse_list(merge_data)
         self.ifp_filter_threshold = ifp_filter_threshold
         self.ifp_filter_source = str(ifp_filter_source)
@@ -256,14 +267,14 @@ class Screen:
                 output_dir=str(self.wrk_dir / "results"),
                 messages=(str(exc),),
             )
-        report, system_obj, _options = prediction_preflight(
+        report, system_obj, options = prediction_preflight(
             workflow="screen",
             system_path=self.system_path,
             options_path=self.options_path,
             runner_name=self.runner,
             repeats=int(self.validate_kwargs["repeats"]),
             output_dir=self.wrk_dir,
-            require_ligand=True,
+            require_ligand=not bool(self.mappings),
             assess_bias=bool(self.validate_kwargs["assess_bias"]),
             use_bias_databases=bool(
                 self.validate_kwargs["bias_training_data_protein_path"]
@@ -296,6 +307,60 @@ class Screen:
         )
         if not report.ready:
             return report
+        if self.mappings:
+            try:
+                resolve_declared_msa_paths(system_obj, base_dir=self.system_path.parent)
+                mapped = load_mapped_system_library(
+                    self.library,
+                    base_system=system_obj,
+                    mapping_values=self.mappings,
+                    id_column=self.col_id,
+                    duplicate_policy=self.duplicate_id_policy,
+                )
+                msa_errors = dict(self._prepare_mapped_msa_inputs(mapped))
+                invalid: list[str] = list(msa_errors.values())
+                for outcome in mapped.outcomes:
+                    if isinstance(outcome, MappedSystemMemberFailure):
+                        invalid.append(
+                            f"row {outcome.source.source_record_index}: {outcome.exception}"
+                        )
+                        continue
+                    if outcome.source.source_record_index in msa_errors:
+                        continue
+                    row_system = outcome.system
+                    try:
+                        self.runner_impl.validate_system(
+                            row_system,
+                            options,
+                            check_atom_names=False,
+                            source_path=self.library,
+                            requirements=WorkflowInputRequirements(require_protein=True),
+                        )
+                        if self.ligand_chain:
+                            resolve_ligand_target(row_system, self.ligand_chain)
+                    except Exception as exc:
+                        invalid.append(
+                            f"row {outcome.source.source_record_index}: {exc}"
+                        )
+                mapping_text = ", ".join(
+                    f"{item.column}={item.path_text}" for item in mapped.mappings
+                )
+                count = len(mapped.outcomes)
+                messages = report.messages + (
+                    f"mappings={mapping_text}",
+                    f"mapped_rows={count}",
+                    f"mapped_rows_valid={count - len(invalid)}",
+                    f"mapped_rows_invalid={len(invalid)}",
+                    *invalid,
+                )
+                return replace(
+                    report,
+                    ready=not invalid,
+                    planned_executions=report.planned_executions * count,
+                    messages=messages,
+                )
+            except Exception as exc:
+                return replace(report, ready=False, messages=report.messages + (str(exc),))
         try:
             target = resolve_ligand_target(system_obj, self.ligand_chain or None)
         except Exception as exc:
@@ -317,6 +382,96 @@ class Screen:
             logger=self.logger,
         )
 
+    def _prepare_mapped_msa_inputs(
+        self, mapped_library: Any
+    ) -> tuple[tuple[int, str], ...]:
+        """Resolve and validate mapped MSAs before any child workflow starts."""
+
+        errors: list[tuple[int, str]] = []
+        assert self.library is not None
+        for outcome in mapped_library.outcomes:
+            if not isinstance(outcome, MappedSystemMember):
+                continue
+            resolve_declared_msa_paths(outcome.system, base_dir=self.library.parent)
+            try:
+                validate_declared_msas(outcome.system, source_path=self.library)
+            except Exception as exc:
+                row_id = outcome.source.original_id or outcome.source.source_record_id
+                field_path = tuple(getattr(exc, "field_path", ()))
+                sequence_index = (
+                    field_path[1]
+                    if len(field_path) >= 4
+                    and field_path[0] == "sequences"
+                    and isinstance(field_path[1], int)
+                    else None
+                )
+                mapped_paths = [
+                    mapping.path_text
+                    for mapping in mapped_library.mappings
+                    if (
+                        sequence_index is None
+                        and mapping.path[-1:] == ("msa",)
+                    )
+                    or (
+                        sequence_index is not None
+                        and (
+                            "sequences",
+                            sequence_index,
+                            "protein",
+                            "msa",
+                        )[: len(mapping.path)]
+                        == mapping.path
+                    )
+                ]
+                mapping_note = (
+                    f" [MSA mapping: {', '.join(mapped_paths)}]"
+                    if mapped_paths
+                    else ""
+                )
+                errors.append(
+                    (
+                        outcome.source.source_record_index,
+                        f"row {row_id!r}: {exc}{mapping_note}",
+                    )
+                )
+        return tuple(errors)
+
+    def _inject_and_report_msas(
+        self, system_obj: system.System, *, member_id: str
+    ) -> int:
+        """Inject cached MSAs and report each protein's selected source."""
+
+        assert self.reusable_msa_dir is not None
+        payloads = protein_payloads(system_obj)
+        before = [payload.get("msa") for payload in payloads]
+        injected = self.runner_impl.inject_reusable_msas(
+            system_obj,
+            self.reusable_msa_dir,
+            settings=self.msa_reuse_settings,
+        )
+        for payload, original in zip(payloads, before, strict=True):
+            sequence = protein_sequence(payload)
+            sequence_id = sequence_key(sequence)[:12] if sequence else "unknown"
+            raw_ids = payload.get("id")
+            chain_ids = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+            chain_text = ",".join(str(value) for value in chain_ids if value is not None)
+            if original is not None and str(original).strip().lower() == "empty":
+                source = "explicitly disabled (msa: empty)"
+            elif original is not None and str(original).strip():
+                source = "supplied MSA"
+            elif payload.get("msa") is not None and str(payload.get("msa")).strip():
+                source = "sequence-matched shared cache"
+            else:
+                source = "first generation required"
+            self.logger.info(
+                "MSA source for %s protein chain(s) %s (sequence %s): %s.",
+                member_id,
+                chain_text or "unknown",
+                sequence_id,
+                source,
+            )
+        return injected
+
     def _validate_config(self) -> None:
         if self.library is None:
             raise ValueError("--library is required.")
@@ -332,7 +487,14 @@ class Screen:
                 ".sd": CompoundLibraryFormat.SDF,
                 ".mol": CompoundLibraryFormat.MOL,
             }.get(self.library.suffix.lower())
-        if inferred is CompoundLibraryFormat.CSV:
+        if self.mappings:
+            if inferred is not CompoundLibraryFormat.CSV:
+                raise ValueError("--map can only be used with a CSV library.")
+            if not self._col_id_configured or not self.col_id:
+                raise ValueError("--col_id is required for mapped CSV screens.")
+            if self._smiles_column_configured:
+                raise ValueError("--smiles_column cannot be combined with --map.")
+        elif inferred is CompoundLibraryFormat.CSV:
             if not self._col_id_configured or not self.col_id:
                 raise ValueError("--col_id is required for CSV libraries.")
             if not self._smiles_column_configured or not self.smiles_column:
@@ -553,31 +715,55 @@ class Screen:
             check_atom_names=False,
             source_path=self.system_path,
             requirements=WorkflowInputRequirements(
-                require_protein=True, require_ligand=True
+                require_protein=True, require_ligand=not bool(self.mappings)
             ),
         )
         self.base_system_obj = validated.system
         self.base_system = self.base_system_obj.system
-        self.ligand_target = resolve_ligand_target(
-            self.base_system_obj, self.ligand_chain or None
-        )
-        self.ligand_chain = self.ligand_target.chain_ids[0]
+        if self.mappings:
+            self.ligand_target = None
+            if self.ligand_chain or self._ifp_filter_enabled() or self.cluster_ifps:
+                self.ligand_target = resolve_ligand_target(
+                    self.base_system_obj, self.ligand_chain or None
+                )
+                self.ligand_chain = self.ligand_target.chain_ids[0]
+        else:
+            self.ligand_target = resolve_ligand_target(
+                self.base_system_obj, self.ligand_chain or None
+            )
+            self.ligand_chain = self.ligand_target.chain_ids[0]
         self._postprocessor = None
         self._prepare_reference_ifp()
         if self.reusable_msa_dir is not None:
             self.msa_reuse_settings = self.runner_impl.msa_reuse_settings(options_obj)
-        assert self.ligand_target is not None
         assert self.library is not None
-        compound_library = load_compound_library(
-            self.library,
-            target=self.ligand_target,
-            source_format=self.library_format,
-            smiles_column=self.smiles_column,
-            id_column=self.col_id if self.col_id != "execution_id" else None,
-            id_property=self.id_property,
-            metadata_fields=self.merge_data,
-            duplicate_policy=self.duplicate_id_policy,
-        )
+        if self.mappings:
+            compound_library = load_mapped_system_library(
+                self.library,
+                base_system=self.base_system_obj,
+                mapping_values=self.mappings,
+                id_column=self.col_id,
+                duplicate_policy=self.duplicate_id_policy,
+            )
+            msa_errors = self._prepare_mapped_msa_inputs(compound_library)
+            if msa_errors:
+                raise SystemInputValidationError(
+                    "Mapped MSA validation failed before screen execution:\n"
+                    + "\n".join(message for _, message in msa_errors),
+                    source_path=self.library,
+                )
+        else:
+            assert self.ligand_target is not None
+            compound_library = load_compound_library(
+                self.library,
+                target=self.ligand_target,
+                source_format=self.library_format,
+                smiles_column=self.smiles_column,
+                id_column=self.col_id if self.col_id != "execution_id" else None,
+                id_property=self.id_property,
+                metadata_fields=self.merge_data,
+                duplicate_policy=self.duplicate_id_policy,
+            )
         self._library_metadata_columns = {
             str(column)
             for outcome in compound_library.outcomes
@@ -628,11 +814,15 @@ class Screen:
             self._ensure_screen_metric_schema(detailed)
             detailed.update(self._default_cluster_result())
             summary.update(self._default_cluster_result())
-            summary[self.smiles_column] = (
-                outcome.ligand.source_smiles
-                if isinstance(outcome, CompoundMember)
-                else source.metadata.get(self.smiles_column)
-            )
+            if not self.mappings:
+                summary[self.smiles_column] = (
+                    outcome.ligand.source_smiles
+                    if isinstance(outcome, CompoundMember)
+                    else source.metadata.get(self.smiles_column)
+                )
+            else:
+                for mapping in compound_library.mappings:
+                    summary[mapping.column] = source.metadata.get(mapping.column)
             for col in self.merge_data:
                 summary[col] = source.metadata.get(col)
 
@@ -645,21 +835,40 @@ class Screen:
             )
             row_exception: BaseException | None = None
             try:
-                assert self.ligand_target is not None
-                if isinstance(outcome, CompoundMemberFailure):
+                if isinstance(outcome, (CompoundMemberFailure, MappedSystemMemberFailure)):
                     raise outcome.exception
-                normalized_ligand = outcome.ligand
-                sys_obj = replace_ligand_smiles(
-                    self.base_system_obj,
-                    target=self.ligand_target,
-                    ligand=normalized_ligand,
-                )
+                if isinstance(outcome, MappedSystemMember):
+                    sys_obj = outcome.system
+                    self._ensure_screen_metric_schema(detailed, sys_obj)
+                    resolve_declared_msa_paths(sys_obj, base_dir=self.library.parent)
+                    validated_row = self.runner_impl.validate_system(
+                        sys_obj,
+                        options_obj,
+                        check_atom_names=False,
+                        source_path=self.library,
+                        requirements=WorkflowInputRequirements(require_protein=True),
+                    )
+                    sys_obj = validated_row.system
+                    if self._ligand_chain_configured or self._ifp_filter_enabled() or self.cluster_ifps:
+                        row_target = resolve_ligand_target(
+                            sys_obj,
+                            self.ligand_chain if self._ligand_chain_configured else None,
+                        )
+                        self._screen_postprocessor().register_row_ligand_chain(
+                            run_dir, row_target.chain_ids[0]
+                        )
+                else:
+                    assert self.ligand_target is not None
+                    normalized_ligand = outcome.ligand
+                    sys_obj = replace_ligand_smiles(
+                        self.base_system_obj,
+                        target=self.ligand_target,
+                        ligand=normalized_ligand,
+                    )
 
                 if self.reusable_msa_dir is not None:
-                    injected = self.runner_impl.inject_reusable_msas(
-                        sys_obj,
-                        self.reusable_msa_dir,
-                        settings=self.msa_reuse_settings,
+                    injected = self._inject_and_report_msas(
+                        sys_obj, member_id=compound_id
                     )
                     if injected:
                         self.logger.info(
@@ -754,7 +963,7 @@ class Screen:
                 self.logger.exception("Screen row failed (%s): %s", compound_id, exc)
                 source_exc = (
                     exc
-                    if isinstance(outcome, CompoundMemberFailure)
+                    if isinstance(outcome, (CompoundMemberFailure, MappedSystemMemberFailure))
                     else exc.__cause__ or exc
                 )
                 if isinstance(exc, WorkflowExecutionError) and exc.failures:
@@ -926,7 +1135,7 @@ class Screen:
                         execution_row["error_details"] = {}
                 else:
                     attempted = (
-                        not isinstance(outcome, CompoundMemberFailure)
+                        not isinstance(outcome, (CompoundMemberFailure, MappedSystemMemberFailure))
                         and (slot_failure.stage if slot_failure else row_stage)
                         in {
                             FailureStage.BACKEND_EXECUTION,
@@ -1002,6 +1211,19 @@ class Screen:
         self._set_filter_dtypes(results_df)
         results_dir = self.wrk_dir / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
+        if self.mappings:
+            mapping_path = results_dir / "system_mappings.json"
+            mapping_path.write_text(
+                json.dumps(
+                    [
+                        {"column": item.column, "yaml_path": item.path_text}
+                        for item in compound_library.mappings
+                    ],
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         members_path = results_dir / "compound_members.csv"
         temporary_members_path = results_dir / f".{members_path.name}.{uuid4().hex}.tmp"
         try:
@@ -1303,6 +1525,18 @@ class Screen:
                     *(
                         (
                             ArtifactReference(
+                                "system_mappings",
+                                "system_mappings.json",
+                                "json",
+                                "CSV-column to system-YAML mapping definitions.",
+                            ),
+                        )
+                        if self.mappings
+                        else ()
+                    ),
+                    *(
+                        (
+                            ArtifactReference(
                                 "ifp_cluster_summary",
                                 "ifp_cluster_summary.csv",
                                 "table",
@@ -1403,8 +1637,10 @@ class Screen:
     def _validate_observed_execution_keys(self, system_df: pd.DataFrame) -> None:
         self._screen_postprocessor()._validate_observed_execution_keys(system_df)
 
-    def _ensure_screen_metric_schema(self, output: dict[str, Any]) -> None:
-        self._screen_postprocessor()._ensure_screen_metric_schema(output)
+    def _ensure_screen_metric_schema(
+        self, output: dict[str, Any], system_obj: system.System | None = None
+    ) -> None:
+        self._screen_postprocessor()._ensure_screen_metric_schema(output, system_obj)
 
     @staticmethod
     def _parse_list(input_str: str | None) -> list[str]:

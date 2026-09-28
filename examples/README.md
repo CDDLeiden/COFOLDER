@@ -10,6 +10,7 @@ Use these files when you want to copy a working starting point before editing it
 - `options.yaml`: standard runner options example
 - `system_screen.yaml`: screening template used with a ligand library
 - `ligand_screen.csv`: small screening CSV used by the screen tutorial
+- `parameter_screen.csv`: paired protein-sequence and ligand parameter screen
 - `ethanol.sdf` and `ethanol.mol`: structural ligand inputs for conformer reuse and Screen
 - `system_custom_ccd.yaml`: custom `ET5` CCD input populated from `ethanol.sdf`
 - `ifp_clustering_demo.py`: CPU-only deterministic IFP clustering demonstration
@@ -29,6 +30,11 @@ Start with:
 3. one of the quick commands from the root `README.md` or `docs/getting-started/quickstart.md`
 
 Then move to `system_screen.yaml` and `ligand_screen.csv` when you want to explore `screen`.
+Use `parameter_screen.csv` with repeatable `--map COLUMN=YAML_PATH` arguments when
+each row should change several system fields together.
+When varying a protein sequence, remove any fixed template `msa` to generate and
+reuse one alignment per unique sequence, or add a matching MSA column and map it to
+the same protein's `msa` field.
 
 The ligand tutorial uses `ethanol.sdf`, `ethanol.mol`, and
 `system_custom_ccd.yaml`. The custom CCD system becomes runnable after `ET5` is

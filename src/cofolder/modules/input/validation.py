@@ -16,7 +16,12 @@ from cofolder.modules.input.config import (
     SequenceValidationError,
     SystemInputValidationError,
 )
-from cofolder.modules.input.system import SUPPORTED_ENTITY_TYPES, System, SystemChain
+from cofolder.modules.input.system import (
+    SUPPORTED_ENTITY_TYPES,
+    System,
+    SystemChain,
+    iter_system_chains,
+)
 from cofolder.modules.runners.contracts import (
     RunnerChainIdentity,
     RunnerInputCapabilities,
@@ -294,6 +299,14 @@ def _validate_declared_msas(
                 **common,
             )
         chain.entity_data["msa"] = str(path)
+
+
+def validate_declared_msas(
+    system_obj: System | dict[str, Any], *, source_path: Path | None = None
+) -> None:
+    """Validate every declared protein MSA against its completed system sequence."""
+
+    _validate_declared_msas(list(iter_system_chains(system_obj)), source_path=source_path)
 
 
 def _validate_ligand_smiles(

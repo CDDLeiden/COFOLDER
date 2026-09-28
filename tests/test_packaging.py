@@ -23,6 +23,7 @@ EXAMPLE_RESOURCE_NAMES = {
     "ethanol.sdf",
     "ifp_clustering_demo.py",
     "ligand_screen.csv",
+    "parameter_screen.csv",
     "options.yaml",
     "system.yaml",
     "system_covalent.yaml",

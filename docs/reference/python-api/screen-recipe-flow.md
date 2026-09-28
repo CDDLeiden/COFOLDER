@@ -32,6 +32,29 @@ results = Screen(
 `run()` returns the detailed screening `pandas.DataFrame`. The versioned files under
 `<wrk_dir>/results/` remain the canonical persisted result.
 
+For a multi-parameter CSV, pass mappings instead of `smiles_column`:
+
+```python
+results = Screen(
+    wrk_dir="runs/variants",
+    system_path="system.yaml",
+    options_path="options.yaml",
+    library="variants.csv",
+    col_id="experiment",
+    mappings=[
+        "protein_sequence=sequences.0.protein.sequence",
+        "ligand_smiles=sequences.1.ligand.smiles",
+    ],
+).run()
+```
+
+Each mapping targets an existing template field, and every CSV row supplies one
+complete combination. The row system is validated before it reaches `Validate`.
+If a protein sequence varies while the template supplies an MSA, the row must also
+map a matching `msa` value. Screen validates all supplied alignment queries before
+starting any child workflow. Without supplied alignments, Boltz-family runners cache
+and reuse generated MSAs by normalized sequence and generation settings.
+
 ## The journey through the code and files
 
 1. **Construction separates Screen concerns from Validate concerns.**
@@ -43,8 +66,8 @@ results = Screen(
 
 2. **Screen-specific configuration is validated before prediction.**
 
-   `_validate_config()` requires a library and ligand chain, infers CSV/SDF/MOL from
-   the suffix when necessary, checks the correct ID/SMILES mappings for CSV, and
+   `_validate_config()` requires a library, infers CSV/SDF/MOL from
+   the suffix when necessary, checks either ID/SMILES inputs or general CSV mappings, and
    checks IFP filter and cluster thresholds. Reference-complex or custom-pocket IFP
    policy is parsed before any backend call.
 
@@ -57,19 +80,25 @@ results = Screen(
    This same plan is passed to every child Validate run, so all compounds are
    compared on the same execution axes.
 
-4. **The base system is validated and the ligand target is resolved.**
+4. **The base system is validated and any ligand target is resolved.**
 
    `runner.validate_system()` applies the shared requirement that the system contain
-   a protein and ligand. `resolve_ligand_target()` locates the ligand entity named by
-   `ligand_chain`. Optional reference IFP data is prepared here, before screening.
+   a protein and, in single-ligand mode, a ligand. `resolve_ligand_target()` locates
+   the ligand entity named by `ligand_chain`. Mapped mode can run protein-only
+   systems unless ligand-specific analysis is requested.
 
-5. **The compound library becomes canonical members or failures.**
+5. **The input library becomes canonical members or failures.**
 
    `load_compound_library()` reads CSV, SDF, or MOL input and returns ordered
    outcomes. Each outcome retains source identity, a stable execution ID, metadata,
    normalized ligand data, coordinate mode, and a safe execution-directory name.
    Duplicate-ID policy is applied here. Invalid members remain explicit failures so
    the rest of the library can continue.
+
+   In mapped mode, `load_mapped_system_library()` parses raw CSV text, applies every
+   mapped value to a fresh template copy, and retains the same source identity and
+   execution-directory conventions. Completed row systems are runner-validated
+   before prediction.
 
 6. **Each compound gets its own child workspace.**
 
@@ -124,7 +153,8 @@ results = Screen(
     typed `ExecutionRecord` per compound/repeat/model/sample, rebases child metric and
     failure records to Screen identities, adds Screen-derived metrics, and writes the
     public bundle. The manifest points to `executions.csv`,
-    `compound_members.csv`, and the optional IFP cluster and event artifacts.
+    `compound_members.csv`, mapped-mode `system_mappings.json`, and the optional IFP
+    cluster and event artifacts.
 
 12. **At least one success is required.**
 

@@ -1,6 +1,7 @@
 """Tests for cofolder.recipes.screen module."""
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -95,9 +96,11 @@ class _ReusableScreenRunner:
     capabilities = {"confidence_metrics"}
     supports_msa_reuse = True
 
-    def __init__(self, *, generate_msa=True):
+    def __init__(self, *, generate_msa=True, fail_after_msa_once=False):
         self.msa_missing_at_run: list[bool] = []
+        self.msa_sequences_missing_at_run: list[tuple[str, ...]] = []
         self.generate_msa = generate_msa
+        self.fail_after_msa_once = fail_after_msa_once
 
     def ensure_available(self):
         return None
@@ -145,18 +148,29 @@ class _ReusableScreenRunner:
         )
 
     def run(self, request):
-        protein = request.system_obj.system["sequences"][0]["protein"]
-        missing = not bool(protein.get("msa"))
-        self.msa_missing_at_run.append(missing)
-        if missing and self.generate_msa:
+        proteins = [
+            entry["protein"]
+            for entry in request.system_obj.system["sequences"]
+            if "protein" in entry
+        ]
+        missing_proteins = [protein for protein in proteins if not protein.get("msa")]
+        self.msa_missing_at_run.append(bool(missing_proteins))
+        self.msa_sequences_missing_at_run.append(
+            tuple(protein["sequence"] for protein in missing_proteins)
+        )
+        if missing_proteins and self.generate_msa:
             msa_dir = (
                 request.repeat_dir / f"boltz_results_{request.system_name}" / "msa"
             )
             msa_dir.mkdir(parents=True, exist_ok=True)
-            (msa_dir / "generated.csv").write_text(
-                f"key,sequence\n-1,{protein['sequence']}\n",
-                encoding="utf-8",
-            )
+            for index, protein in enumerate(missing_proteins):
+                (msa_dir / f"generated_{index}.csv").write_text(
+                    f"key,sequence\n-1,{protein['sequence']}\n",
+                    encoding="utf-8",
+                )
+        if self.fail_after_msa_once:
+            self.fail_after_msa_once = False
+            raise RuntimeError("prediction failed after MSA generation")
 
         normalized_dir = request.repeat_dir / "normalized"
         structures_dir = normalized_dir / "structures"
@@ -265,6 +279,34 @@ class TestScreenInit:
         assert screen.ligand_chain == "B"
         assert not work_dir.exists()
 
+    def test_mapped_preflight_validates_every_row_without_writing(
+        self, sample_system_yaml, sample_options_yaml, temp_dir
+    ):
+        csv_path = temp_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence\nvalid,MKRAAC\ninvalid,MKRAA*\n", encoding="utf-8"
+        )
+        work_dir = temp_dir / "mapped-preflight"
+        with patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ):
+            report = Screen(
+                wrk_dir=str(work_dir),
+                system_path=str(sample_system_yaml),
+                options_path=str(sample_options_yaml),
+                library=str(csv_path),
+                col_id="id",
+                mappings=["sequence=sequences.0.protein.sequence"],
+            ).preflight()
+
+        assert not report.ready
+        assert "mapped_rows=2" in report.messages
+        assert "mapped_rows_valid=1" in report.messages
+        assert "mapped_rows_invalid=1" in report.messages
+        assert any("row 2" in message and "Invalid" in message for message in report.messages)
+        assert not work_dir.exists()
+
     def test_missing_library_raises(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
@@ -295,6 +337,37 @@ class TestScreenInit:
 
 
 class TestScreenRun:
+    @patch("cofolder.recipes.screen.Validate.run")
+    def test_mapped_screen_accepts_protein_only_system(
+        self, mock_validate_run, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "protein.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
+            ),
+            encoding="utf-8",
+        )
+        csv_path = temp_dir / "proteins.csv"
+        csv_path.write_text("id,sequence\nvariant,MKRAAC\n", encoding="utf-8")
+
+        result = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            library=str(csv_path),
+            col_id="id",
+            mappings=["sequence=sequences.0.protein.sequence"],
+        ).run()
+
+        assert result["status"].tolist() == ["success"]
+        row_system = yaml.safe_load(
+            (temp_dir / "screen" / "compound_000001" / "screen_system.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert row_system["sequences"][0]["protein"]["sequence"] == "MKRAAC"
+
     @patch("cofolder.recipes.screen.Validate.run")
     def test_csv_and_sdf_publish_same_execution_schema(
         self,
@@ -491,6 +564,263 @@ class TestScreenRun:
             assert Path(msa_path).is_file()
             assert str(temp_dir / "screen" / "shared" / "msa") in msa_path
 
+    def test_mapped_screen_generates_once_per_unique_sequence(
+        self, monkeypatch, caplog, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = temp_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence\na1,MKRAAT\nb1,MKRAAC\na2,MKRAAT\nb2,MKRAAC\n",
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner()
+        caplog.set_level(logging.INFO, logger="cofolder.screen")
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        results = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            library=str(csv_path),
+            col_id="id",
+            mappings=["sequence=sequences.0.protein.sequence"],
+            repeats=2,
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [True, False, True, False, False, False, False, False]
+        assert results["status"].tolist() == ["success"] * 8
+        row_msa_paths = []
+        for index in range(1, 5):
+            row_system = yaml.safe_load(
+                (
+                    temp_dir
+                    / "screen"
+                    / f"compound_{index:06d}"
+                    / "screen_system.yaml"
+                ).read_text(encoding="utf-8")
+            )
+            row_msa_paths.append(row_system["sequences"][0]["protein"]["msa"])
+        assert row_msa_paths[0] == row_msa_paths[2]
+        assert row_msa_paths[1] == row_msa_paths[3]
+        assert row_msa_paths[0] != row_msa_paths[1]
+        manifest = json.loads(
+            (temp_dir / "screen" / "shared" / "msa" / "boltz2" / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert len(manifest["proteins"]) == 2
+        messages = [record.getMessage() for record in caplog.records]
+        assert sum("first generation required" in message for message in messages) == 2
+        assert sum("sequence-matched shared cache" in message for message in messages) == 2
+
+    def test_mapped_screen_reuses_each_sequence_across_multiple_proteins(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "two_proteins.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"protein": {"id": "C", "sequence": "GGGG"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = temp_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence_a,sequence_c\n"
+            "one,MKRAAT,GGGG\n"
+            "two,MKRAAC,GGGG\n"
+            "three,MKRAAT,GGGH\n"
+            "four,MKRAAC,GGGH\n",
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner()
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            library=str(csv_path),
+            col_id="id",
+            mappings=[
+                "sequence_a=sequences.0.protein.sequence",
+                "sequence_c=sequences.1.protein.sequence",
+            ],
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_sequences_missing_at_run == [
+            ("MKRAAT", "GGGG"),
+            ("MKRAAC",),
+            ("GGGH",),
+            (),
+        ]
+
+    @patch("cofolder.recipes.screen.Validate.run", autospec=True)
+    def test_changed_sequence_with_inherited_msa_stops_before_prediction(
+        self, mock_validate_run, sample_options_yaml, temp_dir
+    ):
+        input_dir = temp_dir / "inputs"
+        input_dir.mkdir()
+        (input_dir / "protein.a3m").write_text(">query\nMKRAAT\n", encoding="utf-8")
+        system_path = input_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {
+                            "protein": {
+                                "id": "A",
+                                "sequence": "MKRAAT",
+                                "msa": "protein.a3m",
+                            }
+                        },
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = input_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence\nbase,MKRAAT\nvariant_2,MKRAAC\n", encoding="utf-8"
+        )
+        screen = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            library=str(csv_path),
+            col_id="id",
+            mappings=["sequence=sequences.0.protein.sequence"],
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="inherits the fixed MSA"):
+            screen.run()
+        mock_validate_run.assert_not_called()
+
+        with patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ):
+            report = screen.preflight()
+        assert not report.ready
+        assert any("variant_2" in message for message in report.messages)
+
+    def test_mapped_matching_msas_avoid_generation(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        input_dir = temp_dir / "inputs"
+        input_dir.mkdir()
+        (input_dir / "a.a3m").write_text(">query\nMKRAAT\n", encoding="utf-8")
+        (input_dir / "b.a3m").write_text(">query\nMKRAAC\n", encoding="utf-8")
+        system_path = input_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {
+                            "protein": {
+                                "id": "A",
+                                "sequence": "MKRAAT",
+                                "msa": "a.a3m",
+                            }
+                        },
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = input_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence,msa\na,MKRAAT,a.a3m\nb,MKRAAC,b.a3m\n",
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner()
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            library=str(csv_path),
+            col_id="id",
+            mappings=[
+                "sequence=sequences.0.protein.sequence",
+                "msa=sequences.0.protein.msa",
+            ],
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [False, False]
+
+    @patch("cofolder.recipes.screen.Validate.run", autospec=True)
+    def test_mapped_mismatched_msa_stops_before_prediction(
+        self, mock_validate_run, sample_options_yaml, temp_dir
+    ):
+        input_dir = temp_dir / "inputs"
+        input_dir.mkdir()
+        (input_dir / "wrong.a3m").write_text(">query\nMKRAAT\n", encoding="utf-8")
+        system_path = input_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {
+                            "protein": {
+                                "id": "A",
+                                "sequence": "MKRAAT",
+                                "msa": "wrong.a3m",
+                            }
+                        },
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        csv_path = input_dir / "variants.csv"
+        csv_path.write_text(
+            "id,sequence,msa\nvariant,MKRAAC,wrong.a3m\n", encoding="utf-8"
+        )
+
+        with pytest.raises(WorkflowExecutionError, match="does not match protein chain") as caught:
+            Screen(
+                wrk_dir=str(temp_dir / "screen"),
+                system_path=str(system_path),
+                options_path=str(sample_options_yaml),
+                library=str(csv_path),
+                col_id="id",
+                mappings=[
+                    "sequence=sequences.0.protein.sequence",
+                    "msa=sequences.0.protein.msa",
+                ],
+            ).run()
+        mock_validate_run.assert_not_called()
+        assert "sequences.0.protein.msa" in str(caught.value)
+
     def test_screen_preserves_precomputed_msa_without_generation(
         self,
         monkeypatch,
@@ -587,6 +917,44 @@ class TestScreenRun:
             "without producing valid reusable MSAs" in caught.value.failures[0].message
         )
         assert "already attempted" in caught.value.failures[1].message
+
+    def test_generated_msa_is_reused_after_prediction_failure(
+        self,
+        monkeypatch,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        system_path = temp_dir / "system.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _ReusableScreenRunner(fail_after_msa_once=True)
+        monkeypatch.setattr("cofolder.recipes.screen.get_runner", lambda name: runner)
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        results = Screen(
+            wrk_dir=str(temp_dir / "screen"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            ligand_chain="B",
+            library=str(sample_csv_file),
+            smiles_column="smiles",
+            col_id="compound_id",
+            scoring_functions=["confidence_metrics"],
+            assess_robustness=False,
+        ).run()
+
+        assert runner.msa_missing_at_run == [True, False]
+        assert results["status"].tolist() == ["failed", "success"]
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_preserves_constraints_unrelated_to_ligand_replacement(
@@ -926,7 +1294,7 @@ class TestScreenRun:
         ).issubset(merged_df.columns)
 
     @patch("cofolder.recipes.screen.Validate.run")
-    def test_run_multi_variable_updates_system_yaml(
+    def test_run_mapped_csv_updates_multiple_system_fields(
         self,
         mock_validate_run,
         sample_system_yaml,
@@ -935,7 +1303,8 @@ class TestScreenRun:
     ):
         csv_path = temp_dir / "multi.csv"
         csv_path.write_text(
-            "compound_id,smiles,ccd\nCMPD001,CCO,EDO\n",
+            "experiment,protein_sequence,ligand_smiles,ligand_id\n"
+            "variant_1,MKRAAC,CCN,C\n",
             encoding="utf-8",
         )
 
@@ -943,20 +1312,38 @@ class TestScreenRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            ligand_chain="B",
             library=str(csv_path),
-            smiles_column="smiles",
-            col_id="compound_id",
+            col_id="experiment",
+            mappings=[
+                "protein_sequence=sequences.0.protein.sequence",
+                "ligand_smiles=sequences.1.ligand.smiles",
+                "ligand_id=sequences.1.ligand.id",
+            ],
         )
 
-        screener.run()
+        result = screener.run()
 
         run_system_yaml = temp_dir / "compound_000001" / "screen_system.yaml"
         assert run_system_yaml.exists()
         data = yaml.safe_load(run_system_yaml.read_text(encoding="utf-8"))
+        assert data["sequences"][0]["protein"]["sequence"] == "MKRAAC"
         lig = data["sequences"][1]["ligand"]
-        assert lig["smiles"] == "CCO"
+        assert lig["smiles"] == "CCN"
+        assert lig["id"] == "C"
         assert "ccd" not in lig
+        assert "ligand_C__chains_ptm" in result.columns
+        mapping_artifact = temp_dir / "results" / "system_mappings.json"
+        assert json.loads(mapping_artifact.read_text(encoding="utf-8")) == [
+            {
+                "column": "protein_sequence",
+                "yaml_path": "sequences.0.protein.sequence",
+            },
+            {
+                "column": "ligand_smiles",
+                "yaml_path": "sequences.1.ligand.smiles",
+            },
+            {"column": "ligand_id", "yaml_path": "sequences.1.ligand.id"},
+        ]
 
     @patch("cofolder.recipes.screen.Validate.run")
     def test_run_continue_on_failure(

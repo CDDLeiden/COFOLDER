@@ -8,6 +8,58 @@ The `screen` command runs **`validate` once per valid source record** in a CSV,
 SDF, or MOL library. Malformed structure records are retained as failures while
 valid records continue.
 
+## Multi-parameter CSV screens
+
+A CSV row can define a complete system variant by mapping any number of columns to
+existing fields in the system YAML:
+
+```bash
+cofolder screen \
+  -s system_screen.yaml -o options.yaml \
+  --library parameter_screen.csv --col_id experiment \
+  --map 'protein_sequence=sequences.0.protein.sequence' \
+  --map 'ligand_smiles=sequences.1.ligand.smiles'
+```
+
+Each `--map` has the form `COLUMN=YAML_PATH`. Paths use dot-separated mapping keys
+and zero-based list indices. Escape a literal dot or backslash in a key with a
+backslash. Every destination must already exist in the template, all mapped cells
+must be non-blank, and one CSV row always produces one system; COFOLDER does not
+generate a Cartesian product.
+
+String destinations preserve the CSV text exactly. Values mapped onto numbers,
+booleans, lists, dictionaries, or `null` destinations are parsed as JSON and must
+match the template type (`null` accepts any JSON value). This permits structured
+values such as a complete constraints list to be supplied in one quoted CSV cell.
+
+Mapped mode requires a CSV and `--col_id`, and it does not accept
+`--smiles_column`. The latter remains part of the existing single-ligand library
+mode. `--ligand_chain` is optional in mapped mode and selects the ligand for
+ligand-specific filtering or clustering when those features are requested.
+
+The completed system is validated independently for every row. A bad cell or system
+fails only that row. If the template supplies an MSA and a mapping changes that
+protein's sequence, the entire screen is rejected before prediction unless the MSA
+is mapped with the sequence. This prevents a fixed alignment from being reused for
+the wrong query:
+
+```bash
+cofolder screen \
+  -s system_screen.yaml -o options.yaml \
+  -c variants.csv --col_id experiment \
+  --map 'protein_sequence=sequences.0.protein.sequence' \
+  --map 'protein_msa=sequences.0.protein.msa'
+```
+
+Every mapped MSA is checked against its completed row sequence. Relative mapped MSA
+paths resolve from the CSV directory. Alternatively, remove `msa` from the template;
+COFOLDER will generate one alignment for each unique sequence and reuse it whenever
+that sequence reappears. `msa: empty` remains an explicit request to skip generation.
+
+Use `--preflight_only` to validate every completed row without running inference.
+The report includes the mappings, valid and invalid row counts, row diagnostics, and
+the total planned execution count.
+
 ## Basic Usage
 
 ```bash
@@ -24,17 +76,21 @@ cofolder screen \
 - `-s, --system_path`: Path to system YAML file
 - `-o, --options_path`: Path to runner options YAML file
 - `-c, --library`: Path to a CSV, SDF, or MOL library
-- `--ligand_chain`: Existing ligand chain whose chemistry is replaced
+- `--ligand_chain`: Existing ligand chain whose chemistry is replaced in
+  single-ligand mode; optional analysis target in mapped mode
 
-CSV libraries additionally require `--col_id` and `--smiles_column`. SDF/MOL
-libraries use `--id_property` (default `_Name`).
+Single-ligand CSV libraries additionally require `--col_id` and
+`--smiles_column`. Mapped CSV screens require `--col_id` and one or more `--map`
+arguments. SDF/MOL libraries use `--id_property` (default `_Name`).
 
 ## Validation Rules
 
-1. `--ligand_chain` must resolve to exactly one ligand entity.
+1. When supplied, `--ligand_chain` must resolve to exactly one ligand entity in
+   every row.
 2. Every source record receives a stable one-based `record_NNNNNN` identity.
 3. Empty/invalid SMILES and malformed/unsanitizable molblocks fail only their record.
-4. Protein, nucleic-acid, constraint, metadata, and unrelated-ligand fields remain fixed.
+4. In single-ligand mode, protein, nucleic-acid, constraint, metadata, and
+   unrelated-ligand fields remain fixed.
 
 ## Optional Arguments
 
@@ -44,6 +100,8 @@ libraries use `--id_property` (default `_Name`).
 - `--duplicate_id_policy {reject,suffix,source_index}`: Resolve duplicate IDs
   (`reject` by default)
 - `--id_property`: SDF/MOL identifier property (`_Name` by default)
+- `--map COLUMN=YAML_PATH`: Replace an existing system field from a CSV column;
+  repeat to vary multiple parameters together
 - All common validate options are supported and forwarded, including:
   - scoring functions
   - bias options (`--assess_bias`, `--bias_*`)
@@ -154,15 +212,21 @@ If you only need pre-cofolding bias diagnostics for one system, prefer the dedic
 
 ## Protein MSA Reuse
 
-For Boltz-family runners, `screen` resolves each missing protein MSA once and stores
-the reusable artifact under `<wrk_dir>/shared/msa/<runner>/`. The resolved MSA is injected into
-later repeats and every subsequent ligand-specific system YAML, so the MSA server is
-not called again for the fixed protein system.
+For Boltz-family runners, `screen` resolves each unique missing protein sequence once
+and stores the reusable artifact under `<wrk_dir>/shared/msa/<runner>/`. The cache is
+keyed by normalized sequence and MSA-generation settings, so a sequence order such as
+`A, B, A, B` makes two MSA requests. The resolved MSA is injected into later repeats
+and every subsequent row containing that sequence.
 
 If the original system YAML already supplies `msa` for a protein, that file is used
 directly and the server is not called for that protein. Relative MSA paths are resolved
 relative to the original system YAML before row-specific YAML files are written. A
 system may mix supplied and missing MSAs; only missing protein MSAs are generated.
+
+In mapped mode, changing a sequence while inheriting such a supplied MSA is a setup
+error. Map a matching MSA in the same row, or remove the template MSA to use automatic
+sequence-keyed generation. Preflight reports the affected row, chain, mapping, and
+alignment path before any MSA search or prediction starts.
 
 The shared cache is matched by runner, protein sequence, and MSA-generation settings
 (server URL, pairing strategy, maximum MSA depth, and backend version), and includes
@@ -175,6 +239,7 @@ or settings-incompatible cached artifact is not silently injected.
 
 - Per-record validate outputs under `<wrk_dir>/compound_NNNNNN/...`
 - Source/execution provenance under `<wrk_dir>/results/compound_members.csv`
+- Mapping definitions under `<wrk_dir>/results/system_mappings.json` in mapped mode
 - Canonical records: `<wrk_dir>/results/records.jsonl`
 - Long-form views: `<wrk_dir>/results/{successes,metrics,failures}.csv`
 - Manifest: `<wrk_dir>/results/manifest.json`

@@ -38,7 +38,7 @@ def test_capture_and_inject_generated_csv_msa(temp_dir):
     )
 
     target = System(
-        system={"sequences": [{"protein": {"id": "A", "sequence": "MKRAAT"}}]}
+        system={"sequences": [{"protein": {"id": "Z", "sequence": "MKRAAT"}}]}
     )
     assert inject_cached_msas(target, cache_dir) == 1
     msa_path = target.system["sequences"][0]["protein"]["msa"]

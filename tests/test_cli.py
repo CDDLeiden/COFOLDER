@@ -591,6 +591,7 @@ class TestScreenRecipe:
             "--col_id", "id",
             "--ligand_chain", "B",
             "--smiles_column", "smiles",
+            "--map", "sequence=sequences.0.protein.sequence",
             "--ifp_filter_threshold", "0.75",
             "--ifp_filter_source", "reference_complex",
             "--ifp_taxonomy", "prolif",
@@ -604,6 +605,7 @@ class TestScreenRecipe:
         assert args.system_path == "system.yaml"
         assert args.ligand_chain == "B"
         assert args.smiles_column == "smiles"
+        assert args.mappings == ["sequence=sequences.0.protein.sequence"]
         assert args.ifp_filter_threshold == 0.75
         assert args.ifp_filter_source == "reference_complex"
         assert args.ifp_taxonomy == "prolif"
