@@ -91,6 +91,7 @@ nav:
       - Virtual Screening: tutorials/screening.md
       - Ligand Handling: tutorials/ligands.md
       - Advanced Features: tutorials/advanced.md
+      - MAPK14 Structure-gated Oracle: tutorials/structure-gated-oracle.md
       - Adding New Runners: tutorials/runners.md
       - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:

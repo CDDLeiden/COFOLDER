@@ -37,7 +37,11 @@ LANE_RULES: dict[str, Callable[[Path], bool]] = {
     "core": _is_core,
     "contracts-tutorial": lambda path: (
         _under(path, "tests/modules/contracts")
-        or path == Path("tests/test_tutorials.py")
+        or path
+        in {
+            Path("tests/test_tutorials.py"),
+            Path("tests/test_structure_gated_oracle_tutorial.py"),
+        }
     ),
     "artifact": lambda path: path == Path("tests/test_packaging.py"),
     "acceptance": lambda path: _under(path, "tests/acceptance"),

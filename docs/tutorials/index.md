@@ -19,6 +19,8 @@ COFOLDER tutorials come in two forms:
 - [Virtual Screening](screening.md): screening across a ligand library
 - [Ligand Handling](ligands.md): ligand formats, conformers, and utilities
 - [Advanced Features](advanced.md): advanced configuration and power-user features
+- [MAPK14 Structure-gated Oracle](structure-gated-oracle.md): pose-aware ranking
+  by binding mode, designated interactions, and affinity score
 - [Adding New Runners](runners.md): contributor-facing runner authoring guide
 - [Backend Acceptance](backend-acceptance.md): clean-install validation for backend and CLI changes
 
@@ -30,6 +32,7 @@ These live in the repository root under `tutorials/`:
 - `validate.py`
 - `screen.py`
 - `oracle.py`
+- `structure_gated_oracle.py`
 - `ligand_handling.py`
 - `runners.py`
 - `boltz_system_inputs.py`

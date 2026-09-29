@@ -50,6 +50,7 @@ def test_expected_marimo_tutorial_files_exist() -> None:
         "openfold3_system_inputs.py",
         "runners.py",
         "screen.py",
+        "structure_gated_oracle.py",
         "validate.py",
     }
     actual = {path.name for path in TUTORIALS_DIR.glob("*.py") if not path.name.startswith("_")}

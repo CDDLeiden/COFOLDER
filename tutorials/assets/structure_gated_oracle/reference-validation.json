@@ -1,0 +1,718 @@
+{
+  "policy_sha256": "9c78ca871fce170b534dd82e5b284539b2e0b36bdb0f1077e5ef7e9d0077d45b",
+  "references": [
+    {
+      "asp168_backbone_hbond": "matched",
+      "atp_site_contact": true,
+      "back_pocket_contact": true,
+      "dfg_d1_angstrom": 5.949,
+      "dfg_d2_angstrom": 11.076,
+      "dfg_out": true,
+      "glu71_sidechain_hbond": "matched",
+      "interaction_evidence": {
+        "asp168_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 163.29164075614304
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.8895250474775267
+              }
+            ],
+            "interaction_key": "A:168:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O1",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "B96",
+                "residue_number": 391,
+                "source_index": 1
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2547
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2555
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ],
+        "glu71_sidechain_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 159.72003360415968
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.9769195487953652
+              }
+            ],
+            "interaction_key": "A:71:hb_donor",
+            "interaction_type": "hb_donor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N2",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "B96",
+                "residue_number": 391,
+                "source_index": 2
+              },
+              {
+                "atom_name": "H039",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "B96",
+                "residue_number": 391,
+                "source_index": 39
+              }
+            ],
+            "ligand_role": "donor",
+            "protein_atoms": [
+              {
+                "atom_name": "OE1",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "GLU",
+                "residue_number": 71,
+                "source_index": 1091
+              }
+            ],
+            "protein_role": "acceptor"
+          }
+        ],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 152.13885828775406
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.8997256766804687
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O47",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "B96",
+                "residue_number": 391,
+                "source_index": 36
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1722
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1730
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "matched_key_interactions": "A:71:hb_donor;A:168:hb_acceptor;A:109:hb_acceptor",
+      "met109_backbone_hbond": "matched",
+      "pdb_id": "1KV2",
+      "preparation_audit": {
+        "ligand": {
+          "added_hydrogens": 37,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C25",
+              "source_index": 29,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C22",
+              "source_index": 26,
+              "template_index": 1
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C21",
+              "source_index": 25,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C20",
+              "source_index": 24,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C15",
+              "source_index": 19,
+              "template_index": 4
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N11",
+              "source_index": 18,
+              "template_index": 5
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N12",
+              "source_index": 17,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C13",
+              "source_index": 16,
+              "template_index": 7
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C16",
+              "source_index": 23,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C19",
+              "source_index": 22,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C18",
+              "source_index": 21,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C17",
+              "source_index": 20,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C14",
+              "source_index": 15,
+              "template_index": 12
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C10",
+              "source_index": 14,
+              "template_index": 13
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N9",
+              "source_index": 13,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C1",
+              "source_index": 0,
+              "template_index": 15
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O1",
+              "source_index": 1,
+              "template_index": 16
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N2",
+              "source_index": 2,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C3",
+              "source_index": 3,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C8",
+              "source_index": 12,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C7",
+              "source_index": 11,
+              "template_index": 20
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C6",
+              "source_index": 6,
+              "template_index": 21
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O41",
+              "source_index": 30,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C42",
+              "source_index": 31,
+              "template_index": 23
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 32,
+              "template_index": 24
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N44",
+              "source_index": 33,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C45",
+              "source_index": 34,
+              "template_index": 26
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C46",
+              "source_index": 35,
+              "template_index": 27
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O47",
+              "source_index": 36,
+              "template_index": 28
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C48",
+              "source_index": 37,
+              "template_index": 29
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C49",
+              "source_index": 38,
+              "template_index": 30
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C5",
+              "source_index": 5,
+              "template_index": 31
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C34",
+              "source_index": 10,
+              "template_index": 32
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C33",
+              "source_index": 9,
+              "template_index": 33
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C32",
+              "source_index": 8,
+              "template_index": 34
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C31",
+              "source_index": 7,
+              "template_index": 35
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C4",
+              "source_index": 4,
+              "template_index": 36
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C24",
+              "source_index": 28,
+              "template_index": 37
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C23",
+              "source_index": 27,
+              "template_index": 38
+            }
+          ],
+          "canonical_isomeric_smiles": "Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCN3CCOCC3)c3ccccc23)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 39,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 15,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HIE",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:199": "HID",
+            "A:228": "HIE",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HID",
+            "A:77": "HID",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2617,
+          "mapped_heavy_atoms": 2617,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.4027145065529534,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2617
+        },
+        "rdkit_version": "2025.09.4"
+      },
+      "reference": "type_ii"
+    },
+    {
+      "asp168_backbone_hbond": "geometrically_failed",
+      "atp_site_contact": true,
+      "back_pocket_contact": true,
+      "dfg_d1_angstrom": 8.096,
+      "dfg_d2_angstrom": 8.555,
+      "dfg_out": false,
+      "glu71_sidechain_hbond": "geometrically_failed",
+      "interaction_evidence": {
+        "asp168_backbone_hbond": [],
+        "glu71_sidechain_hbond": [],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 154.78335651965253
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.7456685888868666
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "NB1",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "SB2",
+                "residue_number": 800,
+                "source_index": 9
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1737
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1745
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "matched_key_interactions": "A:109:hb_acceptor",
+      "met109_backbone_hbond": "matched",
+      "pdb_id": "1A9U",
+      "preparation_audit": {
+        "ligand": {
+          "added_hydrogens": 16,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C1",
+              "source_index": 1,
+              "template_index": 0
+            },
+            {
+              "element": "S",
+              "source_atom_name": "S1",
+              "source_index": 2,
+              "template_index": 1
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O2",
+              "source_index": 0,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA3",
+              "source_index": 5,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA2",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA1",
+              "source_index": 3,
+              "template_index": 5
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA6",
+              "source_index": 8,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CC2",
+              "source_index": 16,
+              "template_index": 7
+            },
+            {
+              "element": "N",
+              "source_atom_name": "NC1",
+              "source_index": 15,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CC5",
+              "source_index": 19,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CB4",
+              "source_index": 12,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CB3",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CB2",
+              "source_index": 10,
+              "template_index": 12
+            },
+            {
+              "element": "N",
+              "source_atom_name": "NB1",
+              "source_index": 9,
+              "template_index": 13
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CB6",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CB5",
+              "source_index": 13,
+              "template_index": 15
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CC4",
+              "source_index": 18,
+              "template_index": 16
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD6",
+              "source_index": 25,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD5",
+              "source_index": 24,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD4",
+              "source_index": 23,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD3",
+              "source_index": 22,
+              "template_index": 20
+            },
+            {
+              "element": "F",
+              "source_atom_name": "FD3",
+              "source_index": 26,
+              "template_index": 21
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD2",
+              "source_index": 21,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CD1",
+              "source_index": 20,
+              "template_index": 23
+            },
+            {
+              "element": "N",
+              "source_atom_name": "NC3",
+              "source_index": 17,
+              "template_index": 24
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA5",
+              "source_index": 7,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "CA4",
+              "source_index": 6,
+              "template_index": 26
+            }
+          ],
+          "canonical_isomeric_smiles": "CS(=O)c1ccc(-c2nc(-c3ccncc3)c(-c3ccc(F)cc3)[nH]2)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 27,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HIE",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HID",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HIE",
+            "A:77": "HIE",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2833,
+          "mapped_heavy_atoms": 2833,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.39695244007886,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2833
+        },
+        "rdkit_version": "2025.09.4"
+      },
+      "reference": "type_i"
+    }
+  ],
+  "schema_version": 1
+}
+

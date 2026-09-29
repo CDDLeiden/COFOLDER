@@ -42,6 +42,10 @@ def test_lane_ownership_matches_release_boundaries():
         in classified["contracts-tutorial"]
     )
     assert Path("tests/test_tutorials.py") in classified["contracts-tutorial"]
+    assert (
+        Path("tests/test_structure_gated_oracle_tutorial.py")
+        in classified["contracts-tutorial"]
+    )
     assert Path("tests/test_packaging.py") in classified["artifact"]
     assert Path("tests/acceptance/test_shared.py") in classified["acceptance"]
 

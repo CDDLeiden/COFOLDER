@@ -43,9 +43,10 @@ marimo edit tutorials/openfold3_system_inputs.py
 2. `validate.py`
 3. `screen.py`
 4. `oracle.py`
-5. `ligand_handling.py`
-6. `runners.py`
-7. `boltz_system_inputs.py` or `openfold3_system_inputs.py` in the matching backend environment
+5. `structure_gated_oracle.py`
+6. `ligand_handling.py`
+7. `runners.py`
+8. `boltz_system_inputs.py` or `openfold3_system_inputs.py` in the matching backend environment
 
 ## Notebook Roles
 
@@ -53,6 +54,8 @@ marimo edit tutorials/openfold3_system_inputs.py
 - `validate.py`: single-system validation workflow
 - `screen.py`: multi-ligand screening workflow
 - `oracle.py`: single-metric oracle workflow
+- `structure_gated_oracle.py`: MAPK14 pose-aware lexicographic Oracle with an
+  offline walkthrough and optional Boltz2 execution
 - `ligand_handling.py`: specific ligand preparation and conformer-handling tutorial
 - `runners.py`: contributor notebook for authoring new runners plus backend-acceptance launch guidance
 - `boltz_system_inputs.py`: real-backend walkthrough for protein, DNA, RNA, ligand,

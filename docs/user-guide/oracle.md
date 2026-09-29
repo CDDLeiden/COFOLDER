@@ -158,6 +158,7 @@ Calibrate objectives and gates against the validated target system.
 
 ## Related
 
+- [MAPK14 structure-gated Oracle tutorial](../tutorials/structure-gated-oracle.md)
 - [Bias Command](bias.md)
 - [Screen Command](screen.md)
 - [Oracle API Reference](../api/recipes/oracle.md)

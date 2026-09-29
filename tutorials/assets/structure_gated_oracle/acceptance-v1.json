@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "superseded",
+  "superseded_by": "acceptance.json schema version 2",
+  "backend": "boltz2",
+  "backend_version": "2.2.1",
+  "executed_at": "2026-09-28",
+  "device": "CUDA_VISIBLE_DEVICES=3 (NVIDIA L40S)",
+  "seed": 20260928,
+  "repeats": 1,
+  "diffusion_samples": 1,
+  "observed_structure_gated_order": ["birb796", "birb48", "birb43", "sb203580", "sb202474", "um101"],
+  "observations": [
+    "This archived run used the superseded four-key, hydrogen-free interaction extraction policy.",
+    "No interaction key was recovered under that earlier policy."
+  ]
+}
