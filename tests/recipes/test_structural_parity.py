@@ -523,6 +523,24 @@ def _bias_snapshot(root: Path) -> dict[str, object]:
     }
     checkpoint_calls = []
     with ExitStack() as stack:
+        # Structural parity must not depend on whether the test runner can reach
+        # RCSB or has MMseqs installed. The fixture records the behavior of the
+        # explicit local reference tables above; live enrichment has separate
+        # contract coverage.
+        stack.enter_context(
+            patch.object(
+                bias_enrichment,
+                "_cached_pdb_ligand_entries",
+                return_value=tuple(),
+            )
+        )
+        stack.enter_context(
+            patch.object(
+                bias_enrichment,
+                "_cached_pdb_protein_similarity_rows",
+                return_value=tuple(),
+            )
+        )
         for owner in owners:
             original = owner._write_progress_checkpoint
 
