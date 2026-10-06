@@ -64,9 +64,7 @@ For a concise map of those roles, see [Repository Tour](getting-started/reposito
 
 ## Scientific Scope
 
-COFOLDER keeps validation metrics, model-derived confidence metrics, and structure-derived diagnostics distinct. Structural confidence should not be described as a proxy for binding affinity.
+COFOLDER keeps validation metrics, model-derived confidence metrics, and structure-derived diagnostics distinct. Structural confidence is not a proxy for binding affinity.
 
 Machine-readable citation metadata is available in the repository's
 [`CITATION.cff`](https://github.com/CDDLeiden/COFOLDER/blob/main/CITATION.cff).
-Final publication and archive identifiers are tracked separately and are not
-invented before those records exist.

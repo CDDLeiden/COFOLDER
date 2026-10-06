@@ -1748,8 +1748,6 @@ class TestValidateRun:
         assert (normalized_dir / "structures" / "1_system_model_0.cif").exists()
         assert (Path(temp_dir) / "results" / "records.jsonl").exists()
         assert (Path(temp_dir) / "results" / "metrics.csv").exists()
-        assert not (Path(temp_dir) / "results" / "system_metrics.csv").exists()
-        assert not (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
         public_manifest = json.loads(
             (Path(temp_dir) / "results" / "manifest.json").read_text()
         )

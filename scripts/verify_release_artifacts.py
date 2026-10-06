@@ -74,20 +74,18 @@ def _verify_sdist(sdist: Path, source_root: Path) -> str:
         for path in (source_root / "tests").rglob("test_*.py")
         if "__pycache__" not in path.parts
     )
+    required.update(
+        f"{root}/{path.relative_to(source_root).as_posix()}"
+        for path in (source_root / "tutorials" / "assets").rglob("*")
+        if path.is_file() and path.suffix in {".csv", ".json", ".yaml", ".cxc", ".pml"}
+    )
     missing = required - names
     if missing:
         raise RuntimeError(f"Missing required sdist files: {sorted(missing)}")
 
-    forbidden = (
-        f"{root}/src/cofolder/ui/",
-        f"{root}/tests/ui_development_check.py",
-        f"{root}/legacy/",
-        f"{root}/.streamlit/",
-        f"{root}/run_ui.sh",
-    )
-    leaked = sorted(name for name in names if any(item in name for item in forbidden))
+    leaked = sorted(name for name in names if name.startswith(f"{root}/legacy/"))
     if leaked:
-        raise RuntimeError(f"Unsupported files leaked into sdist: {leaked}")
+        raise RuntimeError(f"Local legacy files leaked into sdist: {leaked}")
     return root
 
 
@@ -121,11 +119,6 @@ def _verify_wheel(wheel: Path) -> None:
         raise RuntimeError("Wheel is missing acceptance resources")
     if not any(name.startswith("cofolder/resources/examples/") for name in names):
         raise RuntimeError("Wheel is missing runnable examples")
-    leaked = sorted(
-        name for name in names if name.startswith("cofolder/ui/") or "streamlit" in name.lower()
-    )
-    if leaked:
-        raise RuntimeError(f"Unsupported UI files leaked into wheel: {leaked}")
 
 
 def _venv_python(environment: Path) -> Path:

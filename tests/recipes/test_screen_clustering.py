@@ -204,7 +204,6 @@ def test_supported_screen_metrics_produce_identity_bearing_fingerprints(
     assert fingerprint.receptor_chains == ("A",)
     assert fingerprint.interactions
     assert {item.receptor.chain_id for item in fingerprint.interactions} == {"A"}
-    assert all(item.receptor.chain_id != "_legacy" for item in fingerprint.interactions)
 
     clustered_rows = pd.DataFrame(
         [

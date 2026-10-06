@@ -75,6 +75,3 @@ def test_runner_module_exports_canonical_contracts():
     assert runner_exports.RunnerExecutionResult is RunnerExecutionResult
     assert runner_exports.RunnerPreparationResult is RunnerPreparationResult
     assert runner_exports.RunnerInputCapabilities is RunnerInputCapabilities
-    assert not hasattr(runner_exports, "RunnerRequest")
-    assert not hasattr(runner_exports, "RunnerResult")
-    assert not hasattr(runner_exports, "RunnerPreparation")

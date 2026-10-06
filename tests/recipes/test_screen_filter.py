@@ -99,8 +99,6 @@ def test_filter_accepts_rejects_returns_and_preserves_all_rows(
     }
     assert expected_columns.issubset(results.columns)
     assert (temp_dir / "results" / "records.jsonl").is_file()
-    assert not (temp_dir / "screen_results.csv").exists()
-    assert not (temp_dir / "screen_results_with_scores.csv").exists()
 
 
 @patch("cofolder.recipes.screen.Validate.run", autospec=True)

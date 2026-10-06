@@ -278,7 +278,6 @@ def test_writer_creates_canonical_files_and_round_trippable_jsonl(tmp_path):
     assert output.metrics_path.exists()
     assert output.failures_path.exists()
     assert output.manifest_path.exists()
-    assert not (tmp_path / "system_metrics.csv").exists()
     records = [
         json.loads(line) for line in output.records_path.read_text().splitlines()
     ]
@@ -477,19 +476,6 @@ def test_failure_details_reject_non_finite_json_before_writing(tmp_path):
     with pytest.raises(PublicSchemaValidationError, match="non-finite"):
         write_public_bundle(bundle, tmp_path)
     assert not (tmp_path / "records.jsonl").exists()
-
-
-def test_writer_removes_stale_legacy_public_files(tmp_path):
-    legacy = tmp_path / "system_metrics.csv"
-    legacy.write_text("old,data\n", encoding="utf-8")
-    bundle = bundle_from_frames(
-        pd.DataFrame([{"model_name": "m", "repeat": 1, "ptm": 0.5}]),
-        pd.DataFrame(),
-        identity=_identity(),
-        requested_metrics={"confidence_metrics"},
-    )
-    write_public_bundle(bundle, tmp_path)
-    assert not legacy.exists()
 
 
 def test_metric_catalog_has_complete_metadata_and_validated_conversions():

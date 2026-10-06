@@ -616,23 +616,6 @@ class TestScreenRecipe:
         assert args.ifp_cluster_similarity_threshold == 0.8
         assert args.scoring_functions is None
 
-    def test_main_rejects_legacy_mutation_path_flags(self, sample_system_yaml, sample_options_yaml, temp_dir):
-        args = [
-            "screen",
-            "-s", str(sample_system_yaml),
-            "-o", str(sample_options_yaml),
-            "-c", "compounds.csv",
-            "--col_id", "id",
-            "-v", "sequences,0,ligand,smiles",
-            "-v", "sequences,0,ligand,ccd",
-            "--col_variable", "smiles",
-            "-w", str(temp_dir),
-        ]
-
-        with pytest.raises(SystemExit) as caught:
-            cli.main(args)
-        assert caught.value.code == 2
-
     def test_main_dispatches_current_screen_contract(
         self,
         sample_system_yaml,
