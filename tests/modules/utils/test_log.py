@@ -1,8 +1,21 @@
 """Tests for cofolder.modules.utils.log module."""
 import logging
+import re
 
+import pytest
 
 from cofolder.modules.utils.log import setup_root_logger
+
+
+@pytest.fixture(autouse=True)
+def _restore_root_logger():
+    """Keep logger configuration changes local to each test."""
+    logger = logging.getLogger()
+    handlers = list(logger.handlers)
+    level = logger.level
+    yield
+    logger.handlers[:] = handlers
+    logger.setLevel(level)
 
 
 class TestSetupRootLogger:
@@ -49,7 +62,6 @@ class TestSetupRootLogger:
     def test_logger_formatting(self, temp_dir, caplog):
         """Test that logger uses correct format."""
         logger = logging.getLogger()
-        logger.handlers.clear()
 
         log_file = temp_dir / "test.log"
         setup_root_logger(logging.INFO, log_file=str(log_file))
@@ -60,22 +72,23 @@ class TestSetupRootLogger:
         # Check that the message was logged
         assert "Test message" in caplog.text
 
-    def test_reconfigure_preserves_caplog_after_handler_clear(self, temp_dir, caplog):
-        """Repeated root logger setup should preserve pytest capture visibility."""
+    def test_reconfigure_preserves_unrelated_handlers(self, temp_dir, caplog):
+        """Repeated setup leaves application and pytest-owned handlers alone."""
         logger = logging.getLogger()
-        logger.handlers.clear()
+        unrelated = logging.NullHandler()
+        logger.addHandler(unrelated)
 
-        setup_root_logger(logging.INFO)
-
-        log_file = temp_dir / "test.log"
         with caplog.at_level(logging.DEBUG):
-            logger.handlers.clear()
-            setup_root_logger(logging.DEBUG, log_file=str(log_file))
+            setup_root_logger(logging.INFO)
+            setup_root_logger(logging.DEBUG)
             logger.debug("Debug message after reconfigure")
 
         assert "Debug message after reconfigure" in caplog.text
-        assert log_file.exists()
-        assert "Debug message after reconfigure" in log_file.read_text()
+        assert unrelated in logger.handlers
+        assert len([
+            handler for handler in logger.handlers
+            if getattr(handler, "_cofolder_console_handler", False)
+        ]) == 1
 
     def test_reconfigure_existing_handlers_enables_debug_and_file(self, temp_dir):
         """Repeated setup should upgrade level and add the requested file handler."""
@@ -93,3 +106,35 @@ class TestSetupRootLogger:
         assert log_file.exists()
         content = log_file.read_text()
         assert "Debug message" in content
+
+    def test_info_console_is_concise_and_file_is_detailed(
+        self, temp_dir, capsys
+    ):
+        logger = logging.getLogger()
+        logger.handlers.clear()
+        log_file = temp_dir / "path with spaces" / "cofolder.log"
+        log_file.parent.mkdir()
+
+        setup_root_logger(logging.INFO, log_file=log_file)
+        logger.info("Concise progress")
+
+        assert capsys.readouterr().out == "INFO | Concise progress\n"
+        file_text = log_file.read_text()
+        assert "INFO" in file_text
+        assert "test_log.py:" in file_text
+        assert "test_info_console_is_concise_and_file_is_detailed" in file_text
+        assert file_text.endswith("Concise progress\n")
+
+    def test_debug_console_uses_detailed_format(self, capsys):
+        logger = logging.getLogger()
+        logger.handlers.clear()
+
+        setup_root_logger(logging.DEBUG)
+        logger.debug("Detailed progress")
+
+        output = capsys.readouterr().out
+        assert re.search(
+            r"DEBUG\s+\| test_log\.py:\d+ \| "
+            r"test_debug_console_uses_detailed_format \| Detailed progress\n$",
+            output,
+        )

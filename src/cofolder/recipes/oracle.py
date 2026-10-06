@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import copy
-import json
+import hashlib
 import logging
 import math
 import operator
@@ -12,15 +11,50 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, ClassVar
+from uuid import uuid4
 
 import pandas as pd
 
-from cofolder.modules.input import system
-from cofolder.modules.utils import read, write
+from cofolder.modules.contracts import (
+    PUBLIC_SCHEMA_VERSION,
+    EvidenceRegime,
+    EvidenceSource,
+    FailureStage,
+    MetricRecord,
+    OutputIdentity,
+    PublicManifest,
+    PublicOutputBundle,
+    RecordKind,
+    RecordStatus,
+    SuccessRecord,
+    WorkflowExecutionError,
+    WorkflowKind,
+    get_metric_definition,
+    make_envelope,
+    write_public_bundle,
+)
+from cofolder.modules.input import (
+    InputValidationError,
+    SystemInputValidationError,
+    WorkflowInputRequirements,
+    load_yaml_document,
+    system,
+)
+from cofolder.modules.input.ligand import (
+    LigandSourceIdentity,
+    replace_ligand_smiles,
+    resolve_ligand_target,
+    validate_smiles,
+)
+from cofolder.modules.runners import get_runner
+from cofolder.modules.runners.msa import resolve_declared_msa_paths
+from cofolder.modules.utils import write
 from cofolder.recipes._metrics import (
     collect_qualified_metric_values,
     read_metric_frames,
 )
+from cofolder.recipes._completion import report_completion
+from cofolder.recipes._results import write_failure_bundle
 from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS, Validate
 
 logger = logging.getLogger(__name__)
@@ -122,7 +156,14 @@ class Oracle:
         assess_bias: bool = False,
         protein_training_data_path: str | None = None,
         ligand_training_data_path: str | None = None,
+        bias_training_data_protein_path: str | None = None,
+        bias_training_data_ligand_path: str | None = None,
+        bias_query_cache_path: str | None = None,
+        custom_bias_reference_path: str | None = None,
+        custom_protein_reference_path: str | None = None,
+        custom_ligand_reference_path: str | None = None,
         bias_release_cutoff: str = "2023-06-01",
+        bias_protein_similarity_threshold: float = 0.25,
         bias_ligand_similarity_threshold: float = 0.35,
         bias_chains: list[str] | None = None,
         build_bias_training_data: bool = False,
@@ -136,11 +177,13 @@ class Oracle:
         scoring_function: Callable[[OracleScoreContext], float] | None = None,
         score_gates: Sequence[OracleGate] | None = None,
         gate_policy: OracleGatePolicy | None = None,
+        ligand_chain: str | None = None,
     ):
         self.wrk_dir = Path(wrk_dir)
         self.system_path = Path(system_path)
         self.options_path = Path(options_path)
         self.runner = str(runner)
+        self.run_id = str(uuid4())
         self.input_smiles = input_smiles.strip() if input_smiles else None
         self.input_mol_file = Path(input_mol_file) if input_mol_file else None
         self.output_metric = str(output_metric).strip() if output_metric else None
@@ -149,6 +192,7 @@ class Oracle:
         self.scoring_function = scoring_function
         self.score_gates = tuple(score_gates or ())
         self.gate_policy = gate_policy
+        self.ligand_chain = str(ligand_chain).strip() if ligand_chain else None
 
         effective_scoring_functions = (
             scoring_functions
@@ -163,7 +207,14 @@ class Oracle:
             "assess_bias": assess_bias,
             "protein_training_data_path": protein_training_data_path,
             "ligand_training_data_path": ligand_training_data_path,
+            "bias_training_data_protein_path": bias_training_data_protein_path,
+            "bias_training_data_ligand_path": bias_training_data_ligand_path,
+            "bias_query_cache_path": bias_query_cache_path,
+            "custom_bias_reference_path": custom_bias_reference_path,
+            "custom_protein_reference_path": custom_protein_reference_path,
+            "custom_ligand_reference_path": custom_ligand_reference_path,
             "bias_release_cutoff": bias_release_cutoff,
+            "bias_protein_similarity_threshold": bias_protein_similarity_threshold,
             "bias_ligand_similarity_threshold": bias_ligand_similarity_threshold,
             "bias_chains": bias_chains,
             "build_bias_training_data": build_bias_training_data,
@@ -174,10 +225,69 @@ class Oracle:
             "pocket_coverage_reference": pocket_coverage_reference,
             "reproduction_metrics": reproduction_metrics,
         }
-        self.base_system = read.read_yaml(path=self.system_path)
-        self.query_ligand_chain = self._find_query_ligand_chain(self.base_system)
+        self.base_system: dict[str, Any] = {}
+        self.query_ligand_chain = self.ligand_chain
         self.logger = logging.getLogger("cofolder.oracle")
-        self._validate_config()
+
+    def preflight(self):
+        """Validate and describe the oracle request without executing it."""
+        from dataclasses import replace
+        from cofolder.recipes.preflight import PreflightReport, prediction_preflight
+
+        try:
+            self._validate_config()
+        except Exception as exc:
+            return PreflightReport(
+                workflow="oracle",
+                ready=False,
+                runner=self.runner,
+                output_dir=str(self.wrk_dir / "results"),
+                messages=(str(exc),),
+            )
+        report, system_obj, _options = prediction_preflight(
+            workflow="oracle",
+            system_path=self.system_path,
+            options_path=self.options_path,
+            runner_name=self.runner,
+            repeats=int(self.validate_kwargs["repeats"]),
+            output_dir=self.wrk_dir,
+            require_ligand=True,
+            assess_bias=bool(self.validate_kwargs["assess_bias"]),
+            use_bias_databases=bool(
+                self.validate_kwargs["bias_training_data_protein_path"]
+                or self.validate_kwargs["bias_training_data_ligand_path"]
+                or (
+                    self.validate_kwargs["protein_training_data_path"] is None
+                    and self.validate_kwargs["ligand_training_data_path"] is None
+                    and self.validate_kwargs["custom_bias_reference_path"] is None
+                    and self.validate_kwargs["custom_protein_reference_path"] is None
+                    and self.validate_kwargs["custom_ligand_reference_path"] is None
+                    and not self.validate_kwargs["build_bias_training_data"]
+                )
+            ),
+            protein_database_path=self.validate_kwargs["bias_training_data_protein_path"],
+            ligand_database_path=self.validate_kwargs["bias_training_data_ligand_path"],
+            release_cutoff=self.validate_kwargs["bias_release_cutoff"],
+            bias_chains=self.validate_kwargs["bias_chains"],
+            bias_query_cache_path=self.validate_kwargs["bias_query_cache_path"],
+            custom_bias_reference_path=self.validate_kwargs["custom_bias_reference_path"],
+            protein_similarity_threshold=self.validate_kwargs[
+                "bias_protein_similarity_threshold"
+            ],
+            ligand_similarity_threshold=self.validate_kwargs[
+                "bias_ligand_similarity_threshold"
+            ],
+        )
+        if not report.ready:
+            return report
+        try:
+            target = resolve_ligand_target(system_obj, self.ligand_chain)
+        except Exception as exc:
+            return replace(report, ready=False, messages=report.messages + (str(exc),))
+        return replace(
+            report,
+            messages=report.messages + (f"selected_ligand_chain={target.chain_ids[0]}",),
+        )
 
     @staticmethod
     def _normalize_components(
@@ -314,7 +424,9 @@ class Oracle:
             reproduction_metric = (
                 "ligand_rmsd"
                 if metric == "ligand_rmsd_ref"
-                else "protein_rmsd" if metric == "protein_rmsd_ref" else "sucos"
+                else "protein_rmsd"
+                if metric == "protein_rmsd_ref"
+                else "sucos"
             )
             reproduction = self.validate_kwargs.get("reproduction_metrics")
             if reproduction is not None and reproduction_metric not in reproduction:
@@ -328,7 +440,39 @@ class Oracle:
                 f"but enabled are {sorted(scoring)}."
             )
 
+    @report_completion(WorkflowKind.ORACLE)
     def run(self) -> float:
+        try:
+            return self._run_impl()
+        except Exception as exc:
+            raw_candidate = self.input_smiles or (
+                str(self.input_mol_file)
+                if self.input_mol_file is not None
+                else "unresolved"
+            )
+            identity = self._public_identity(raw_candidate)
+            source_exc = exc.__cause__ or exc
+            stage = (
+                exc.failures[0].stage
+                if isinstance(exc, WorkflowExecutionError) and exc.failures
+                else FailureStage.INPUT_VALIDATION
+                if isinstance(source_exc, InputValidationError)
+                else FailureStage.ANALYTICS
+            )
+            output_dir = self.wrk_dir / "results"
+            failure = write_failure_bundle(
+                output_dir=output_dir,
+                exc=source_exc,
+                identity=identity,
+                stage=stage,
+                error_code=getattr(source_exc, "error_code", "oracle_score_failed"),
+            )
+            raise WorkflowExecutionError(
+                str(exc), failures=(failure,), output_dir=output_dir
+            ) from exc
+
+    def _run_impl(self) -> float:
+        self._validate_config()
         self.wrk_dir.mkdir(parents=True, exist_ok=True)
         run_dir = self.wrk_dir / "oracle_run"
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -336,11 +480,41 @@ class Oracle:
         if not smiles:
             raise ValueError("Failed to resolve valid input SMILES for oracle run.")
 
-        sys_obj = system.System(system=copy.deepcopy(self.base_system))
-        ligand_path = self._find_first_ligand_smiles_path(sys_obj.system)
-        if ligand_path is None:
-            raise ValueError("No ligand SMILES field found in system YAML to update.")
-        sys_obj.update_system(value=smiles, path=ligand_path)
+        document = load_yaml_document(self.system_path)
+        if not isinstance(document.value, dict):
+            raise SystemInputValidationError(
+                "System YAML root must be a mapping.", source_path=self.system_path
+            )
+        base_system_obj = system.System(system=document.value)
+        resolve_declared_msa_paths(base_system_obj, base_dir=self.system_path.parent)
+        runner = get_runner(self.runner)
+        options_obj = runner.load_options(self.options_path)
+        validated = runner.validate_system(
+            base_system_obj,
+            options_obj,
+            check_atom_names=False,
+            source_path=self.system_path,
+            requirements=WorkflowInputRequirements(
+                require_protein=True, require_ligand=True
+            ),
+        )
+        self.base_system = validated.system.system
+        target = resolve_ligand_target(validated.system, self.ligand_chain)
+        self.ligand_chain = target.chain_ids[0]
+        self.query_ligand_chain = self.ligand_chain
+        normalized_ligand = validate_smiles(
+            smiles,
+            source=LigandSourceIdentity(
+                entity_id=target.entity_id,
+                chain_ids=target.chain_ids,
+                source_record_id="oracle_input",
+            ),
+            source_path=self.input_mol_file,
+        )
+        sys_obj = replace_ligand_smiles(
+            validated.system, target=target, ligand=normalized_ligand
+        )
+        runner.ensure_available()
         row_system_path = run_dir / "oracle_system.yaml"
         write.write_yaml(sys_obj, path=row_system_path)
         Validate(
@@ -362,26 +536,112 @@ class Oracle:
                 self._aggregate_all_metrics(raw_metrics)
             ),
         )
-        base_value, component_values, score_mode = self._calculate_base_score(
+        base_value, _component_values, _score_mode = self._calculate_base_score(
             context, raw_metrics
         )
-        final_value, gate_values, failed_gates, action = self._apply_gates(
+        final_value, _gate_values, _failed_gates, action = self._apply_gates(
             base_value, raw_metrics
         )
-        result = {
-            "output_metric": self.output_metric,
-            "aggregate": self.aggregate,
-            "value": final_value,
-            "score_mode": score_mode,
-            "base_value": base_value,
-            "component_values": json.dumps(component_values, sort_keys=True),
-            "gate_pass": not failed_gates,
-            "gate_values": json.dumps(gate_values, sort_keys=True),
-            "failed_gates": json.dumps(failed_gates),
-            "gate_action": action,
-        }
-        pd.DataFrame([result]).to_csv(self.wrk_dir / "oracle_result.csv", index=False)
+        identity = self._public_identity(smiles)
+        records = [
+            SuccessRecord(
+                envelope=make_envelope(RecordKind.SUCCESS, identity, "success"),
+            ),
+            self._oracle_metric_record(identity, "oracle_raw_score", base_value),
+            self._oracle_metric_record(identity, "oracle_score", final_value),
+        ]
+        if action != "none":
+            records.append(
+                self._oracle_metric_record(
+                    identity, "oracle_gate_adjusted_score", final_value
+                )
+            )
+        write_public_bundle(
+            PublicOutputBundle(
+                manifest=PublicManifest(
+                    schema_version=PUBLIC_SCHEMA_VERSION,
+                    identity=identity,
+                    status="success",
+                    evidence=tuple(self._public_evidence()),
+                    requested_metrics=tuple(
+                        sorted(
+                            {
+                                *self.score_components,
+                                *(gate.metric for gate in self.score_gates),
+                                *([self.output_metric] if self.output_metric else []),
+                            }
+                        )
+                    ),
+                ),
+                records=tuple(records),
+            ),
+            self.wrk_dir / "results",
+        )
         return final_value
+
+    def _public_identity(self, candidate: str) -> OutputIdentity:
+        normalized = self._normalize_candidate(candidate)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return OutputIdentity(
+            workflow=WorkflowKind.ORACLE,
+            run_id=self.run_id,
+            system_id=self.system_path.stem,
+            compound_id=f"sha256:{digest}",
+            runner_id=self.runner,
+        )
+
+    @staticmethod
+    def _normalize_candidate(candidate: str) -> str:
+        value = str(candidate).strip()
+        try:
+            from rdkit import Chem
+
+            molecule = Chem.MolFromSmiles(value)
+            if molecule is not None:
+                return str(Chem.MolToSmiles(molecule, canonical=True))
+        except (ImportError, RuntimeError, ValueError):
+            return value
+        return value
+
+    def _public_evidence(self) -> list[EvidenceSource]:
+        evidence: list[EvidenceSource] = []
+        reference_path = self.validate_kwargs.get("reference_path")
+        if reference_path:
+            path = Path(reference_path)
+            evidence.append(
+                EvidenceSource(
+                    kind="reference_structure",
+                    identifier=path.name,
+                    path=str(path),
+                )
+            )
+        if self.validate_kwargs.get("pocket_coverage_reference"):
+            evidence.append(
+                EvidenceSource(
+                    kind="custom_pocket",
+                    identifier="configured_custom_pocket",
+                )
+            )
+        return evidence
+
+    @staticmethod
+    def _oracle_metric_record(
+        identity: OutputIdentity,
+        metric_name: str,
+        value: float,
+    ) -> MetricRecord:
+        definition = get_metric_definition(metric_name)
+        return MetricRecord(
+            envelope=make_envelope(RecordKind.METRIC, identity, metric_name, "value"),
+            metric_name=metric_name,
+            metric_group=definition.group,
+            metric_class=definition.metric_class,
+            status=RecordStatus.COMPUTED,
+            value=float(value),
+            unit=definition.unit,
+            direction=definition.direction,
+            evidence_regime=EvidenceRegime.REFERENCE_FREE,
+        )
 
     def _calculate_base_score(self, context, raw_metrics):
         if self.output_metric:

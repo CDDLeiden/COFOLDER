@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Atom-level ProLIF interaction events with protein/ligand roles, atom identities,
+  and named geometry in the Python API and public Validate/Screen artifacts.
+- Native IFP clustering linkage matrices and deterministic, stable-ID leaf-order
+  artifacts for direct dendrogram reproduction.
+
+### Fixed
+- Public ProLIF extraction now accepts COFOLDER-produced mmCIF structures through
+  isolated temporary conversion while preserving original structural identities.
+
+## [1.0.0] - 2026-09-20
+
+### Added
 - Python Oracle composite objectives, structured custom scoring callbacks, and
   auditable structure gates with down-weight, fixed-penalty, or non-binder outcomes.
 - Qualified Oracle metric selectors plus documented ligand-bias and custom-pocket
@@ -55,5 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive CLI interface
 - Example configurations and tutorials
 
-[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/CDDLeiden/COFOLDER/releases/tag/v0.1.0

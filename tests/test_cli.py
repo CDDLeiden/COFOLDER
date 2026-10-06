@@ -1,12 +1,48 @@
 """Tests for cofolder.cli module."""
 import logging
-from unittest.mock import MagicMock
-from unittest.mock import Mock
-from unittest.mock import patch
+from pathlib import Path
+import runpy
+import shutil
+import socket
+import subprocess
+import sys
+import urllib.request
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from rdkit import Chem
+import yaml
 
 from cofolder import cli
+from cofolder.resources.examples import copy_examples
+
+
+def _installed_console_command() -> list[str]:
+    executable = shutil.which("cofolder", path=str(Path(sys.executable).parent))
+    assert executable is not None
+    return [executable]
+
+
+def _module_command() -> list[str]:
+    return [sys.executable, "-m", "cofolder"]
+
+
+def _run_entrypoint(command: list[str], argv: list[str], cwd: Path):
+    return subprocess.run(
+        [*command, *argv],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def test_module_entrypoint_propagates_main_exit_code():
+    with patch("cofolder.cli.main", return_value=2):
+        with pytest.raises(SystemExit) as caught:
+            runpy.run_module("cofolder.__main__", run_name="__main__")
+
+    assert caught.value.code == 2
 
 
 class TestCLIMain:
@@ -56,38 +92,36 @@ class TestCLIMain:
             cli.main(["-h"])
         assert exc_info.value.code == 0
 
-    def test_version_flag(self):
+    def test_version_flag(self, capsys):
         """Test version flag."""
         with pytest.raises(SystemExit) as exc_info:
             cli.main(["-v"])
         assert exc_info.value.code == 0
+        assert capsys.readouterr().out == "cofolder 1.0.0\n"
 
     def test_unavailable_runner_shows_install_hint(self, sample_system_yaml, sample_options_yaml, temp_dir):
+        from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+
         args = [
             "validate",
             "-s", str(sample_system_yaml),
             "-o", str(sample_options_yaml),
             "-w", str(temp_dir),
         ]
-        fake_runner = MagicMock()
+        fake_runner = Boltz2Runner()
+        fake_runner.ensure_available = MagicMock()
         fake_runner.ensure_available.side_effect = RuntimeError("install boltz")
-        with patch("cofolder.cli.get_runner", return_value=fake_runner):
-            with pytest.raises(RuntimeError, match="install boltz"):
-                cli.main(args)
+        with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
+            assert cli.main(args) == 1
 
-    def test_unavailable_runner_is_checked_before_input_path_validation(self, temp_dir):
+    def test_input_paths_are_checked_before_runner_availability(self, temp_dir):
         args = [
             "validate",
             "-s", str(temp_dir / "missing_system.yaml"),
             "-o", str(temp_dir / "missing_options.yaml"),
             "-w", str(temp_dir),
         ]
-        fake_runner = MagicMock()
-        fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
-
-        with patch("cofolder.cli.get_runner", return_value=fake_runner):
-            with pytest.raises(RuntimeError, match="install boltz first"):
-                cli.main(args)
+        assert cli.main(args) == 2
 
     def test_bias_command_does_not_require_options_or_runner(
         self,
@@ -118,12 +152,292 @@ class TestCLIMain:
             "-w", str(temp_dir),
         ]
 
-        with patch("cofolder.cli.get_runner", side_effect=AssertionError("runner lookup should not happen")):
-            with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
-                cli.main(args)
+        with patch("cofolder.cli._load_recipe_class", return_value=bias_cls):
+            cli.main(args)
 
         bias_cls.assert_called_once()
         bias_runner.run.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_exit"),
+    [
+        (["--help"], 0),
+        (["--version"], 0),
+        (["validate", "--help"], 0),
+        (["screen", "--help"], 0),
+        (["oracle", "--help"], 0),
+        (["bias", "--help"], 0),
+        (["unknown-command"], 2),
+    ],
+)
+def test_console_and_module_entrypoints_have_identical_cli_behavior(
+    argv, expected_exit, temp_dir
+):
+    console = _run_entrypoint(_installed_console_command(), argv, temp_dir)
+    module = _run_entrypoint(_module_command(), argv, temp_dir)
+
+    assert console.returncode == module.returncode == expected_exit
+    assert console.stdout == module.stdout
+    assert console.stderr == module.stderr
+
+
+def test_copied_example_preflight_matches_console_and_module_without_writes(temp_dir):
+    examples = copy_examples(temp_dir / "copied examples")
+    output = temp_dir / "output with spaces"
+    argv = [
+        "validate",
+        "-s",
+        str(examples / "system.yaml"),
+        "-o",
+        str(examples / "options.yaml"),
+        "-w",
+        str(output),
+        "--preflight_only",
+    ]
+
+    console = _run_entrypoint(_installed_console_command(), argv, temp_dir)
+    module = _run_entrypoint(_module_command(), argv, temp_dir)
+
+    assert console.returncode == module.returncode
+    assert console.returncode in {0, 2}
+    assert console.stdout == module.stdout
+    assert console.stderr == module.stderr
+    assert "preflight=" in console.stdout
+    assert f"output_dir={output / 'results'}" in console.stdout
+    assert not output.exists()
+
+
+def test_all_cli_preflights_are_no_service_and_non_mutating(
+    sample_system_yaml,
+    sample_options_yaml,
+    sample_csv_file,
+    temp_dir,
+    capsys,
+):
+    protein_reference = temp_dir / "protein references.csv"
+    protein_reference.write_text(
+        "pdb_id,release_date,sequence\n1ABC,2022-01-01,MKRAAT\n",
+        encoding="utf-8",
+    )
+    ligand_reference = temp_dir / "ligand references.csv"
+    ligand_reference.write_text(
+        "pdb_id,release_date,ligand_id,smiles\n1ABC,2022-01-01,ETH,CCO\n",
+        encoding="utf-8",
+    )
+    cache = temp_dir / "shared cache that must remain absent"
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("preflight attempted a service or subprocess call")
+
+    commands = {
+        "validate": [],
+        "screen": [
+            "-c",
+            str(sample_csv_file),
+            "--col_id",
+            "compound_id",
+            "--smiles_column",
+            "smiles",
+        ],
+        "oracle": [
+            "--input_smiles",
+            "CCO",
+            "--output_metric",
+            "confidence_score",
+        ],
+        "bias": [
+            "--protein_training_data_path",
+            str(protein_reference),
+            "--ligand_training_data_path",
+            str(ligand_reference),
+            "--bias_query_cache_path",
+            str(cache),
+        ],
+    }
+
+    with (
+        patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ),
+        patch("cofolder.recipes.validate.Validate.run", side_effect=forbidden),
+        patch("cofolder.recipes.screen.Screen.run", side_effect=forbidden),
+        patch("cofolder.recipes.oracle.Oracle.run", side_effect=forbidden),
+        patch("cofolder.recipes.bias.Bias.run", side_effect=forbidden),
+        patch(
+            "cofolder.modules.analytics.bias_database.materialize_bias_references",
+            side_effect=forbidden,
+        ),
+        patch.object(subprocess, "run", side_effect=forbidden),
+        patch.object(socket, "create_connection", side_effect=forbidden),
+        patch.object(urllib.request, "urlopen", side_effect=forbidden),
+    ):
+        for workflow, extra in commands.items():
+            output = temp_dir / f"{workflow} output with spaces"
+            common = ["-s", str(sample_system_yaml), "-w", str(output)]
+            if workflow != "bias":
+                common.extend(["-o", str(sample_options_yaml)])
+            result = cli.main([workflow, *common, *extra, "--preflight_only"])
+            captured = capsys.readouterr()
+
+            assert result == 0
+            assert f"workflow={workflow}" in captured.out
+            assert f"output_dir={output / 'results'}" in captured.out
+            assert captured.err == ""
+            assert not output.exists()
+            if workflow in {"screen", "oracle"}:
+                assert "selected_ligand_chain=B" in captured.out
+
+    assert not cache.exists()
+
+
+@pytest.mark.parametrize(
+    ("workflow", "extra"),
+    [
+        (
+            "screen",
+            ["-c", "{library}", "--col_id", "compound_id", "--smiles_column", "smiles"],
+        ),
+        (
+            "oracle",
+            ["--input_smiles", "CCO", "--output_metric", "confidence_score"],
+        ),
+    ],
+)
+def test_cli_preflight_rejects_ambiguous_ligands_before_writes(
+    workflow,
+    extra,
+    sample_system_yaml,
+    sample_options_yaml,
+    sample_csv_file,
+    temp_dir,
+    capsys,
+):
+    system = yaml.safe_load(sample_system_yaml.read_text(encoding="utf-8"))
+    system["sequences"].append(
+        {"ligand": {"id": "C", "smiles": "CCN"}}
+    )
+    ambiguous_system = temp_dir / "ambiguous system.yaml"
+    ambiguous_system.write_text(yaml.safe_dump(system), encoding="utf-8")
+    output = temp_dir / f"ambiguous {workflow} output"
+    resolved_extra = [
+        str(sample_csv_file) if value == "{library}" else value for value in extra
+    ]
+
+    with patch(
+        "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+        return_value=(True, None),
+    ):
+        result = cli.main(
+            [
+                workflow,
+                "-s",
+                str(ambiguous_system),
+                "-o",
+                str(sample_options_yaml),
+                "-w",
+                str(output),
+                *resolved_extra,
+                "--preflight_only",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "preflight=not-ready" in captured.out
+    assert "--ligand_chain is required when the system contains multiple ligand entities" in captured.out
+    assert captured.err == ""
+    assert not output.exists()
+
+
+def test_validate_rejects_sdf_conformer_mode_without_sdf_file(
+    sample_system_yaml, sample_options_yaml, temp_dir
+):
+    assert cli.main(
+        [
+            "validate",
+            "-s", str(sample_system_yaml),
+            "-o", str(sample_options_yaml),
+            "--conformers", "sdf",
+            "-w", str(temp_dir / "validate"),
+        ]
+    ) == 2
+
+
+def test_screen_rejects_missing_csv_mapping_and_structure_mapping_conflict(
+    sample_system_yaml, sample_options_yaml, sample_csv_file, temp_dir
+):
+    common = [
+        "-s", str(sample_system_yaml),
+        "-o", str(sample_options_yaml),
+        "--preflight_only",
+    ]
+    assert cli.main(
+        ["screen", *common, "-c", str(sample_csv_file), "--smiles_column", "smiles"]
+    ) == 2
+
+    sdf_path = temp_dir / "library.sdf"
+    writer = Chem.SDWriter(str(sdf_path))
+    writer.write(Chem.MolFromSmiles("CCO"))
+    writer.close()
+    assert cli.main(
+        ["screen", *common, "-c", str(sdf_path), "--smiles_column", "smiles"]
+    ) == 2
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        [],
+        ["--input_smiles", "CCO", "--input_mol_file", "query.mol"],
+        ["--input_smiles", "CCO", "--aggregate", "unsupported"],
+    ],
+)
+def test_oracle_parser_rejects_missing_duplicate_or_invalid_inputs(
+    extra, sample_system_yaml, sample_options_yaml, temp_dir
+):
+    with pytest.raises(SystemExit) as caught:
+        cli.main(
+            [
+                "oracle",
+                "-s", str(sample_system_yaml),
+                "-o", str(sample_options_yaml),
+                "--output_metric", "confidence_score",
+                "-w", str(temp_dir),
+                *extra,
+            ]
+        )
+    assert caught.value.code == 2
+
+
+def test_oracle_rejects_nonexistent_and_unparseable_mol_inputs(
+    sample_system_yaml, sample_options_yaml, temp_dir
+):
+    common = [
+        "oracle",
+        "-s", str(sample_system_yaml),
+        "-o", str(sample_options_yaml),
+        "--output_metric", "confidence_score",
+        "--scoring_functions", "confidence_metrics",
+    ]
+    assert cli.main(
+        [
+            *common,
+            "--input_mol_file", str(temp_dir / "missing.mol"),
+            "--preflight_only",
+        ]
+    ) == 2
+
+    invalid = temp_dir / "invalid.mol"
+    invalid.write_text("not a molblock", encoding="utf-8")
+    assert cli.main(
+        [
+            *common,
+            "--input_mol_file", str(invalid),
+            "-w", str(temp_dir / "invalid-oracle"),
+        ]
+    ) != 0
 
 class TestValidateRecipe:
     """Tests for ValidateRecipe class."""
@@ -204,6 +518,41 @@ class TestValidateRecipe:
 
         assert args.runner == "boltz2"
 
+    def test_help_groups_and_database_preflight_arguments(self):
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        cli.ValidateRecipe.add_arguments(parser)
+        help_text = parser.format_help()
+        assert "required inputs:" in help_text
+        assert "execution:" in help_text
+        assert "scoring and evidence:" in help_text
+        assert "bias training data:" in help_text
+        assert "--bias_training_data_protein_path" in help_text
+        assert "--bias_training_data_ligand_path" in help_text
+        assert "--preflight_only" in help_text
+
+    def test_preflight_does_not_create_work_directory(
+        self, sample_system_yaml, sample_options_yaml, temp_dir, capsys
+    ):
+        destination = temp_dir / "preflight-output"
+        with patch(
+            "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+            return_value=(True, None),
+        ):
+            result = cli.main(
+                [
+                    "validate",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "-w", str(destination),
+                    "--preflight_only",
+                ]
+            )
+        assert result == 0
+        assert "preflight=ready" in capsys.readouterr().out
+        assert not destination.exists()
+
     def test_main_uses_lazy_recipe_loader(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Mock()
         validate_cls = Mock(return_value=validator)
@@ -240,27 +589,34 @@ class TestScreenRecipe:
             "-o", "options.yaml",
             "-c", "compounds.csv",
             "--col_id", "id",
-            "-v", "sequences,0,ligand,smiles",
-            "--col_variable", "smiles",
-            "-v", "sequences,0,ligand,ccd",
-            "--col_variable", "ccd",
+            "--ligand_chain", "B",
+            "--smiles_column", "smiles",
+            "--map", "sequence=sequences.0.protein.sequence",
             "--ifp_filter_threshold", "0.75",
-            "--ifp_ligand_chain", "B",
+            "--ifp_filter_source", "reference_complex",
+            "--ifp_taxonomy", "prolif",
+            "--ifp_similarity_metric", "jaccard",
+            "--ifp_reference_ligand", "L:401",
+            "--ifp_reference_receptor_chain", "A",
             "--cluster_ifps",
             "--ifp_cluster_similarity_threshold", "0.8",
         ])
 
         assert args.system_path == "system.yaml"
-        assert args.variable == ["sequences,0,ligand,smiles", "sequences,0,ligand,ccd"]
-        assert args.col_variable == ["smiles", "ccd"]
+        assert args.ligand_chain == "B"
+        assert args.smiles_column == "smiles"
+        assert args.mappings == ["sequence=sequences.0.protein.sequence"]
         assert args.ifp_filter_threshold == 0.75
-        assert args.ifp_ligand_chain == "B"
+        assert args.ifp_filter_source == "reference_complex"
+        assert args.ifp_taxonomy == "prolif"
+        assert args.ifp_similarity_metric == "jaccard"
+        assert args.ifp_reference_ligand == "L:401"
+        assert args.ifp_reference_receptor_chains == ["A"]
         assert args.cluster_ifps is True
         assert args.ifp_cluster_similarity_threshold == 0.8
         assert args.scoring_functions is None
 
-    def test_main_raises_on_mapping_count_mismatch(self, sample_system_yaml, sample_options_yaml, temp_dir):
-        """Test that screen main rejects mismatched --variable/--col_variable counts."""
+    def test_main_rejects_legacy_mutation_path_flags(self, sample_system_yaml, sample_options_yaml, temp_dir):
         args = [
             "screen",
             "-s", str(sample_system_yaml),
@@ -273,8 +629,47 @@ class TestScreenRecipe:
             "-w", str(temp_dir),
         ]
 
-        with pytest.raises(ValueError, match="Number of --variable entries must match"):
+        with pytest.raises(SystemExit) as caught:
             cli.main(args)
+        assert caught.value.code == 2
+
+    def test_main_dispatches_current_screen_contract(
+        self,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        screener = Mock()
+        screen_cls = Mock(return_value=screener)
+
+        with patch("cofolder.cli._load_recipe_class", return_value=screen_cls):
+            result = cli.main(
+                [
+                    "screen",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "-c", str(sample_csv_file),
+                    "--ligand_chain", "B",
+                    "--smiles_column", "smiles",
+                    "--col_id", "compound_id",
+                    "--merge_data", "mw",
+                    "--scoring_functions", "confidence_metrics",
+                    "-w", str(temp_dir),
+                ]
+            )
+
+        assert result == 0
+        kwargs = screen_cls.call_args.kwargs
+        assert kwargs["system_path"] == str(sample_system_yaml)
+        assert kwargs["options_path"] == str(sample_options_yaml)
+        assert kwargs["library"] == str(sample_csv_file)
+        assert kwargs["ligand_chain"] == "B"
+        assert kwargs["smiles_column"] == "smiles"
+        assert kwargs["col_id"] == "compound_id"
+        assert kwargs["merge_data"] == "mw"
+        assert kwargs["scoring_functions"] == ["confidence_metrics"]
+        screener.run.assert_called_once()
 
 
 class TestOracleRecipe:
@@ -303,6 +698,37 @@ class TestOracleRecipe:
         assert args.input_smiles == "CCO"
         assert args.output_metric == "affinity_pred_value"
         assert args.aggregate == "first"
+
+    def test_main_dispatches_current_oracle_contract(
+        self, sample_system_yaml, sample_options_yaml, temp_dir
+    ):
+        oracle = Mock()
+        oracle_cls = Mock(return_value=oracle)
+
+        with patch("cofolder.cli._load_recipe_class", return_value=oracle_cls):
+            result = cli.main(
+                [
+                    "oracle",
+                    "-s", str(sample_system_yaml),
+                    "-o", str(sample_options_yaml),
+                    "--input_smiles", "C[C@H](O)F",
+                    "--output_metric", "confidence_score",
+                    "--aggregate", "median",
+                    "--scoring_functions", "confidence_metrics",
+                    "-w", str(temp_dir),
+                ]
+            )
+
+        assert result == 0
+        kwargs = oracle_cls.call_args.kwargs
+        assert kwargs["system_path"] == str(sample_system_yaml)
+        assert kwargs["options_path"] == str(sample_options_yaml)
+        assert kwargs["input_smiles"] == "C[C@H](O)F"
+        assert kwargs["input_mol_file"] is None
+        assert kwargs["output_metric"] == "confidence_score"
+        assert kwargs["aggregate"] == "median"
+        assert kwargs["scoring_functions"] == ["confidence_metrics"]
+        oracle.run.assert_called_once()
 
 
 class TestBiasRecipe:
@@ -393,11 +819,11 @@ class TestBiasRecipe:
             "-w", str(temp_dir),
         ]
 
-        with pytest.raises(ValueError, match="at least one public or custom reference input"):
-            cli.main(["bias", "-s", str(system_path), "-w", str(temp_dir)])
+        assert cli.main(
+            ["bias", "-s", str(system_path), "-w", str(temp_dir)]
+        ) == 2
 
-        with pytest.raises(ValueError, match="missing required reference sources"):
-            cli.main(args)
+        assert cli.main(args) == 1
 
     def test_main_accepts_build_mode_with_fresh_output_paths(
         self,
@@ -455,10 +881,18 @@ class TestBiasRecipe:
         assert bias_cls.call_args.kwargs["ligand_training_data_path"] == str(ligand_output)
         bias_runner.run.assert_called_once()
 
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "--bias_protein_similarity_threshold",
+            "--bias_ligand_similarity_threshold",
+        ],
+    )
     def test_main_rejects_non_numeric_bias_threshold_before_recipe_load(
         self,
         sample_system_yaml,
         temp_dir,
+        flag,
     ):
         protein_ref = temp_dir / "protein_training.csv"
         ligand_ref = temp_dir / "ligand_training.csv"
@@ -478,7 +912,7 @@ class TestBiasRecipe:
             "-s", str(sample_system_yaml),
             "--protein_training_data_path", str(protein_ref),
             "--ligand_training_data_path", str(ligand_ref),
-            "--bias_ligand_similarity_threshold", "not-a-number",
+            flag, "not-a-number",
             "-w", str(temp_dir),
         ]
 
@@ -489,11 +923,19 @@ class TestBiasRecipe:
         assert exc_info.value.code == 2
         mock_loader.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            "--bias_protein_similarity_threshold",
+            "--bias_ligand_similarity_threshold",
+        ],
+    )
     @pytest.mark.parametrize("threshold", ["-0.01", "1.01"])
     def test_main_rejects_out_of_range_bias_threshold_before_recipe_load(
         self,
         sample_system_yaml,
         temp_dir,
+        flag,
         threshold,
     ):
         protein_ref = temp_dir / "protein_training.csv"
@@ -514,13 +956,12 @@ class TestBiasRecipe:
             "-s", str(sample_system_yaml),
             "--protein_training_data_path", str(protein_ref),
             "--ligand_training_data_path", str(ligand_ref),
-            "--bias_ligand_similarity_threshold", threshold,
+            flag, threshold,
             "-w", str(temp_dir),
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="must be between 0 and 1"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -537,8 +978,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="requires --protein_training_data_path"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -560,8 +1000,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--bias_training_components_cif does not exist"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -581,8 +1020,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="components.cif not found for bias-training build"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -608,8 +1046,7 @@ class TestBiasRecipe:
         ]
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--protein_training_data_path does not exist"):
-                cli.main(args)
+            assert cli.main(args) == 2
 
         mock_loader.assert_not_called()
 
@@ -624,16 +1061,15 @@ class TestBiasRecipe:
         custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
 
         with patch("cofolder.cli._load_recipe_class") as mock_loader:
-            with pytest.raises(ValueError, match="--custom_protein_reference_path must use one of these file types"):
-                cli.main(
-                    [
-                        "bias",
-                        "-s", str(sample_system_yaml),
-                        "--custom_protein_reference_path", str(custom_protein),
-                        "--custom_ligand_reference_path", str(custom_ligand),
-                        "-w", str(temp_dir),
-                    ]
-                )
+            assert cli.main(
+                [
+                    "bias",
+                    "-s", str(sample_system_yaml),
+                    "--custom_protein_reference_path", str(custom_protein),
+                    "--custom_ligand_reference_path", str(custom_ligand),
+                    "-w", str(temp_dir),
+                ]
+            ) == 2
 
         mock_loader.assert_not_called()
 
@@ -675,13 +1111,12 @@ class TestBiasRecipe:
         custom_protein.write_text("sequence\nMKRAAT\n", encoding="utf-8")
         custom_ligand.write_text("smiles\nCCO\n", encoding="utf-8")
 
-        with pytest.raises(ValueError, match="--custom_ligand_reference_path must use one of these file types"):
-            cli.main(
-                [
-                    "bias",
-                    "-s", str(sample_system_yaml),
-                    "--custom_protein_reference_path", str(custom_protein),
-                    "--custom_ligand_reference_path", str(custom_ligand),
-                    "-w", str(temp_dir),
-                ]
-            )
+        assert cli.main(
+            [
+                "bias",
+                "-s", str(sample_system_yaml),
+                "--custom_protein_reference_path", str(custom_protein),
+                "--custom_ligand_reference_path", str(custom_ligand),
+                "-w", str(temp_dir),
+            ]
+        ) == 2

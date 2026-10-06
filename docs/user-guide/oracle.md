@@ -1,5 +1,9 @@
 # Oracle Command and Python API
 
+Bias-derived Oracle metrics use the source bundles described in
+[Providing bias training data](bias-training-data.md). Repeated candidates reuse the
+invariant protein search, while ligand reuse follows canonical molecular identity.
+
 The Oracle workflow runs `validate` for one query ligand in a fixed system and
 returns one finite scalar. The command line exposes standard single-metric calls;
 the Python API additionally supports weighted objectives, structure gates, and
@@ -12,6 +16,7 @@ cofolder oracle \
   -s examples/system.yaml -o examples/options.yaml \
   --input_smiles "CCO" \
   --output_metric ligand_B__affinity_pred_value \
+  --runner boltz2 --scoring_functions affinity_metrics \
   --aggregate first \
   -w oracle_affinity
 ```
@@ -135,11 +140,9 @@ Exactly one base-score source is allowed: `output_metric`, `score_components`, o
 
 ## Output and audit trail
 
-`Oracle.run()` returns the final `float` and writes `<wrk_dir>/oracle_result.csv`.
-The existing `output_metric`, `aggregate`, and `value` fields are retained. Additional
-fields record the score mode, base value, component and gate values, pass/fail state,
-failed gates, and applied gate action. Raw Validate outputs remain under
-`<wrk_dir>/oracle_run/results/`.
+`Oracle.run()` returns the final `float` and writes the versioned public contract
+under `<wrk_dir>/results/`. The base, final, and gate-adjusted values are long-form
+Oracle metric records. Raw Validate outputs remain under `<wrk_dir>/oracle_run/results/`.
 
 ## Metric prerequisites
 
@@ -155,6 +158,7 @@ Calibrate objectives and gates against the validated target system.
 
 ## Related
 
+- [MAPK14 structure-gated Oracle tutorial](../tutorials/structure-gated-oracle.md)
 - [Bias Command](bias.md)
 - [Screen Command](screen.md)
 - [Oracle API Reference](../api/recipes/oracle.md)

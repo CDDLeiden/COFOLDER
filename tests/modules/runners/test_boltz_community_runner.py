@@ -6,9 +6,14 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from cofolder.modules.input.command import Command
-from cofolder.modules.runners.contracts import RunnerExecutionRequest
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
+from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
 
 class _MockSystem:
@@ -29,12 +34,21 @@ class _MockSystem:
         return None
 
 
+def _typed_options(temp_dir):
+    options_path = temp_dir / "typed_options.yaml"
+    options_path.write_text(
+        "version: 1\nruntime:\n  cache_path: ~/.boltz\n  diffusion_samples: 1\nrunner: {}\n",
+        encoding="utf-8",
+    )
+    return BoltzCommunityRunner().load_options(options_path)
+
+
 def test_boltz_community_runner_accepts_installed_package_line():
     runner = BoltzCommunityRunner()
 
     def _fake_version(name):
         if name == "boltz-community":
-            return "0.6.0"
+            return "2.10.12"
         raise PackageNotFoundError
 
     with patch(
@@ -52,6 +66,26 @@ def test_boltz_community_runner_accepts_installed_package_line():
     }
 
 
+def test_boltz_community_runner_rejects_unverified_package_version():
+    runner = BoltzCommunityRunner()
+
+    def _fake_version(name):
+        if name == "boltz-community":
+            return "2.10.11"
+        raise PackageNotFoundError
+
+    with patch(
+        "cofolder.modules.runners.base.metadata.version",
+        side_effect=_fake_version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "requires boltz-community==2.10.12" in message
+    assert "boltz-community 2.10.11 is installed" in message
+    assert "cofolder[boltz-community]" in message
+
+
 def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch, temp_dir):
     runner = BoltzCommunityRunner()
     repeat_dir = temp_dir / "repeat_1"
@@ -61,9 +95,16 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz-community",
+            "boltz-community",
+            None,
+            BackendVersionStatus.UNAVAILABLE,
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -81,6 +122,8 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
                     "ptm": 0.8,
                     "iptm": 0.7,
                     "confidence_score": 0.9,
+                    "complex_pae": 1.2,
+                    "complex_ipae": 4.5,
                     "chains_ptm": {"0": 0.85, "1": 0.65},
                     "pair_chains_iptm": {"0": {"1": 0.55}, "1": {"0": 0.55}},
                 }
@@ -109,13 +152,23 @@ def test_boltz_community_runner_uses_same_normalized_bundle_as_boltz(monkeypatch
 
     system_df = pd.read_csv(result.system_metrics_path)
     chain_df = pd.read_csv(result.chain_metrics_path)
-    assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
+    assert {
+        "ptm",
+        "iptm",
+        "confidence_score",
+        "complex_pae",
+        "complex_ipae",
+    }.issubset(system_df.columns)
     assert {"chains_ptm", "affinity_pred_value", "affinity_probability_binary", "pIC50"}.issubset(
         chain_df.columns
     )
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics_ext"].state == "computed"
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["backend"]["version"] is None
+    assert manifest["backend"]["version_status"] == "unavailable"
+    assert manifest["backend"]["raw_version"] is None
 
 
 def test_boltz_community_runner_rejects_environment_with_boltz_installed():

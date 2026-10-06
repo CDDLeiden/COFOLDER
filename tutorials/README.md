@@ -12,8 +12,7 @@ The notebooks complement the written tutorials in `docs/tutorials/`. A good rule
 Install the notebook runtime and the backend you want to use:
 
 ```bash
-python -m pip install -e ".[tutorials]"
-python -m pip install -e ".[boltz2]"
+python -m pip install -e ".[analysis,tutorials,boltz2]"
 marimo edit tutorials/bias.py
 ```
 
@@ -25,16 +24,16 @@ The backend system-input tutorials require a dedicated backend environment and a
 CUDA-capable machine. For example:
 
 ```bash
-python -m pip install -e ".[tutorials,boltz2]"
+python -m pip install -e ".[analysis,tutorials,boltz2]"
 marimo edit tutorials/boltz_system_inputs.py
 ```
 
 For OpenFold3, prepare its cache before launching the notebook:
 
 ```bash
-python -m pip install -e ".[tutorials,openfold3]"
+python -m pip install -e ".[analysis,tutorials,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
-scripts/setup_openfold3.sh
+cofolder-tools setup-openfold3
 marimo edit tutorials/openfold3_system_inputs.py
 ```
 
@@ -44,9 +43,10 @@ marimo edit tutorials/openfold3_system_inputs.py
 2. `validate.py`
 3. `screen.py`
 4. `oracle.py`
-5. `ligand_handling.py`
-6. `runners.py`
-7. `boltz_system_inputs.py` or `openfold3_system_inputs.py` in the matching backend environment
+5. `structure_gated_oracle.py`
+6. `ligand_handling.py`
+7. `runners.py`
+8. `boltz_system_inputs.py` or `openfold3_system_inputs.py` in the matching backend environment
 
 ## Notebook Roles
 
@@ -54,6 +54,8 @@ marimo edit tutorials/openfold3_system_inputs.py
 - `validate.py`: single-system validation workflow
 - `screen.py`: multi-ligand screening workflow
 - `oracle.py`: single-metric oracle workflow
+- `structure_gated_oracle.py`: MAPK14 pose-aware lexicographic Oracle with an
+  offline walkthrough and optional Boltz2 execution
 - `ligand_handling.py`: specific ligand preparation and conformer-handling tutorial
 - `runners.py`: contributor notebook for authoring new runners plus backend-acceptance launch guidance
 - `boltz_system_inputs.py`: real-backend walkthrough for protein, DNA, RNA, ligand,

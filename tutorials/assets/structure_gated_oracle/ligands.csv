@@ -1,0 +1,7 @@
+candidate_id,name,role,canonical_smiles,literature_endpoint,literature_value_nm,literature_source,binding_mode_evidence
+sb203580,SB203580,Type I inhibitor,CS(=O)c1ccc(-c2nc(-c3ccncc3)c(-c3ccc(F)cc3)[nH]2)cc1,IC50,50,https://doi.org/10.1038/sj.bjp.0703767,ATP-competitive pyridinyl-imidazole reference; PDB 1A9U
+birb43,BIRB796 series compound 43,lower-affinity Type II,Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCN3CCCCC3)c3ccccc23)cc1,Kd,14,https://doi.org/10.1021/jm030121k,Matched DFG-out pyrazole-urea series with an ethoxy substituent directed into the ATP region
+birb48,BIRB796 series compound 48,intermediate-affinity Type II,Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCc3cccnc3)c3ccccc23)cc1,Kd,0.52,https://doi.org/10.1021/jm030121k,Matched DFG-out pyrazole-urea series with a 3-pyridyl-ethoxy ATP-region substituent
+birb796,BIRB796 (doramapimod; compound 5),higher-affinity Type II,Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCN3CCOCC3)c3ccccc23)cc1,Kd,0.046,https://doi.org/10.1021/jm030121k,DFG-out co-crystal and morpholine interaction in the ATP-binding region; PDB 1KV2
+sb202474,SB202474,expected inactive control,CCc1[nH]c(-c2ccc(OC)cc2)nc1-c1ccncc1,qualitative inactive control,,https://pmc.ncbi.nlm.nih.gov/articles/PMC2171902/,Inactive p38 control; inactivity does not prove absence of binding
+um101,UM101,expected Type IV remote-site binder,O=C(Nc1ccc(CN2CCS(=O)(=O)CC2)cc1)c1ccc(Cl)cc1,qualitative binding,,https://doi.org/10.4049/jimmunol.1602059,Experimental p38alpha binding with a computationally proposed ED substrate-docking pocket; no co-crystal pose

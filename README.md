@@ -9,7 +9,12 @@ The supported public entry points are:
 - `screen`: run validate-style workflows across a ligand library
 - `oracle`: return one scalar metric from a runner-backed run
 
-COFOLDER supports a backend-free base install for the standalone `bias` workflow, plus optional backend extras for prediction workflows. Structural-confidence outputs, validation metrics, and affinity-related outputs are treated as distinct concepts; structural confidence should not be described as a proxy for binding affinity.
+COFOLDER has a backend-free base install for configuration, input handling, resource
+access, and analysis-independent library paths. Install the `analysis` extra for
+clustering, affinity statistics, interaction processing, and plotting; prediction
+workflows additionally use one backend extra. Structural-confidence outputs,
+validation metrics, and affinity-related outputs are treated as distinct concepts;
+structural confidence should not be described as a proxy for binding affinity.
 
 ## Start Here
 
@@ -36,20 +41,25 @@ cd COFOLDER
 python -m pip install -e .
 ```
 
-Recommended prediction install with the default backend:
+Recommended analysis and prediction install with the default backend:
 
 ```bash
-python -m pip install -e ".[boltz2]"
+python -m pip install -e ".[analysis,boltz2]"
 ```
 
 OpenFold3 install:
 
 ```bash
-python -m pip install -e ".[openfold3]"
-scripts/setup_openfold3.sh
+python -m pip install -e ".[analysis,openfold3]"
+cofolder-tools setup-openfold3
 ```
 
-The `bias` workflow is part of the base package and does not require a co-folding backend.
+The `bias` workflow does not require a co-folding backend. Install `.[analysis]` for
+its complete plotting artifact set and other optional analysis features.
+
+Installed setup and data-preparation helpers are grouped under `cofolder-tools`.
+Run `cofolder-tools --help` to copy the bundled examples, prepare OpenFold3,
+install MMseqs2, or fetch/build bias-training data.
 
 ## Common Commands
 
@@ -76,14 +86,15 @@ cofolder screen \
   -o examples/options.yaml \
   -c examples/ligand_screen.csv \
   --col_id compound_id \
-  --variable sequences,1,ligand,smiles --col_variable smiles \
+  --ligand_chain B --smiles_column smiles \
   -w ./screen_out
 
 cofolder oracle \
   -s examples/system.yaml \
   -o examples/options.yaml \
   --input_smiles "CCO" \
-  --output_metric affinity_pred_value \
+  --output_metric system__confidence_score \
+  --scoring_functions confidence_metrics \
   --aggregate first
 ```
 
@@ -93,6 +104,15 @@ For detailed setup, workflow selection, and command options, use:
 - [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md)
 - [docs/user-guide/overview.md](docs/user-guide/overview.md)
 
+For CLI-independent execution and backend integration, use the Python API flow
+references:
+
+- [Bias recipe](docs/reference/python-api/bias-recipe-flow.md)
+- [Validate recipe](docs/reference/python-api/validate-recipe-flow.md)
+- [Screen recipe](docs/reference/python-api/screen-recipe-flow.md)
+- [Oracle recipe](docs/reference/python-api/oracle-recipe-flow.md)
+- [Constructing a new backend runner](docs/reference/python-api/new-backend-runner.md)
+
 ## Repository Guide
 
 These top-level paths now have distinct roles:
@@ -101,29 +121,15 @@ These top-level paths now have distinct roles:
 - [`examples/`](examples/): copyable input files and small fixtures used by quickstarts and docs
 - [`tutorials/`](tutorials/): interactive notebook tutorials for hands-on exploration
 - [`scripts/`](scripts/): helper utilities for optional setup and bias-data preparation
-- [`legacy/`](legacy/): archival material preserved for traceability, not the recommended public path
-- [`run_ui.sh`](run_ui.sh): optional launcher for the Streamlit UI in an environment where the UI extra is already installed
 - [`LICENSE`](LICENSE) and [`THIRD_PARTY_SOFTWARE.md`](THIRD_PARTY_SOFTWARE.md): repository licensing and third-party attribution
 
 For a short tour of how these pieces fit together, see [docs/getting-started/repository-tour.md](docs/getting-started/repository-tour.md).
-
-## Optional UI
-
-COFOLDER also includes an optional Streamlit interface:
-
-```bash
-python -m pip install -e ".[ui]"
-./run_ui.sh
-```
-
-The UI launcher no longer installs packages implicitly. This keeps setup reproducible and makes the required environment explicit.
 
 ## Folder-Specific Notes
 
 - [examples/README.md](examples/README.md) explains which example files to use first.
 - [tutorials/README.md](tutorials/README.md) gives a recommended notebook order.
 - [scripts/README.md](scripts/README.md) separates supported helpers from maintainer-oriented utilities.
-- [legacy/README.md](legacy/README.md) explains what is archived there and why it should not be the first stop for new users.
 
 ## Documentation
 
@@ -143,3 +149,6 @@ The docs site complements, rather than replaces, the repository tutorials:
 ## Licenses
 
 COFOLDER is released under the MIT License. Third-party attributions for adapted or bundled components are listed in [THIRD_PARTY_SOFTWARE.md](THIRD_PARTY_SOFTWARE.md).
+
+Citation metadata for COFOLDER 1.0.0 is provided in [CITATION.cff](CITATION.cff).
+The publication and archival identifier will be added after those records are final.

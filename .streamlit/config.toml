@@ -1,9 +1,0 @@
-[client]
-showErrorDetails = true
-toolbarMode = "developer"   # ensure app menu (⋮) is fully enabled
-
-[logger]
-level = "info"
-
-[browser]
-gatherUsageStats = false

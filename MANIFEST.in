@@ -1,0 +1,36 @@
+include pyproject.toml
+include README.md
+include LICENSE
+include THIRD_PARTY_SOFTWARE.md
+include CITATION.cff
+include mkdocs.yml
+recursive-include .github/workflows *.yml
+
+recursive-include src/cofolder *.py
+recursive-include src/cofolder/acceptance/data *.csv *.yaml
+recursive-include src/cofolder/resources/examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml
+
+recursive-include tests *.json *.py
+exclude tests/ui_development_check.py
+
+recursive-include docs *.md
+recursive-include tutorials *.md *.py
+recursive-include examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml
+recursive-include scripts *.md *.py *.sh
+
+prune src/cofolder/ui
+prune .streamlit
+prune docs/project-knowledge
+
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude .pytest_cache
+global-exclude .ruff_cache
+global-exclude *.egg-info
+global-exclude .openfold3-cache
+global-exclude cache
+global-exclude __marimo__
+global-exclude *.ckpt
+global-exclude *.pt
+global-exclude *.safetensors
+global-exclude *.onnx

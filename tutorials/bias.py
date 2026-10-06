@@ -8,7 +8,6 @@ app = marimo.App()
 def _():
     import sys
     from pathlib import Path
-    import yaml
 
     notebook_dir = Path(__file__).resolve().parent
     if str(notebook_dir) not in sys.path:
@@ -18,57 +17,31 @@ def _():
     import pandas as pd
 
     from _marimo_helpers import code_block, format_command, make_workspace, read_text, run_command
+    from _workflow_examples import build_bias_command, prepare_bias_example
 
-    return code_block, format_command, make_workspace, mo, pd, read_text, run_command, yaml
+    return (
+        build_bias_command,
+        code_block,
+        format_command,
+        make_workspace,
+        mo,
+        pd,
+        prepare_bias_example,
+        read_text,
+        run_command,
+    )
 
 
 @app.cell
-def _(make_workspace, yaml):
+def _(build_bias_command, make_workspace, prepare_bias_example):
     workspace = make_workspace("cofolder-tutorial-bias-")
-    system_path = workspace / "bias_system.yaml"
-    system_path.write_text(
-        yaml.safe_dump(
-            {
-                "sequences": [
-                    {"protein": {"id": "A", "sequence": "MKRAAT"}},
-                    {"ligand": {"id": "B", "smiles": "CCO"}},
-                ]
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
-    reference_structure = workspace / "custom_reference.pdb"
-    reference_structure.write_text("HEADER CUSTOM\n", encoding="utf-8")
-    custom_protein = workspace / "custom_protein.csv"
-    custom_protein.write_text(
-        "sequence,dataset_name,source_structure_path\n"
-        f"MKRAAT,private_proteins,{reference_structure.name}\n",
-        encoding="utf-8",
-    )
-    custom_ligand = workspace / "custom_ligand.csv"
-    custom_ligand.write_text(
-        "smiles,dataset_name,source_reference_path\n"
-        f"CCO,private_ligands,{reference_structure.name}\n",
-        encoding="utf-8",
-    )
-    return custom_ligand, custom_protein, system_path, workspace
+    inputs = prepare_bias_example(workspace)
+    bias_command = build_bias_command(inputs, workspace / "bias_run")
+    return bias_command, inputs, workspace
 
 
 @app.cell
-def _(code_block, custom_ligand, custom_protein, format_command, mo, read_text, system_path, workspace):
-    bias_command = [
-        "cofolder",
-        "bias",
-        "--system_path",
-        system_path,
-        "--wrk_dir",
-        workspace / "bias_run",
-        "--custom_protein_reference_path",
-        custom_protein,
-        "--custom_ligand_reference_path",
-        custom_ligand,
-    ]
+def _(bias_command, code_block, format_command, inputs, mo, read_text):
     mo.md(
         f"""
         # Bias Workflow
@@ -80,13 +53,13 @@ def _(code_block, custom_ligand, custom_protein, format_command, mo, read_text, 
         cofolding success.
 
         **System file**
-        {code_block(read_text(system_path), "yaml")}
+        {code_block(read_text(inputs.system_path), "yaml")}
 
         **Custom protein references**
-        {code_block(read_text(custom_protein), "csv")}
+        {code_block(read_text(inputs.protein_reference_path), "csv")}
 
         **Custom ligand references**
-        {code_block(read_text(custom_ligand), "csv")}
+        {code_block(read_text(inputs.ligand_reference_path), "csv")}
 
         **Command preview**
         ```bash

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 import logging
 
 from cofolder.modules.analytics.bias_training import (
@@ -22,7 +21,7 @@ def _assert_packaged_builder_command(cmd: list[str]) -> None:
         cmd[0],
         "-u",
         "-m",
-        "cofolder.modules.analytics.build_bias_training_data",
+        "cofolder.tools.build_bias_training_data",
     ]
     assert "scripts/build_bias_training_data.py" not in " ".join(cmd)
 

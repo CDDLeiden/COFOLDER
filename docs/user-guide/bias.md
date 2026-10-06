@@ -1,5 +1,9 @@
 # Bias Command
 
+See [Providing bias training data](bias-training-data.md) for the recommended
+database-backed workflow, source-bundle formats, cutoff policy, and migration from
+the legacy CSV arguments described below.
+
 The `bias` command assesses protein and ligand reference overlap directly from
 `system.yaml`. It is a standalone diagnostic workflow for pre-cofolding decision
 support and does not require a backend runner or `options.yaml`.
@@ -56,12 +60,17 @@ before recipe execution. It does not look up a runner and does not require
 
 ## Output Layout
 
-Successful runs write under `<wrk_dir>/results/bias_train/`:
+Successful runs publish the public contract under `<wrk_dir>/results/` and supporting
+bias artifacts under `<wrk_dir>/results/bias_train/`:
 
 ```text
-results/bias_train/
-├── system_metrics.csv
-├── chain_metrics.csv
+results/
+├── records.jsonl
+├── successes.csv
+├── metrics.csv
+├── failures.csv
+├── manifest.json
+└── bias_train/
 ├── protein_training_data.csv
 ├── ligand_training_data_<CHAIN>.csv
 ├── bias_training_data.csv
@@ -84,6 +93,11 @@ Artifact notes:
 ## Key Arguments
 
 - `--bias_release_cutoff YYYY-MM-DD`: filters public reference rows by release date
+- `--bias_release_cutoff whole`: includes the complete prepared source snapshot
+- `--bias_query_cache_path PATH`: shares component searches across workflows and runs
+- `--custom_bias_reference_path PATH`: adds a prepared paired custom-complex bundle
+- `--bias_protein_similarity_threshold 0.0-1.0`: MMseqs pident boundary on the
+  normalized plotting scale (default `0.25`, equivalent to 25%)
 - `--bias_ligand_similarity_threshold 0.0-1.0`: threshold used when building public ligand training data
 - `--bias_chains A B`: restricts analysis to selected chains
 - `--bias_training_components_cif PATH`: explicit `components.cif` for build mode
@@ -94,7 +108,7 @@ Artifact notes:
 
 Bias outputs are reference-overlap diagnostics:
 
-- `system_metrics.csv` and `chain_metrics.csv` report bias-related overlap summaries
+- `metrics.csv` reports long-form bias-related overlap summaries
 - `protein_training_data.csv` and `ligand_training_data_<CHAIN>.csv` show the reference
   rows used for each query chain
 - `bias_training_data.csv` is the merged plotting dataset behind the bias scatter plot

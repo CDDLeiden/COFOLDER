@@ -24,8 +24,19 @@ pip install -e .
 This installs the base COFOLDER package and its core dependencies, including:
 
 - `rdkit` - For molecular structure handling
-- `matplotlib` - For plotting and visualization
-- `seaborn` - For enhanced visualizations
+- `numpy` and `pandas` - For core numerical and tabular data handling
+- `biopython` and `gemmi` - For sequence and structure input handling
+
+Install the analysis extra for IFP clustering, affinity statistics, ProLIF/pdb2pqr
+interaction processing, and plotting:
+
+```bash
+pip install -e ".[analysis]"
+```
+
+If one of these features is requested without its dependency, COFOLDER raises an
+error naming the feature and recommends installing `cofolder[analysis]`; it does not
+silently omit the requested metric or artifact.
 
 Backend runners are installed separately through optional extras:
 
@@ -34,7 +45,7 @@ Backend runners are installed separately through optional extras:
 pip install -e ".[boltz1]"
 
 # Boltz 2 runner
-pip install -e ".[boltz2]"
+pip install -e ".[analysis,boltz2]"
 
 # Boltz Community runner
 pip install -e ".[boltz-community]"
@@ -42,6 +53,14 @@ pip install -e ".[boltz-community]"
 # OpenFold3 runner
 pip install -e ".[openfold3]"
 ```
+
+The initial release supports Boltz `1.0.0` for the `boltz1` runner, Boltz
+`>=2.0.0,<3` for `boltz2`, and Boltz Community `2.10.12`. Boltz 1 and Boltz 2
+require Python below 3.13; use Python 3.11 or 3.12 as listed above. Install each
+Boltz-family backend in its own environment because the distributions provide
+the same `boltz` command and Python package namespace. COFOLDER reports an
+explicit compatibility error when it detects an unsupported version, Python
+version, or mixed Boltz-family environment.
 
 The integrated `openfold3` runner still has a second setup step after installation because the upstream model cache, checkpoints, and CCD need to be prepared:
 
@@ -51,17 +70,17 @@ pip install -e ".[openfold3]"
 
 # Keep the downloaded cache, parameters, and CCD in the repository cache folder
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
-scripts/setup_openfold3.sh
+cofolder-tools setup-openfold3
 ```
 
 Notes for OpenFold3:
 
 - The COFOLDER `openfold3` extra installs the upstream `openfold3` package.
-- The example above sets `OPENFOLD_CACHE` to the gitignored `cache/.openfold3-cache` directory. If the variable is omitted, `scripts/setup_openfold3.sh` retains the upstream `~/.openfold3` default.
-- `scripts/setup_openfold3.sh` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions, selects parameter download choice `1`, and declines forced redownloads by default. Set `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes` only when you intentionally want to replace an existing checkpoint.
-- `scripts/setup_openfold3.sh` answers the upstream integration-test prompt with `no` by default so bootstrap does not hang in an unexpected interactive test path. If you intentionally want those tests, run `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh`.
-- If you want all published checkpoints instead of the default checkpoint only, run `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh`.
-- If you want a different cache root, set `OPENFOLD_CACHE` before running the setup script, for example `OPENFOLD_CACHE=/scratch/$USER/.openfold3 scripts/setup_openfold3.sh`.
+- The example above sets `OPENFOLD_CACHE` to the gitignored `cache/.openfold3-cache` directory. If the variable is omitted, `cofolder-tools setup-openfold3` retains the upstream `~/.openfold3` default.
+- `cofolder-tools setup-openfold3` also answers the standard upstream setup prompts explicitly: it uses `OPENFOLD_CACHE` for both cache/checkpoint-root questions, selects parameter download choice `1`, and declines forced redownloads by default. Set `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes` only when you intentionally want to replace an existing checkpoint.
+- The tool answers the upstream integration-test prompt with `no` by default so bootstrap does not hang in an unexpected interactive test path. If you intentionally want those tests, run `OPENFOLD3_RUN_INTEGRATION_TESTS=yes cofolder-tools setup-openfold3`.
+- If you want all published checkpoints instead of the default checkpoint only, run `OPENFOLD3_PARAMETER_CHOICE=2 cofolder-tools setup-openfold3`.
+- If you want a different cache root, set `OPENFOLD_CACHE` before running the tool, for example `OPENFOLD_CACHE=/scratch/$USER/.openfold3 cofolder-tools setup-openfold3`.
 - Upstream docs note that first inference can also download default model parameters into `$HOME/.openfold3`, but this project prefers the explicit setup script so readiness is established before prediction runs.
 - The current OpenFold3 integration is confidence-only: it exposes OpenFold3-native confidence outputs and keeps affinity groups unsupported unless a future code change intentionally widens that capability.
 - For clean-install manual acceptance in a fresh environment, see the [Backend Acceptance Tutorial](../tutorials/backend-acceptance.md).
@@ -74,6 +93,14 @@ After installation, verify that COFOLDER is correctly installed:
 
 ```bash
 cofolder --version
+cofolder-tools --help
+```
+
+To create a local, editable copy of the packaged example bundle from any working
+directory:
+
+```bash
+cofolder-tools copy-examples ./cofolder-examples
 ```
 
 You should see output showing the version number.
@@ -82,10 +109,10 @@ You should see output showing the version number.
 
 ### Standalone Bias Workflow
 
-The dedicated `cofolder bias` command is part of the base package. You do not need a
-cofolding backend runner just to inspect reference-overlap diagnostics.
+The dedicated `cofolder bias` command does not need a cofolding backend runner.
+Install `.[analysis]` for the complete reference-overlap plotting artifact set.
 
-Base-package-only bias usage works for:
+With the analysis extra installed, the backend-free bias workflow supports:
 
 - custom-only reference inputs
 - prebuilt public protein/ligand training CSVs
@@ -101,10 +128,15 @@ conda install -c conda-forge -c bioconda mmseqs2
 Alternative without conda-forge:
 
 ```bash
-chmod +x scripts/install_mmseqs_vendor.sh
-scripts/install_mmseqs_vendor.sh
+cofolder-tools install-mmseqs
 export COFOLDER_MMSEQS_BIN="$HOME/.cofolder/vendor/mmseqs/bin/mmseqs"
 ```
+
+COFOLDER accepts only a regular, executable MMseqs file. Resolution checks an
+explicit `--mmseqs_bin` value first, then `COFOLDER_MMSEQS_BIN`, the managed user
+installation above, checkout-local `vendor/mmseqs` locations when running from a
+source checkout, and finally `mmseqs` on `PATH`. Missing or non-executable candidates
+are included in required-command diagnostics.
 
 Verify:
 
@@ -113,16 +145,18 @@ which mmseqs
 mmseqs --version
 ```
 
-Bias-only setup after installing the base package:
+Bias-only setup after installing `.[analysis]` is described in full in
+[Providing bias training data](../user-guide/bias-training-data.md). The commands
+below document the retained legacy CSV route:
 
 ```bash
 # 1) Optional: fetch CCD + mmseqs DB if you want to build public training CSVs
-python scripts/fetch_bias_training_data.py \
+cofolder-tools fetch-bias-training-data \
   --output_root /path/to/training_data \
   --overwrite
 
 # 2) Optional: build public protein/ligand training CSVs
-python scripts/build_bias_training_data.py \
+cofolder-tools build-bias-training-data \
   --system_path /path/to/system.yaml \
   --components_cif /path/to/training_data/ccd/components.cif \
   --output_protein_csv /path/to/training_data/protein_training_data.csv \
@@ -190,7 +224,7 @@ This installs:
 To run the interactive marimo tutorials:
 
 ```bash
-pip install -e ".[tutorials]"
+pip install -e ".[analysis,tutorials]"
 ```
 
 Then launch a tutorial notebook, for example:
@@ -204,20 +238,20 @@ marimo edit tutorials/bias.py
 For development work, install with all optional dependencies:
 
 ```bash
-pip install -e ".[docs,test]"
+pip install -e ".[analysis,docs,test,development]"
 ```
 
 Add the backend extra you need in the same environment, for example:
 
 ```bash
-pip install -e ".[boltz2]"
+pip install -e ".[analysis,boltz2]"
 ```
 
 If you are developing against OpenFold3 instead, keep the same development environment and install the matching COFOLDER backend extra plus the setup script:
 
 ```bash
-pip install -e ".[openfold3]"
-scripts/setup_openfold3.sh
+pip install -e ".[analysis,openfold3]"
+cofolder-tools setup-openfold3
 ```
 
 ## Troubleshooting
@@ -238,6 +272,20 @@ If RDKit installation fails, try installing via conda:
 conda install -c conda-forge rdkit
 ```
 
+### Optional Analysis Dependency Errors
+
+If clustering, affinity correlation statistics, plotting, ProLIF, or pdb2pqr reports
+that an optional dependency is unavailable, install the complete supported analysis
+set:
+
+```bash
+python -m pip install -e ".[analysis]"
+```
+
+Combine it with exactly one backend extra when prediction is also required, for
+example `python -m pip install -e ".[analysis,boltz2]"`.
+
 ## Next Steps
 
 Once installed, proceed to the [Quick Start Guide](quickstart.md) to begin using COFOLDER.
+For runtime failures, use the consolidated [Troubleshooting guide](../user-guide/troubleshooting.md).

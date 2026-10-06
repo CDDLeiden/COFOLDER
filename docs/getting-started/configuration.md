@@ -1,5 +1,12 @@
 # Configuration
 
+Database-backed bias inputs and the exact release-cutoff policy are documented in
+[Providing bias training data](../user-guide/bias-training-data.md).
+All four recipes accept `bias_release_cutoff="whole"`, `bias_query_cache_path`,
+`custom_bias_reference_path`, and independent normalized
+`bias_protein_similarity_threshold` / `bias_ligand_similarity_threshold` values;
+matching CLI flags use `--` prefixes.
+
 ## System Configuration
 
 The system YAML file defines proteins, ligands, DNA, RNA, and optional constraints.
@@ -43,8 +50,23 @@ ligand:
   ccd: "ATP"  # Use pre-existing CCD entry
 ```
 
-Specify either `smiles` or `ccd`, not both. Conformer preparation replaces a
-SMILES representation with a generated CCD before validation and execution.
+Specify exactly one of `smiles`, `ccd`, or the advanced multi-component
+`ccd_codes` list. Conflicting or empty representations fail before backend
+execution. Conformer preparation may replace a validated SMILES representation
+with a generated backend CCD internally.
+
+Invalid:
+
+```yaml
+ligand:
+  id: L
+  smiles: CCO
+  ccd: EDO
+```
+
+SDF/MOL paths are not system-ligand keys. Validate receives a matching SDF through
+`--conformers sdf --sdf_file ...`; Screen receives CSV, SDF, or MOL through
+`--library`.
 
 ### DNA and RNA
 
@@ -59,6 +81,15 @@ SMILES representation with a generated CCD before validation and execution.
 
 Chain IDs must be non-empty and unique across every entity. A list-valued `id`
 creates identical copies in that exact order.
+
+### Protein MSAs
+
+A protein may provide `msa` as a path to an A3M file or the supported paired-MSA
+CSV representation. Relative paths resolve from the system YAML location. The query
+sequence must match the owning protein after normalization. Missing, inaccessible,
+malformed, or mismatched inputs fail before backend execution. When omitted, a
+runner may use its configured MSA service; Screen captures and reuses an eligible
+fixed-protein MSA across compounds and repeats.
 
 ### Runner input support
 
@@ -122,26 +153,42 @@ sequences:
 
 The options YAML file controls runner prediction parameters.
 
+The format is strict and runner-specific. `version` and `runner` are required;
+`runtime` is optional. Unknown keys and values with the wrong type, range, or enum
+are rejected before preparation or backend execution. Workflow-owned values such as
+the output directory, seed, model selection, and automatic MSA-server enablement
+belong to the workflow and cannot be set here.
+
+Keep the two configuration surfaces separate:
+
+| Options YAML | Workflow command line |
+| --- | --- |
+| Backend cache, device, recycling, sampling, and native inference sections | Runner choice, repeats, seed, output directory, scoring groups, bias/reference evidence, Oracle reducer/gates, Screen library behavior |
+
 ### Basic Options
 
 ```yaml
-out_dir: output          # Output directory
-devices: [0]            # GPU devices to use
-num_models: 1           # Number of models to run
-recycling_steps: 3      # Number of recycling iterations
-diffusion_samples: 1    # Number of diffusion samples
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ### Advanced Options
 
 ```yaml
-out_dir: output
-devices: [0, 1]         # Multi-GPU support
-num_models: 5           # Ensemble prediction
-recycling_steps: 5      # More recycling for accuracy
-diffusion_samples: 10   # Multiple samples for diversity
-sampling_steps: 200     # Diffusion sampling steps
-diffusion_temperature: 1.0  # Temperature for sampling
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 10
+runner:
+  devices: 2
+  recycling_steps: 5
+  sampling_steps: 200
+  step_scale: 1.5
 ```
 
 ## Command-Line Options
@@ -159,18 +206,29 @@ diffusion_temperature: 1.0  # Temperature for sampling
 --conformers {2D,3D,sdf}
 ```
 
+OpenFold3 uses the same outer namespace. Its `runner` section accepts the explicit
+native inference sections such as `model_update`, `pl_trainer_args`,
+`dataset_config_kwargs`, `output_writer_settings`, `msa_computation_settings`, and
+`template_preprocessor_settings`; their nested keys are also validated.
+
 Generate conformers for SMILES input:
 - `2D`: Generate 2D coordinates
 - `3D`: Generate 3D conformers using ETKDG + UFF
 - `sdf`: Reuse conformers from an input SDF file (requires `--sdf_file`)
 
+For `screen`, SDF/MOL libraries provide per-record source conformers directly;
+`--sdf_file` is therefore not used with structure libraries.
+
 ### Screen-Specific Options
 
 ```bash
--v, --variable "sequences,1,ligand,smiles"
--c, --variable_csv compounds.csv
---col_variable smiles
+-c, --library compounds.csv
+--library_format {csv,sdf,mol} # Optional; inferred by extension
+--ligand_chain B
+--smiles_column smiles
 --col_id compound_id
+--id_property _Name            # SDF/MOL identifier property
+--duplicate_id_policy reject   # reject, suffix, or source_index
 ```
 
 ### Validate-Specific Options

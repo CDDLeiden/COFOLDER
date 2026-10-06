@@ -49,7 +49,7 @@ The commands below assume you are in the repository root and want the current ch
 ```bash
 conda create -n cofolder-acceptance-boltz1 python=3.12
 conda activate cofolder-acceptance-boltz1
-python -m pip install -e ".[acceptance,boltz1]"
+python -m pip install -e ".[acceptance,analysis,boltz1]"
 python --version
 cofolder --help
 ```
@@ -61,7 +61,7 @@ If Python `3.12` is not available in your conda setup, use Python `3.11` instead
 ```bash
 conda create -n cofolder-acceptance-boltz2 python=3.12
 conda activate cofolder-acceptance-boltz2
-python -m pip install -e ".[acceptance,boltz2]"
+python -m pip install -e ".[acceptance,analysis,boltz2]"
 python --version
 cofolder --help
 ```
@@ -71,7 +71,7 @@ cofolder --help
 ```bash
 conda create -n cofolder-acceptance-boltz-community python=3.12
 conda activate cofolder-acceptance-boltz-community
-python -m pip install -e ".[acceptance,boltz-community]"
+python -m pip install -e ".[acceptance,analysis,boltz-community]"
 python --version
 cofolder --help
 ```
@@ -82,9 +82,9 @@ OpenFold3 now installs through a COFOLDER optional extra. Use a fresh environmen
 
 ```bash
 conda create -n cofolder-acceptance-openfold3 python=3.12
-python -m pip install -e ".[acceptance,openfold3]"
+python -m pip install -e ".[acceptance,analysis,openfold3]"
 export OPENFOLD_CACHE="$PWD/cache/.openfold3-cache"
-scripts/setup_openfold3.sh
+cofolder-tools setup-openfold3
 python --version
 cofolder --help
 ```
@@ -92,9 +92,9 @@ cofolder --help
 Notes:
 
 - OpenFold3 upstream currently recommends `pixi` for reproducible environments, but the upstream `openfold3` pip package is also documented and is what the COFOLDER `openfold3` extra installs.
-- `scripts/setup_openfold3.sh` wraps upstream `setup_openfold` and prepares the cache, model parameters, and CCD before you run the acceptance workflows. The command above places those downloads in the repository's gitignored `cache/.openfold3-cache` directory; without an explicit `OPENFOLD_CACHE`, the wrapper retains the upstream `~/.openfold3` default.
-- The wrapper also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. It answers the force-redownload prompt with `no`; use `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes scripts/setup_openfold3.sh` only when you intentionally want to replace an existing checkpoint. Use `OPENFOLD3_PARAMETER_CHOICE=2 scripts/setup_openfold3.sh` if you want all published checkpoints instead.
-- The wrapper answers the upstream integration-test prompt with `no` by default. Use `OPENFOLD3_RUN_INTEGRATION_TESTS=yes scripts/setup_openfold3.sh` only when you intentionally want those upstream tests to run during setup.
+- `cofolder-tools setup-openfold3` wraps upstream `setup_openfold` and prepares the cache, model parameters, and CCD before you run the acceptance workflows. The command above places those downloads in the repository's gitignored `cache/.openfold3-cache` directory; without an explicit `OPENFOLD_CACHE`, the tool retains the upstream `~/.openfold3` default.
+- The tool also removes the current upstream checkpoint-choice ambiguity by answering the setup prompts explicitly: it uses `OPENFOLD_CACHE` for both path questions and selects parameter download choice `1` by default. It answers the force-redownload prompt with `no`; use `OPENFOLD3_FORCE_DOWNLOAD_PARAMETERS=yes cofolder-tools setup-openfold3` only when you intentionally want to replace an existing checkpoint. Use `OPENFOLD3_PARAMETER_CHOICE=2 cofolder-tools setup-openfold3` if you want all published checkpoints instead.
+- The tool answers the upstream integration-test prompt with `no` by default. Use `OPENFOLD3_RUN_INTEGRATION_TESTS=yes cofolder-tools setup-openfold3` only when you intentionally want those upstream tests to run during setup.
 - Upstream docs note that first inference can also download default model parameters to `$HOME/.openfold3`, but for manual acceptance this project prefers the explicit setup script so environment readiness is checked before the expensive lane starts.
 - This first-pass acceptance lane is confidence-only. It does not claim affinity support for OpenFold3.
 
@@ -103,8 +103,8 @@ Notes:
 The packaged acceptance inputs also include `system_nucleic_acid.yaml` plus
 runner-specific constrained systems. In each clean backend environment, run
 `validate` against the nucleic-acid fixture and the matching constrained fixture
-from `src/cofolder/acceptance/data/`. Confirm that `chain_metrics.csv` contains
-chains `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
+from `src/cofolder/acceptance/data/`. Confirm that the long-form `metrics.csv`
+contains `chain_id` values `A`, `D`, `R`, and `L` in that order. The Boltz-1 fixture uses its single
 6 Å pocket form, Boltz-2/community exercise pocket and contact inputs, and the
 OpenFold3 fixture exercises pocket translation. These runs are opt-in because
 they execute the real prediction backends.
@@ -117,17 +117,17 @@ marimo run src/cofolder/acceptance/input_contract_backend_acceptance.py
 
 If you prefer a non-editable install from the current checkout, replace:
 
-- `python -m pip install -e ".[acceptance,boltz1]"`
-- `python -m pip install -e ".[acceptance,boltz2]"`
-- `python -m pip install -e ".[acceptance,boltz-community]"`
-- `python -m pip install -e ".[acceptance,openfold3]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz1]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz2]"`
+- `python -m pip install -e ".[acceptance,analysis,boltz-community]"`
+- `python -m pip install -e ".[acceptance,analysis,openfold3]"`
 
 with:
 
-- `python -m pip install ".[acceptance,boltz1]"`
-- `python -m pip install ".[acceptance,boltz2]"`
-- `python -m pip install ".[acceptance,boltz-community]"`
-- `python -m pip install ".[acceptance,openfold3]"`
+- `python -m pip install ".[acceptance,analysis,boltz1]"`
+- `python -m pip install ".[acceptance,analysis,boltz2]"`
+- `python -m pip install ".[acceptance,analysis,boltz-community]"`
+- `python -m pip install ".[acceptance,analysis,openfold3]"`
 
 To discard an acceptance environment completely:
 

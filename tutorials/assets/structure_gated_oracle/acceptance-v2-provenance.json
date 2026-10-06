@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "data_kind": "saved_boltz2_reanalysis",
+  "prediction_execution_date": "2026-09-28",
+  "reanalysis_date": "2026-09-29",
+  "seed": 20260928,
+  "backend": "boltz2",
+  "backend_version": "2.2.1",
+  "policy_sha256": "9c78ca871fce170b534dd82e5b284539b2e0b36bdb0f1077e5ef7e9d0077d45b",
+  "input_sha256": {
+    "ligands.csv": "7733112b7890cafd0e6be4e2cb26e4cbf8e8af426f7bdbf840bfd78007bd367a",
+    "sb203580/1_oracle_system_model_0.cif": "32c35afbf729cd2305451f477f4e115276b1d7fd9399b27f02c4a0054dbffdc8",
+    "birb43/1_oracle_system_model_0.cif": "6d9456500bc30c120380912ddc9bf3456a98fc3e10bb7325d82af091630313df",
+    "birb48/1_oracle_system_model_0.cif": "f33b96462e7cef22a5d3a0d2cc5b54d0160c5b7840c6befb31080770ae5d120b",
+    "birb796/1_oracle_system_model_0.cif": "17708fb6fb320b244ef44b37578940546bfea7c70efbede6ab181f68205addbc",
+    "sb202474/1_oracle_system_model_0.cif": "8b9ac8d32ea75e63940f2ee696cc375913f5492889dfc36050f6052fa35fac4b",
+    "um101/1_oracle_system_model_0.cif": "5012c1e25074f9d3e3cd50230dada9c735fa0f84ed1d0c8fe089295965a1fc8b"
+  }
+}

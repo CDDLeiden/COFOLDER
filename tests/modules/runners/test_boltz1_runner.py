@@ -8,7 +8,13 @@ import pandas as pd
 import pytest
 import yaml
 
-from cofolder.modules.input.command import Command
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
+from cofolder.modules.input import OptionsValidationError
 from cofolder.modules.runners.boltz1_runner import Boltz1Runner
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
 
@@ -29,6 +35,15 @@ class _MockSystem:
         if key == "properties":
             return self._data["properties"]
         return None
+
+
+def _typed_options(temp_dir):
+    options_path = temp_dir / "typed_options.yaml"
+    options_path.write_text(
+        "version: 1\nruntime:\n  cache_path: ~/.boltz\n  diffusion_samples: 1\nrunner: {}\n",
+        encoding="utf-8",
+    )
+    return Boltz1Runner().load_options(options_path)
 
 
 def test_boltz1_runner_requires_exact_100_package_line():
@@ -69,16 +84,36 @@ def test_boltz1_runner_accepts_exact_100_package_line():
     assert runner.capabilities == {"confidence_metrics"}
 
 
-def test_boltz1_runner_load_options_removes_model_flag(temp_dir):
+def test_boltz1_runner_rejects_python_313_before_package_discovery():
+    runner = Boltz1Runner()
+
+    with (
+        patch("cofolder.modules.runners.base.sys.version_info", (3, 13)),
+        patch("cofolder.modules.runners.base.metadata.version") as version,
+    ):
+        available, message = runner.check_availability()
+
+    assert available is False
+    assert "does not support Python 3.13" in message
+    assert "Python 3.11 or 3.12" in message
+    version.assert_not_called()
+
+
+def test_boltz1_runner_rejects_workflow_owned_model_flag(temp_dir):
     options_path = temp_dir / "options.yaml"
     options_path.write_text(
-        yaml.safe_dump({"options": [{"cache": "~/.boltz"}, {"model": "boltz2"}]}),
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "runtime": {"cache_path": "~/.boltz"},
+                "runner": {"model": "boltz2"},
+            }
+        ),
         encoding="utf-8",
     )
 
-    command = Boltz1Runner().load_options(options_path)
-
-    assert command.find_value(key="model") is None
+    with pytest.raises(OptionsValidationError, match="unknown key 'model'"):
+        Boltz1Runner().load_options(options_path)
 
 
 def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payload(
@@ -93,9 +128,13 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz1", "boltz", "1.0.0", BackendVersionStatus.DETECTED, "1.0.0"
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -113,6 +152,12 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
                     "ptm": 0.8,
                     "iptm": 0.7,
                     "confidence_score": 0.9,
+                    "ligand_iptm": 0.72,
+                    "protein_iptm": 0.0,
+                    "complex_plddt": 0.91,
+                    "complex_iplddt": 0.82,
+                    "complex_pde": 0.4,
+                    "complex_ipde": 1.1,
                     "chains_ptm": {"0": 0.85, "1": 0.65},
                     "pair_chains_iptm": {"0": {"1": 0.55}, "1": {"0": 0.55}},
                 }
@@ -128,6 +173,15 @@ def test_boltz1_runner_marks_affinity_groups_unsupported_without_affinity_payloa
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["affinity_metrics"].state == "unsupported"
     assert result.metric_outcomes["affinity_metrics_ext"].state == "unsupported"
+    system_df = pd.read_csv(result.system_metrics_path)
+    assert {
+        "ligand_iptm",
+        "protein_iptm",
+        "complex_plddt",
+        "complex_iplddt",
+        "complex_pde",
+        "complex_ipde",
+    }.issubset(system_df.columns)
     assert {
         "affinity_pred_value",
         "affinity_probability_binary",
@@ -149,9 +203,13 @@ def test_boltz1_runner_rejects_unexpected_affinity_payload(
         system_path=temp_dir / "system.yaml",
         system_obj=_MockSystem(),
         options_path=temp_dir / "options.yaml",
-        options_obj=Command(options={"options": [{"diffusion_samples": 1}, {"cache": "~/.boltz"}]}),
+        options_obj=_typed_options(temp_dir),
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(1, 123, 123, 123, 123, SeedOrigin.USER_SPECIFIED),
+        backend_identity=RunnerBackendIdentity(
+            "boltz1", "boltz", "1.0.0", BackendVersionStatus.DETECTED, "1.0.0"
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,

@@ -49,10 +49,10 @@ SCREEN_MANUSCRIPT_COLUMNS = (
 )
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
 _BACKEND_INSTALL_COMMANDS = {
-    "boltz1": 'pip install "cofolder[acceptance,boltz1]"',
-    "boltz2": 'pip install "cofolder[acceptance,boltz2]"',
-    "boltz-community": 'pip install "cofolder[acceptance,boltz-community]"',
-    "openfold3": 'python -m pip install -e ".[acceptance,openfold3]"',
+    "boltz1": 'pip install "cofolder[acceptance,analysis,boltz1]"',
+    "boltz2": 'pip install "cofolder[acceptance,analysis,boltz2]"',
+    "boltz-community": 'pip install "cofolder[acceptance,analysis,boltz-community]"',
+    "openfold3": 'python -m pip install -e ".[acceptance,analysis,openfold3]"',
 }
 _BACKEND_ORACLE_METRICS = {
     "boltz1": "confidence_score",
@@ -329,7 +329,7 @@ def assert_chain_ids(path: Path, expected: Iterable[str]) -> None:
         rows = list(csv.DictReader(handle))
     actual: list[str] = []
     for row in rows:
-        chain_id = str(row.get("CHAIN_ID", "")).strip()
+        chain_id = str(row.get("CHAIN_ID") or row.get("chain_id") or "").strip()
         if chain_id and chain_id not in actual:
             actual.append(chain_id)
     expected_ids = [str(value) for value in expected]
@@ -547,7 +547,10 @@ def rewrite_openfold3_options_cache_path(options_path: Path, cache_path: Path) -
         raise AssertionError(
             f"Expected a mapping in {options_path}, but found {type(settings)!r}."
         )
-    settings["cache_path"] = str(cache_path)
+    runtime = settings.get("runtime")
+    if not isinstance(runtime, dict):
+        raise AssertionError(f"Expected a runtime mapping in {options_path}.")
+    runtime["cache_path"] = str(cache_path)
     options_path.write_text(
         yaml.safe_dump(settings, sort_keys=False),
         encoding="utf-8",
@@ -594,7 +597,7 @@ def build_screen_command(
     wrk_dir: Path,
     system_path: Path,
     options_path: Path,
-    variable_csv: Path,
+    library: Path,
     scoring_functions: list[str],
     protein_training_data_path: Path | None = None,
     ligand_training_data_path: Path | None = None,
@@ -617,12 +620,12 @@ def build_screen_command(
         "--scoring_functions",
         *scoring_functions,
         "-c",
-        str(variable_csv),
+        str(library),
         "--col_id",
         "Name",
-        "--variable",
-        "sequences,1,ligand,smiles",
-        "--col_variable",
+        "--ligand_chain",
+        "B",
+        "--smiles_column",
         "SMILES",
         "--merge_data",
         "pIC50",
@@ -702,6 +705,15 @@ def assert_csv_has_columns(path: Path, expected_columns: Iterable[str]) -> None:
 
 def assert_csv_columns_all_empty(path: Path, columns: Iterable[str]) -> None:
     rows = _read_csv(path)
+    if rows and "metric_name" in rows[0]:
+        for column in columns:
+            metric = _public_metric_name(column)
+            matching = [row for row in rows if row.get("metric_name") == metric]
+            if not matching:
+                raise AssertionError(f"Missing expected metric '{metric}' in {path}")
+            if any(row.get("status") == "computed" and _has_value(row.get("value")) for row in matching):
+                raise AssertionError(f"Expected metric '{metric}' to remain empty in {path}")
+        return
     assert_csv_has_columns(path, columns)
     for column in columns:
         if any(_has_value(row.get(column)) for row in rows):
@@ -712,12 +724,31 @@ def assert_csv_columns_all_empty(path: Path, columns: Iterable[str]) -> None:
 
 def assert_csv_columns_have_values(path: Path, columns: Iterable[str]) -> None:
     rows = _read_csv(path)
+    if rows and "metric_name" in rows[0]:
+        for column in columns:
+            metric = _public_metric_name(column)
+            if not any(
+                row.get("metric_name") == metric
+                and row.get("status") == "computed"
+                and _has_value(row.get("value"))
+                for row in rows
+            ):
+                raise AssertionError(f"Expected metric '{metric}' to contain a value in {path}")
+        return
     assert_csv_has_columns(path, columns)
     for column in columns:
         if not any(_has_value(row.get(column)) for row in rows):
             raise AssertionError(
                 f"Expected column '{column}' to contain at least one value in {path}"
             )
+
+
+def _public_metric_name(column: str) -> str:
+    name = str(column).rsplit("__", 1)[-1]
+    for prefix in ("pair_chains_iptm_", "chain_pair_iptm_", "bespoke_iptm_"):
+        if name.startswith(prefix):
+            return prefix.removesuffix("_")
+    return name
 
 
 def assert_output_contains(output: str, expected_text: str) -> None:

@@ -1,14 +1,15 @@
 import argparse
-import os
 import logging
+import os
 import shlex
 import sys
 from importlib import import_module
 from pathlib import Path
 
 from cofolder import __version__
-from cofolder.modules.runners import get_runner, list_runner_names
-
+from cofolder.modules.contracts import FailureStage, WorkflowExecutionError
+from cofolder.modules.input import InputValidationError
+from cofolder.modules.runners import list_runner_names
 from cofolder.modules.utils import helpers
 from cofolder.modules.utils.log import setup_root_logger
 
@@ -57,14 +58,15 @@ class BaseRecipe:
 
     @staticmethod
     def add_workdir_and_system_arguments(parser):
-        parser.add_argument(
+        group = parser.add_argument_group('required inputs')
+        group.add_argument(
             '-w', '--wrk_dir',
             type=str,
             default=os.getcwd(),
             help='Set working directory (default: CWD).'
         )
 
-        parser.add_argument(
+        group.add_argument(
             '-s', '--system_path',
             type=str,
             required=True,
@@ -74,15 +76,18 @@ class BaseRecipe:
     @staticmethod
     def add_common_arguments(parser):
         BaseRecipe.add_workdir_and_system_arguments(parser)
+        execution = parser.add_argument_group('execution')
+        scoring = parser.add_argument_group('scoring and evidence')
+        advanced = parser.add_argument_group('advanced controls')
 
-        parser.add_argument(
+        execution.add_argument(
             '-o', '--options_path',
             type=str,
             required=True,
             help='Path to runner options YAML file.'
         )
 
-        parser.add_argument(
+        execution.add_argument(
             '--runner',
             type=str,
             choices=list_runner_names(),
@@ -90,21 +95,21 @@ class BaseRecipe:
             help=BaseRecipe._runner_help_text()
         )
 
-        parser.add_argument(
+        execution.add_argument(
             '--repeats',
             type=int,
             default=1,
             help='Number of repeats.'
         )
 
-        parser.add_argument(
+        execution.add_argument(
             '--seed',
             type=int,
             default=None,
             help='Global seed used for predictions.'
         )
 
-        parser.add_argument(
+        scoring.add_argument(
             '--scoring_functions',
             nargs='+',
             choices=SCORING_FUNCTIONS,
@@ -117,51 +122,50 @@ class BaseRecipe:
             ),
         )
 
-        parser.add_argument(
+        scoring.add_argument(
             '--assess_robustness',
             dest='assess_robustness',
             action=argparse.BooleanOptionalAction,
             default=True,
             help='Assess robustness across repeats and diffusion samples (default: True).'
         )
-        parser.add_argument(
+        scoring.add_argument(
             '--assess_bias',
-            '--asess_bias',
             dest='assess_bias',
             action=argparse.BooleanOptionalAction,
             default=False,
             help='Assess bias against training data references (default: False).'
         )
         BaseRecipe.add_bias_arguments(parser)
+        BaseRecipe.add_custom_bias_arguments(parser)
 
-        parser.add_argument(
+        advanced.add_argument(
             '--conformers',
             choices=['2D', '3D', 'sdf'],
             default=None,
             help=(
                 'Generate 2D or 3D conformers for CCD input, or use conformers '
-                'from an existing SDF file. '
-                'Only valid for SMILES-based inputs.'
+                'from an existing SDF file or the current Screen structure record.'
             )
         )
 
-        parser.add_argument(
+        advanced.add_argument(
             '--sdf_file',
             type=str,
             default=None,
             help=(
                 'Path to an SDF file containing conformers to use. '
-                'Required if --conformers is set to "sdf".'
+                'Required for --conformers "sdf" except with Screen SDF/MOL libraries.'
             )
         )
 
-        parser.add_argument(
+        scoring.add_argument(
             '--reference_path',
             type=str,
             default=None,
             help='Path to reference structure (PDB/CIF) used for model reproduction metrics.'
         )
-        parser.add_argument(
+        scoring.add_argument(
             "--pocket_coverage_reference",
             type=str,
             default=None,
@@ -171,7 +175,7 @@ class BaseRecipe:
                 "You may also provide a text file path containing one of these formats."
             ),
         )
-        parser.add_argument(
+        scoring.add_argument(
             "--reproduction_metrics",
             nargs="+",
             choices=REPRODUCTION_METRICS,
@@ -181,16 +185,22 @@ class BaseRecipe:
                 f"Choices: {', '.join(REPRODUCTION_METRICS)}"
             ),
         )
+        execution.add_argument(
+            '--preflight_only',
+            action='store_true',
+            help='Validate and describe the planned workflow without searches or inference.',
+        )
 
     @staticmethod
     def add_bias_arguments(parser):
-        parser.add_argument(
+        group = parser.add_argument_group('bias training data')
+        group.add_argument(
             '--protein_training_data_path',
             type=str,
             default=None,
             help='Path to protein training reference CSV (requires release_date, pdb_id, sequence).'
         )
-        parser.add_argument(
+        group.add_argument(
             '--ligand_training_data_path',
             type=str,
             default=None,
@@ -202,19 +212,52 @@ class BaseRecipe:
                 "<wrk_dir>/results/bias_train/ligand_training_data.csv."
             )
         )
-        parser.add_argument(
+        group.add_argument(
+            '--bias_training_data_protein_path',
+            type=str,
+            default=None,
+            help=(
+                'Protein source-database bundle (default: '
+                '~/.cofolder/data/bias/protein).'
+            ),
+        )
+        group.add_argument(
+            '--bias_training_data_ligand_path',
+            type=str,
+            default=None,
+            help=(
+                'Ligand source-database bundle (default: '
+                '~/.cofolder/data/bias/ligand).'
+            ),
+        )
+        group.add_argument(
             '--bias_release_cutoff',
             type=str,
             default='2023-06-01',
-            help='Release-date cutoff (YYYY-MM-DD) for training data filtering.'
+            help="Release-date cutoff (YYYY-MM-DD, strict before) or 'whole'."
         )
-        parser.add_argument(
+        group.add_argument(
+            '--bias_query_cache_path',
+            type=str,
+            default=None,
+            help='Shared bias-query cache (default: ~/.cofolder/cache/bias_queries).',
+        )
+        group.add_argument(
+            '--bias_protein_similarity_threshold',
+            type=float,
+            default=0.25,
+            help=(
+                'Protein MMseqs pident threshold on the normalized 0-1 scale '
+                '(default: 0.25).'
+            ),
+        )
+        group.add_argument(
             '--bias_ligand_similarity_threshold',
             type=float,
             default=0.35,
             help='Ligand ECFP/Tanimoto threshold used while building bias training data.'
         )
-        parser.add_argument(
+        group.add_argument(
             '--bias_chains',
             nargs='+',
             default=None,
@@ -223,13 +266,13 @@ class BaseRecipe:
                 "Example: --bias_chains A F"
             )
         )
-        parser.add_argument(
+        group.add_argument(
             '--build_bias_training_data',
             action=argparse.BooleanOptionalAction,
             default=False,
             help='Build bias training CSVs before assessing bias (default: False).'
         )
-        parser.add_argument(
+        group.add_argument(
             '--bias_training_components_cif',
             type=str,
             default=None,
@@ -241,6 +284,12 @@ class BaseRecipe:
 
     @staticmethod
     def add_custom_bias_arguments(parser):
+        parser.add_argument(
+            '--custom_bias_reference_path',
+            type=str,
+            default=None,
+            help='Prepared custom-complex supplement bundle.',
+        )
         parser.add_argument(
             '--custom_protein_reference_path',
             type=str,
@@ -268,14 +317,15 @@ class BaseRecipe:
 
     @staticmethod
     def add_final_arguments(parser):
-        parser.add_argument(
+        group = parser.add_argument_group('logging')
+        group.add_argument(
             '--log_name',
             type=str,
             default='log',
             help='Base name for log file.'
         )
 
-        parser.add_argument(
+        group.add_argument(
             '-d', '--debug',
             action='store_true',
             help='Enable debug logging.'
@@ -295,7 +345,14 @@ class BaseRecipe:
             assess_bias=args.assess_bias,
             protein_training_data_path=args.protein_training_data_path,
             ligand_training_data_path=args.ligand_training_data_path,
+            bias_training_data_protein_path=args.bias_training_data_protein_path,
+            bias_training_data_ligand_path=args.bias_training_data_ligand_path,
+            bias_query_cache_path=args.bias_query_cache_path,
+            custom_bias_reference_path=args.custom_bias_reference_path,
+            custom_protein_reference_path=args.custom_protein_reference_path,
+            custom_ligand_reference_path=args.custom_ligand_reference_path,
             bias_release_cutoff=args.bias_release_cutoff,
+            bias_protein_similarity_threshold=args.bias_protein_similarity_threshold,
             bias_ligand_similarity_threshold=args.bias_ligand_similarity_threshold,
             bias_chains=args.bias_chains,
             build_bias_training_data=args.build_bias_training_data,
@@ -314,9 +371,14 @@ class BaseRecipe:
             system_path=args.system_path,
             protein_training_data_path=args.protein_training_data_path,
             ligand_training_data_path=args.ligand_training_data_path,
+            bias_training_data_protein_path=args.bias_training_data_protein_path,
+            bias_training_data_ligand_path=args.bias_training_data_ligand_path,
+            bias_query_cache_path=args.bias_query_cache_path,
+            custom_bias_reference_path=getattr(args, "custom_bias_reference_path", None),
             custom_protein_reference_path=getattr(args, "custom_protein_reference_path", None),
             custom_ligand_reference_path=getattr(args, "custom_ligand_reference_path", None),
             bias_release_cutoff=args.bias_release_cutoff,
+            bias_protein_similarity_threshold=args.bias_protein_similarity_threshold,
             bias_ligand_similarity_threshold=args.bias_ligand_similarity_threshold,
             bias_chains=args.bias_chains,
             build_bias_training_data=args.build_bias_training_data,
@@ -356,8 +418,6 @@ class BaseRecipe:
 
     @staticmethod
     def _validate_common_args(args):
-        get_runner(args.runner).ensure_available()
-
         # ---- scoring functions validation ----
         if args.scoring_functions is not None:
             invalid = set(args.scoring_functions) - set(SCORING_FUNCTIONS)
@@ -367,12 +427,22 @@ class BaseRecipe:
         # ---- path validation ----
         BaseRecipe._validate_system_path(args)
         BaseRecipe._validate_existing_file_arg(args.options_path, '--options_path')
+        BaseRecipe._validate_bias_args(args)
         
         if args.sdf_file is not None:
             BaseRecipe._validate_existing_file_arg(args.sdf_file, '--sdf_file')
 
         # ---- conformer/sdf validation ----
-        if args.conformers == 'sdf' and args.sdf_file is None:
+        screen_library = getattr(args, 'library', None)
+        screen_library_format = getattr(args, 'library_format', None)
+        is_structure_library = bool(screen_library) and (
+            screen_library_format in {'sdf', 'mol'}
+            or (
+                screen_library_format is None
+                and Path(screen_library).suffix.lower() in {'.sdf', '.sd', '.mol'}
+            )
+        )
+        if args.conformers == 'sdf' and args.sdf_file is None and not is_structure_library:
             raise ValueError(
                 '--sdf_file must be provided when --conformers is "sdf"'
             )
@@ -382,19 +452,43 @@ class BaseRecipe:
             pass
 
     @staticmethod
+    def _validate_bias_source_mode(args):
+        database_paths = bool(
+            getattr(args, 'bias_training_data_protein_path', None)
+            or getattr(args, 'bias_training_data_ligand_path', None)
+        )
+        legacy = bool(
+            getattr(args, 'protein_training_data_path', None)
+            or getattr(args, 'ligand_training_data_path', None)
+            or getattr(args, 'build_bias_training_data', False)
+        )
+        if database_paths and legacy:
+            raise ValueError(
+                'Database-backed bias paths cannot be combined with legacy '
+                '--protein_training_data_path, --ligand_training_data_path, or '
+                '--build_bias_training_data.'
+            )
+
+    @staticmethod
     def _validate_bias_args(args):
         BaseRecipe._validate_system_path(args)
+        BaseRecipe._validate_bias_source_mode(args)
+        from cofolder.modules.analytics.bias_database import parse_bias_release_policy
 
-        try:
-            threshold = float(args.bias_ligand_similarity_threshold)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                '--bias_ligand_similarity_threshold must be a number between 0 and 1.'
-            ) from exc
-        if threshold < 0.0 or threshold > 1.0:
-            raise ValueError(
-                '--bias_ligand_similarity_threshold must be between 0 and 1.'
-            )
+        parse_bias_release_policy(args.bias_release_cutoff)
+
+        for name in (
+            'bias_protein_similarity_threshold',
+            'bias_ligand_similarity_threshold',
+        ):
+            try:
+                threshold = float(getattr(args, name))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f'--{name} must be a number between 0 and 1.'
+                ) from exc
+            if threshold < 0.0 or threshold > 1.0:
+                raise ValueError(f'--{name} must be between 0 and 1.')
 
         if args.build_bias_training_data:
             if args.protein_training_data_path is None:
@@ -419,18 +513,6 @@ class BaseRecipe:
                         "components.cif path for bias-training build is not a file: "
                         f"{default_components_cif}."
                     )
-        has_any_source = bool(
-            args.build_bias_training_data
-            or args.protein_training_data_path
-            or args.ligand_training_data_path
-            or getattr(args, "custom_protein_reference_path", None)
-            or getattr(args, "custom_ligand_reference_path", None)
-        )
-        if not has_any_source:
-            raise ValueError(
-                'Standalone bias requires at least one public or custom reference input.'
-            )
-
         if (
             not args.build_bias_training_data
             and args.protein_training_data_path is not None
@@ -460,6 +542,15 @@ class BaseRecipe:
                 '--custom_ligand_reference_path',
                 {'.csv', '.sdf'},
             )
+        custom_bundle = getattr(args, "custom_bias_reference_path", None)
+        if custom_bundle is not None:
+            if custom_protein_reference_path or custom_ligand_reference_path:
+                raise ValueError(
+                    '--custom_bias_reference_path cannot be combined with paired custom reference paths.'
+                )
+            path = Path(custom_bundle)
+            if not path.is_dir():
+                raise ValueError(f'--custom_bias_reference_path is not a directory: {path}')
 
     @classmethod
     def setup(cls, args):
@@ -484,6 +575,11 @@ class BaseRecipe:
 
         return logger
 
+    @staticmethod
+    def _print_preflight(report):
+        print(report.format_text())
+        return 0 if report.ready else 2
+
 class ValidateRecipe(BaseRecipe):
     LOGGER_NAME = "cofolder.validate"
 
@@ -494,14 +590,16 @@ class ValidateRecipe(BaseRecipe):
 
     @staticmethod
     def main(args):
+        BaseRecipe._validate_common_args(args)
+        validate_cls = _load_recipe_class("cofolder.recipes.validate", "Validate")
+        validator = validate_cls(**BaseRecipe.common_kwargs(args))
+        if args.preflight_only:
+            return BaseRecipe._print_preflight(validator.preflight())
+
         logger = ValidateRecipe.setup(args)
         logger.info("Starting COFOLDER validation pipeline.")
 
-        validate_cls = _load_recipe_class("cofolder.recipes.validate", "Validate")
-        validator = validate_cls(**BaseRecipe.common_kwargs(args))
-
         validator.run()
-        logger.info("Validation pipeline completed.")
 
 
 class ScreenRecipe(BaseRecipe):
@@ -511,17 +609,34 @@ class ScreenRecipe(BaseRecipe):
     def add_arguments(parser):
         BaseRecipe.add_common_arguments(parser)
 
+        parser.add_argument('-c', '--library', type=str, required=True)
         parser.add_argument(
-            '-v', '--variable',
-            type=str,
+            '--library_format', choices=['csv', 'sdf', 'mol'], default=None,
+            help='Library format; inferred from the file extension when omitted.'
+        )
+        parser.add_argument(
+            '--ligand_chain', type=str, default=None,
+            help='Ligand chain to replace; inferred for a unique ligand entity.'
+        )
+        parser.add_argument('--smiles_column', type=str, default=None)
+        parser.add_argument('--col_id', type=str, default=None)
+        parser.add_argument(
+            '--map',
+            dest='mappings',
             action='append',
             default=None,
-            help='Repeatable comma-separated YAML path(s) to update.'
+            metavar='COLUMN=YAML_PATH',
+            help=(
+                'Map a CSV column to an existing system YAML field. Repeat for '
+                'multi-parameter screens; list indices are zero-based.'
+            ),
         )
-
-        parser.add_argument('-c', '--variable_csv', type=str, required=True)
-        parser.add_argument('--col_variable', type=str, action='append', default=None)
-        parser.add_argument('--col_id', type=str, required=True)
+        parser.add_argument('--id_property', type=str, default='_Name')
+        parser.add_argument(
+            '--duplicate_id_policy',
+            choices=['reject', 'suffix', 'source_index'],
+            default='reject',
+        )
 
         parser.add_argument(
             '--merge_data',
@@ -538,10 +653,45 @@ class ScreenRecipe(BaseRecipe):
             ),
         )
         parser.add_argument(
-            "--ifp_ligand_chain",
-            type=str,
+            "--ifp_filter_source",
+            choices=["auto", "reference_complex", "custom_pocket"],
+            default="auto",
+            help="Source for IFP filtering (default: infer custom pocket first, then reference complex).",
+        )
+        parser.add_argument(
+            "--ifp_taxonomy",
+            choices=["distance", "prolif"],
+            default="distance",
+            help="Interaction taxonomy for filtering and clustering; ProLIF is opt-in and isolated.",
+        )
+        parser.add_argument(
+            "--ifp_similarity_metric",
+            choices=["jaccard", "reference_coverage"],
             default=None,
-            help="Ligand chain to evaluate; required for systems with multiple ligand chains.",
+        )
+        parser.add_argument(
+            "--ifp_filter_policy",
+            choices=["similarity", "required"],
+            default="similarity",
+        )
+        parser.add_argument(
+            "--ifp_required_interaction",
+            dest="ifp_required_interactions",
+            action="append",
+            default=None,
+            metavar="CHAIN:RESNUM[ICODE]:TYPE",
+        )
+        parser.add_argument(
+            "--ifp_reference_ligand",
+            default=None,
+            metavar="CHAIN[:RESNUM[ICODE]]",
+        )
+        parser.add_argument(
+            "--ifp_reference_receptor_chain",
+            dest="ifp_reference_receptor_chains",
+            action="append",
+            default=None,
+            metavar="CHAIN",
         )
         parser.add_argument(
             "--cluster_ifps",
@@ -563,33 +713,37 @@ class ScreenRecipe(BaseRecipe):
 
     @staticmethod
     def main(args):
-        logger = ScreenRecipe.setup(args)
-        logger.info("Starting COFOLDER screening pipeline.")
-
-        if not args.variable or not args.col_variable:
-            raise ValueError("At least one --variable/--col_variable pair is required.")
-        if len(args.variable) != len(args.col_variable):
-            raise ValueError(
-                "Number of --variable entries must match number of --col_variable entries. "
-                f"Got variable={len(args.variable)} col_variable={len(args.col_variable)}."
-            )
-
+        BaseRecipe._validate_common_args(args)
         screen_cls = _load_recipe_class("cofolder.recipes.screen", "Screen")
         screener = screen_cls(
-            variable=args.variable,
-            variable_csv=args.variable_csv,
-            col_variable=args.col_variable,
+            library=args.library,
+            library_format=args.library_format,
+            ligand_chain=args.ligand_chain,
+            smiles_column=args.smiles_column,
             col_id=args.col_id,
+            id_property=args.id_property,
+            duplicate_id_policy=args.duplicate_id_policy,
+            mappings=args.mappings,
             merge_data=args.merge_data,
             ifp_filter_threshold=args.ifp_filter_threshold,
-            ifp_ligand_chain=args.ifp_ligand_chain,
+            ifp_filter_source=args.ifp_filter_source,
+            ifp_taxonomy=args.ifp_taxonomy,
+            ifp_similarity_metric=args.ifp_similarity_metric,
+            ifp_filter_policy=args.ifp_filter_policy,
+            ifp_required_interactions=args.ifp_required_interactions,
+            ifp_reference_ligand=args.ifp_reference_ligand,
+            ifp_reference_receptor_chains=args.ifp_reference_receptor_chains,
             cluster_ifps=args.cluster_ifps,
             ifp_cluster_similarity_threshold=args.ifp_cluster_similarity_threshold,
             **BaseRecipe.common_kwargs(args),
         )
+        if args.preflight_only:
+            return BaseRecipe._print_preflight(screener.preflight())
+
+        logger = ScreenRecipe.setup(args)
+        logger.info("Starting COFOLDER screening pipeline.")
 
         screener.run()
-        logger.info("Screening pipeline completed.")
 
 
 class OracleRecipe(BaseRecipe):
@@ -624,25 +778,33 @@ class OracleRecipe(BaseRecipe):
             default="first",
             help="Aggregation applied when multiple metric rows are present."
         )
+        parser.add_argument(
+            "--ligand_chain",
+            type=str,
+            default=None,
+            help="Ligand chain to replace; required for systems with multiple ligands.",
+        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
     def main(args):
-        logger = OracleRecipe.setup(args)
-        logger.info("Starting COFOLDER oracle pipeline.")
-
+        BaseRecipe._validate_common_args(args)
         oracle_cls = _load_recipe_class("cofolder.recipes.oracle", "Oracle")
         oracle = oracle_cls(
             input_smiles=args.input_smiles,
             input_mol_file=args.input_mol_file,
             output_metric=args.output_metric,
             aggregate=args.aggregate,
+            ligand_chain=args.ligand_chain,
             **BaseRecipe.common_kwargs(args),
         )
+        if args.preflight_only:
+            return BaseRecipe._print_preflight(oracle.preflight())
 
-        value = oracle.run()
-        logger.info("Oracle value (%s, aggregate=%s): %s", args.output_metric, args.aggregate, value)
-        logger.info("Oracle pipeline completed.")
+        logger = OracleRecipe.setup(args)
+        logger.info("Starting COFOLDER oracle pipeline.")
+
+        oracle.run()
 
 
 class BiasRecipe(BaseRecipe):
@@ -654,18 +816,24 @@ class BiasRecipe(BaseRecipe):
         BaseRecipe.add_workdir_and_system_arguments(parser)
         BaseRecipe.add_bias_arguments(parser)
         BaseRecipe.add_custom_bias_arguments(parser)
+        parser.add_argument(
+            '--preflight_only', action='store_true',
+            help='Validate and describe the workflow without database searches.'
+        )
         BaseRecipe.add_final_arguments(parser)
 
     @staticmethod
     def main(args):
+        BaseRecipe._validate_bias_args(args)
+        bias_cls = _load_recipe_class("cofolder.recipes.bias", "Bias")
+        bias = bias_cls(**BaseRecipe.bias_kwargs(args))
+        if args.preflight_only:
+            return BaseRecipe._print_preflight(bias.preflight())
+
         logger = BiasRecipe.setup(args)
         logger.info("Starting COFOLDER standalone bias pipeline.")
 
-        bias_cls = _load_recipe_class("cofolder.recipes.bias", "Bias")
-        bias = bias_cls(**BaseRecipe.bias_kwargs(args))
-
         bias.run()
-        logger.info("Standalone bias pipeline completed.")
 
 
 RECIPES = [
@@ -686,11 +854,34 @@ def main(argv=None):
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     for name, recipe, help_text in RECIPES:
-        sp = subparsers.add_parser(name, help=help_text)
+        sp = subparsers.add_parser(
+            name,
+            help=help_text,
+            epilog=(
+                "Start from packaged inputs with: "
+                "cofolder-tools copy-examples ./cofolder-example"
+            ),
+        )
         recipe.add_arguments(sp)
         sp.set_defaults(func=recipe.main)
 
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(raw_argv)
     args._cli_argv = raw_argv
-    args.func(args)
+    try:
+        result = args.func(args)
+    except InputValidationError as exc:
+        logging.error("%s", exc)
+        return 2
+    except ValueError as exc:
+        logging.error("%s", exc)
+        return 2
+    except WorkflowExecutionError as exc:
+        logging.error("%s", exc)
+        if exc.failures and all(
+            failure.stage == FailureStage.INPUT_VALIDATION
+            for failure in exc.failures
+        ):
+            return 2
+        return 1
+    return int(result or 0)

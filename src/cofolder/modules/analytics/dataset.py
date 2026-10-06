@@ -53,8 +53,19 @@ def parse_censored_affinity(
             return (float(val), None)
         except ValueError:
             return (None, None)
-    parsed = affinity_series.apply(split_sign)
-    df = pd.DataFrame(parsed.tolist(), columns=['affinity_value', 'affinity_sign'])
+    parsed = affinity_series.apply(split_sign).tolist()
+    df = pd.DataFrame(
+        {
+            'affinity_value': [value for value, _sign in parsed],
+            # Pandas 3 infers a dedicated string dtype here and converts None to
+            # NaN.  The public helper promises str-or-None values, so retain an
+            # object column explicitly across supported pandas versions.
+            'affinity_sign': pd.Series(
+                [sign for _value, sign in parsed],
+                dtype=object,
+            ),
+        }
+    )
     if not keep_sign:
         df['affinity_sign'] = None
     return df

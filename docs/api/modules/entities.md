@@ -18,4 +18,3 @@ This module contains entity-related functionality for handling ligands and molec
         - iterate_sdf_records
         - csv_to_sdf
         - mol_to_ccd
-        - cache_mols_from_sdf

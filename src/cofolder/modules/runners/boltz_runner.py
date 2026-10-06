@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import json
 import logging
 import re
@@ -13,8 +12,12 @@ from typing import Any, Collection, Sequence
 import pandas as pd
 
 from cofolder.modules.analytics import stats
-from cofolder.modules.input.command import Command
+from cofolder.modules.input.config import BOLTZ_OPTIONS_SCHEMA, RunnerOptions
+from cofolder.modules.input.ligand import LigandPreparationCapabilities
 from cofolder.modules.input.system import iter_system_chains
+from cofolder.modules.runners._boltz_command import build_boltz_command
+from cofolder.modules.runners._command_reporting import command_report
+from cofolder.modules.runners._ligand_preparation import prepare_ligand_conformers
 from cofolder.modules.runners.base import BaseRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionRequest,
@@ -22,6 +25,11 @@ from cofolder.modules.runners.contracts import (
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
+    attach_runner_provenance,
+    attach_sample_provenance,
+    backend_manifest_value,
+    build_runner_public_records,
+    seed_manifest_value,
 )
 from cofolder.modules.runners.msa import capture_generated_msas, inject_cached_msas
 from cofolder.modules.utils import read
@@ -120,7 +128,8 @@ def run_boltz(
 ) -> subprocess.CompletedProcess:
     """Execute a Boltz command via subprocess and log stdout/stderr in real-time."""
     start_time = perf_counter()
-    logger.info("Running: %s", " ".join(cmd))
+    report = command_report(cmd)
+    logger.info("Running: %s", " ".join(report.argv))
 
     process = subprocess.Popen(
         cmd,
@@ -135,7 +144,7 @@ def run_boltz(
     timed_lines: list[tuple[float, str]] = []
     assert process.stdout is not None
     for line in process.stdout:
-        line = line.rstrip()
+        line = report.redact_text(line.rstrip()) or ""
         output_lines.append(line)
         timed_lines.append((perf_counter() - start_time, line))
         logger.info(line)
@@ -153,10 +162,12 @@ def run_boltz(
     )
 
     if check and retcode != 0:
-        raise subprocess.CalledProcessError(retcode, cmd, "\n".join(output_lines))
+        raise subprocess.CalledProcessError(
+            retcode, list(report.argv), "\n".join(output_lines)
+        )
 
     return subprocess.CompletedProcess(
-        args=cmd,
+        args=list(report.argv),
         returncode=retcode,
         stdout="\n".join(output_lines),
     )
@@ -172,7 +183,12 @@ class BoltzRunner(BaseRunner):
         "affinity_metrics_ext",
     }
     model_name: str | None = "boltz2"
+    command_model_name: str | None = "boltz2"
     supports_msa_reuse = True
+    options_schema = BOLTZ_OPTIONS_SCHEMA
+    ligand_preparation_capabilities = LigandPreparationCapabilities(
+        native_smiles=True, conformer_modes=frozenset({"2D", "3D", "sdf"})
+    )
 
     _msa_reuse_option_names = (
         "msa_server_url",
@@ -180,16 +196,14 @@ class BoltzRunner(BaseRunner):
         "max_msa_seqs",
     )
 
-    def msa_reuse_settings(self, options_obj: Command) -> dict[str, Any]:
+    def msa_reuse_settings(self, options_obj: RunnerOptions) -> dict[str, Any]:
         """Return the Boltz settings that determine generated MSA artifacts."""
 
         configured: dict[str, Any] = {}
-        for item in options_obj.options.get("options", []):
-            if not isinstance(item, dict):
-                continue
-            for name in self._msa_reuse_option_names:
-                if name in item and item[name] not in (None, "None"):
-                    configured[name] = item[name]
+        for name in self._msa_reuse_option_names:
+            value = options_obj.runner.get(name)
+            if value is not None:
+                configured[name] = value
 
         distribution = "boltz-community" if self.name == "boltz-community" else "boltz"
         version = self.get_distribution_version(distribution)
@@ -226,15 +240,13 @@ class BoltzRunner(BaseRunner):
             settings=settings,
         )
 
-    def load_options(self, options_path: Path) -> Command:
-        command = Command(options_path=str(options_path))
-        self._set_command_option(command, "model", self.model_name)
-        return command
+    def load_options(self, options_path: Path) -> RunnerOptions:
+        return self._load_typed_options(options_path)
 
     def prepare_system(
         self,
         system_obj: Any,
-        options_obj: Command,
+        options_obj: RunnerOptions,
         wrk_dir: Path,
         conformers: str | None,
         sdf_file: Path | None,
@@ -243,16 +255,14 @@ class BoltzRunner(BaseRunner):
         warnings: list[str] = []
         runtime = RunnerRuntime(
             cache_path=options_obj.find_value(key="cache") or "~/.boltz",
-            diffusion_samples=int(options_obj.find_value(key="diffusion_samples") or 1),
+            diffusion_samples=options_obj.runtime.diffusion_samples,
             model_name=self.model_name,
         )
 
         if conformers:
-            from cofolder.modules.entities import ligand
-
-            ligand.handle_conformers(
-                sys_obj=system_obj,
-                opt_obj=options_obj,
+            prepare_ligand_conformers(
+                system_obj,
+                cache_path=options_obj.runtime.cache_path or "~/.boltz",
                 wrk_dir=wrk_dir,
                 conformers=conformers,
                 sdf_file=sdf_file,
@@ -267,12 +277,25 @@ class BoltzRunner(BaseRunner):
         )
 
     def run(self, request: RunnerExecutionRequest) -> RunnerExecutionResult:
-        options_obj = Command(options=copy.deepcopy(request.options_obj.options))
-        options_obj.seed = request.seed
-        options_obj.out_dir = request.repeat_dir
-        options_obj.system_path = request.system_path
+        options_obj = request.options_obj
+        if not isinstance(options_obj, RunnerOptions):
+            raise TypeError("BoltzRunner requires RunnerOptions from load_options().")
 
-        cmd = options_obj.set_command(system=request.system_obj)
+        sequences = request.system_obj.find_value(key="sequences") or []
+        missing_protein_msa = any(
+            isinstance(entry, dict)
+            and isinstance(entry.get("protein"), dict)
+            and not str(entry["protein"].get("msa") or "").strip()
+            for entry in sequences
+        )
+        cmd = build_boltz_command(
+            options=options_obj,
+            system_path=request.system_path,
+            output_dir=request.repeat_dir,
+            seed=request.seed,
+            model_name=self.command_model_name,
+            use_msa_server=missing_protein_msa,
+        )
         run_boltz(
             cmd,
             timings=request.timings,
@@ -289,7 +312,7 @@ class BoltzRunner(BaseRunner):
         structures_dir = normalized_dir / "structures"
         structures_dir.mkdir(parents=True, exist_ok=True)
 
-        diffusion_samples = int(options_obj.find_value(key="diffusion_samples") or 1)
+        diffusion_samples = options_obj.runtime.diffusion_samples
         sample_records = self._copy_structures(
             raw_output_dir=raw_output_dir,
             target_dir=structures_dir,
@@ -302,6 +325,9 @@ class BoltzRunner(BaseRunner):
             request=request,
             diffusion_samples=diffusion_samples,
         )
+        system_df = attach_runner_provenance(system_df, request)
+        chain_df = attach_runner_provenance(chain_df, request)
+        sample_records = attach_sample_provenance(sample_records, request)
 
         system_metrics_path = normalized_dir / "system_metrics.csv"
         chain_metrics_path = normalized_dir / "chain_metrics.csv"
@@ -319,6 +345,8 @@ class BoltzRunner(BaseRunner):
         manifest_path = normalized_dir / "manifest.json"
         manifest = {
             "runner": self.name,
+            "backend": backend_manifest_value(request.backend_identity),
+            "seed": seed_manifest_value(request.seed_provenance),
             "capabilities": sorted(self.capabilities),
             "repeat": request.repeat,
             "raw_output_dir": str(raw_output_dir),
@@ -351,6 +379,10 @@ class BoltzRunner(BaseRunner):
             runtime=runtime,
             sample_records=sample_records,
             metric_outcomes=metric_outcomes,
+            chain_identities=request.chain_identities,
+            records=build_runner_public_records(system_df, chain_df, request),
+            backend_identity=request.backend_identity,
+            seed_provenance=request.seed_provenance,
         )
 
     def _copy_structures(
@@ -408,7 +440,7 @@ class BoltzRunner(BaseRunner):
             conf_data = read.read_json(conf_path) if conf_path.exists() else {}
             system_row = {
                 "cif_file": f"{request.repeat}_{request.system_name}_model_{sample_idx}.cif",
-                "model_name": request.system_name,
+                "model_name": request.runtime.model_name or self.name,
                 "repeat": request.repeat,
                 "diffusion_sample": sample_idx,
             }
@@ -436,7 +468,7 @@ class BoltzRunner(BaseRunner):
                 row = {
                     "conf_chain_id": int(conf_chain_id),
                     "cif_file": f"{request.repeat}_{request.system_name}_model_{sample_idx}.cif",
-                    "model_name": request.system_name,
+                    "model_name": request.runtime.model_name or self.name,
                     "repeat": request.repeat,
                     "diffusion_sample": sample_idx,
                 }
@@ -591,32 +623,6 @@ class BoltzRunner(BaseRunner):
             )
 
         return payload or None
-
-    @staticmethod
-    def _set_command_option(command: Command, key: str, value: Any | None) -> None:
-        options = command.options.setdefault("options", [])
-        found = False
-        cleaned_options = []
-
-        for item in options:
-            if not isinstance(item, dict):
-                cleaned_options.append(item)
-                continue
-
-            if key in item:
-                found = True
-                if value is not None:
-                    item[key] = value
-                else:
-                    item = {k: v for k, v in item.items() if k != key}
-
-            if item:
-                cleaned_options.append(item)
-
-        if not found and value is not None:
-            cleaned_options.append({key: value})
-
-        command.options["options"] = cleaned_options
 
     @staticmethod
     def _resolve_binder_chain_id(system_obj: Any) -> int | None:

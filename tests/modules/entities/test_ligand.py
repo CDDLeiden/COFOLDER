@@ -1,10 +1,24 @@
 """Tests for cofolder.modules.entities.ligand module."""
 
+import pickle
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
 from cofolder.modules.entities import ligand
+from cofolder.modules.input import LigandSelectionError, LigandValidationError
+from cofolder.modules.input.ligand import (
+    LigandPreparationCapabilities,
+    LigandSourceIdentity,
+    prepare_ligand,
+    replace_ligand_smiles,
+    resolve_ligand_target,
+    validate_smiles,
+)
+from cofolder.modules.input.system import System
 
 
 class TestSanitizeMolId:
@@ -177,6 +191,56 @@ class TestCsvToSdf:
             )
 
 
+class TestSmilesToSdf:
+    """Tests for direct single- and multi-SMILES conversion."""
+
+    @pytest.mark.parametrize(
+        ("data", "properties", "expected_smiles", "expected_ids"),
+        [
+            ("C[C@H](O)F", {"ID": "CHF"}, ["C[C@H](O)F"], ["CHF"]),
+            (
+                ["CCO", "C[C@@H](O)F"],
+                [{"ID": "ETH"}, {"ID": "CHG"}],
+                ["CCO", "C[C@@H](O)F"],
+                ["ETH", "CHG"],
+            ),
+        ],
+    )
+    def test_round_trip_smiles_with_properties_and_stereochemistry(
+        self, data, properties, expected_smiles, expected_ids, temp_dir
+    ):
+        output = temp_dir / "direct.sdf"
+
+        ligand.smiles_to_sdf(
+            data=data,
+            output_sdf_path=str(output),
+            property_cols=properties,
+        )
+
+        molecules = [
+            molecule
+            for molecule in Chem.SDMolSupplier(str(output), removeHs=False)
+            if molecule is not None
+        ]
+        assert [
+            Chem.MolToSmiles(molecule, isomericSmiles=True)
+            for molecule in molecules
+        ] == expected_smiles
+        assert [molecule.GetProp("ID") for molecule in molecules] == expected_ids
+
+    @pytest.mark.parametrize(
+        "data",
+        ["not-a-smiles", ["CCO", "not-a-smiles"]],
+    )
+    def test_invalid_smiles_fails_without_partial_output(self, data, temp_dir):
+        output = temp_dir / "invalid.sdf"
+
+        with pytest.raises(ValueError, match="Invalid SMILES at index/indices"):
+            ligand.smiles_to_sdf(data=data, output_sdf_path=str(output))
+
+        assert not output.exists()
+
+
 class TestIterateSdfRecords:
     """Tests for iterate_sdf_records function."""
 
@@ -208,21 +272,159 @@ class TestIterateSdfRecords:
 class TestMolToCcd:
     """Tests for mol_to_ccd function."""
 
-    def test_mol_to_ccd(self, temp_dir):
-        """Test converting molecule to CCD format."""
-        mol = Chem.MolFromSmiles("CCO")
-        AllChem.EmbedMolecule(mol)
+    def test_mol_to_ccd_preserves_structure_stereochemistry_and_atom_names(
+        self, monkeypatch, temp_dir
+    ):
+        """Test conversion without requiring an installed Boltz backend."""
+        mol = Chem.MolFromSmiles("C[C@H](O)F")
+        AllChem.Compute2DCoords(mol)
+        parsed = SimpleNamespace(
+            rdkit_bounds_constraints=[],
+            chiral_atom_constraints=[],
+            stereo_bond_constraints=[],
+            planar_ring_5_constraints=[],
+            planar_ring_6_constraints=[],
+            planar_bond_constraints=[],
+        )
+        monkeypatch.setattr(
+            ligand, "_load_parse_ccd_residue", lambda: lambda *args: parsed
+        )
 
-        # This function interacts with Boltz's CCD system
-        # We'll test that it doesn't raise an error
-        try:
-            ligand.mol_to_ccd(
-                resname="ETH",
-                mol=mol,
-                boltz_path=str(temp_dir),
-                on_conflict="overwrite"
-            )
-        except Exception:
-            # The actual CCD conversion might fail without Boltz installed
-            # We just want to make sure the function is callable
-            pass
+        ligand.mol_to_ccd(resname="CHF", mol=mol, boltz_path=temp_dir)
+
+        with (temp_dir / "mols" / "CHF.pkl").open("rb") as stream:
+            cached = pickle.load(stream)
+        assert Chem.MolToSmiles(cached, isomericSmiles=True) == "C[C@H](O)F"
+        assert cached.GetNumAtoms() == mol.GetNumAtoms()
+        assert cached.GetNumBonds() == mol.GetNumBonds()
+        assert [atom.GetProp("name") for atom in cached.GetAtoms()] == [
+            "C1",
+            "C2",
+            "O3",
+            "F4",
+        ]
+
+    @pytest.mark.parametrize("identifier", ["", "TOO-LONG", "BAD_ID", "A B"])
+    def test_mol_to_ccd_rejects_invalid_identifier(self, identifier, temp_dir):
+        with pytest.raises(ValueError, match="CCD identifier"):
+            ligand.mol_to_ccd(identifier, Chem.MolFromSmiles("CCO"), temp_dir)
+
+
+def _write_cache_sdf(path: Path, records: list[tuple[str | None, str]]) -> None:
+    writer = Chem.SDWriter(str(path))
+    for identifier, smiles in records:
+        mol = Chem.MolFromSmiles(smiles)
+        if identifier is not None:
+            mol.SetProp("ID", identifier)
+        writer.write(mol)
+    writer.close()
+
+
+def _complete_boltz2_cache(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "boltz2_conf.ckpt").write_bytes(b"checkpoint")
+    (path / "mols.tar").write_bytes(b"archive")
+    mols = path / "mols"
+    mols.mkdir(exist_ok=True)
+    (mols / "ALA.pkl").write_bytes(b"alanine")
+    (mols / "GLY.pkl").write_bytes(b"glycine")
+
+
+# Shared ligand-input contract -------------------------------------------------
+
+
+def test_validate_smiles_preserves_source_identity_and_stereochemistry():
+    source = LigandSourceIdentity("entity:1", ("B",), "CMPD-1")
+
+    normalized = validate_smiles(" C[C@H](O)F ", source=source)
+
+    assert normalized.source == source
+    assert "@" in normalized.canonical_smiles
+
+
+def test_invalid_smiles_reports_entity_and_source_record():
+    source = LigandSourceIdentity("entity:1", ("B",), "CMPD-9")
+
+    with pytest.raises(LigandValidationError) as caught:
+        validate_smiles("not smiles", source=source)
+
+    assert caught.value.entity_id == "entity:1"
+    assert caught.value.chain_id == "B"
+    assert caught.value.source_record_id == "CMPD-9"
+
+
+def test_ligand_replacement_changes_only_selected_chemistry():
+    original = System(
+        system={
+            "name": "fixed",
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC", "msa": "empty"}},
+                {"ligand": {"id": ["B", "C"], "ccd": "ETH", "note": "keep"}},
+                {"ligand": {"id": "D", "smiles": "CCN"}},
+            ],
+            "constraints": [{"pocket": {"binder": "B", "contacts": [["A", 1]]}}],
+        }
+    )
+    target = resolve_ligand_target(original, "C")
+    normalized = validate_smiles(
+        "C(C)O", source=LigandSourceIdentity(target.entity_id, target.chain_ids)
+    )
+
+    replaced = replace_ligand_smiles(original, target=target, ligand=normalized)
+
+    assert original.system["sequences"][1]["ligand"]["ccd"] == "ETH"
+    ligand = replaced.system["sequences"][1]["ligand"]
+    assert ligand == {"id": ["B", "C"], "note": "keep", "smiles": "CCO"}
+    assert replaced.system["sequences"][0] == original.system["sequences"][0]
+    assert replaced.system["sequences"][2] == original.system["sequences"][2]
+    assert replaced.system["constraints"] == original.system["constraints"]
+
+
+def test_ligand_selector_rejects_non_ligand_chain():
+    value = System(
+        system={"sequences": [{"protein": {"id": "A", "sequence": "AC"}}]}
+    )
+
+    with pytest.raises(LigandSelectionError, match="not a ligand"):
+        resolve_ligand_target(value, "A")
+
+
+def test_prepare_ligand_rejects_unsupported_conformer_mode(temp_dir):
+    normalized = validate_smiles(
+        "CCO", source=LigandSourceIdentity("entity:1", ("B",))
+    )
+
+    with pytest.raises(LigandValidationError, match="does not support 3D"):
+        prepare_ligand(
+            normalized,
+            mode="3D",
+            sdf_path=None,
+            capabilities=LigandPreparationCapabilities(
+                native_smiles=True, conformer_modes=frozenset()
+            ),
+            work_dir=temp_dir,
+        )
+
+
+def test_prepare_ligand_rejects_mismatched_sdf_chemistry(temp_dir):
+    normalized = validate_smiles(
+        "CCO", source=LigandSourceIdentity("entity:1", ("B",), "CMPD-1")
+    )
+    sdf_path = temp_dir / "different.sdf"
+    writer = Chem.SDWriter(str(sdf_path))
+    writer.write(Chem.MolFromSmiles("CCN"))
+    writer.close()
+
+    with pytest.raises(LigandValidationError, match="does not match") as caught:
+        prepare_ligand(
+            normalized,
+            mode="sdf",
+            sdf_path=sdf_path,
+            capabilities=LigandPreparationCapabilities(
+                native_smiles=True, conformer_modes=frozenset({"sdf"})
+            ),
+            work_dir=temp_dir,
+        )
+
+    assert caught.value.source_record_id == "CMPD-1"
+    assert caught.value.source_path == sdf_path

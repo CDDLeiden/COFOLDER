@@ -8,8 +8,11 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.cluster.hierarchy import fcluster, linkage
-from scipy.spatial.distance import cdist, pdist
+
+from .reference_ifp import InteractionFingerprint, InteractionKey
+from cofolder.modules.utils._optional_dependencies import (
+    require_analysis_dependency,
+)
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,18 @@ class IFPClusteringResult:
 
     cluster_ids: list[str]
     summary: pd.DataFrame
+    member_ids: tuple[str, ...]
+    linkage_matrix: tuple[tuple[float, float, float, float], ...]
+    leaf_indices: tuple[int, ...]
+    leaf_member_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class IFPVectorizationResult:
+    """Binary matrix and stable feature order used for structured IFP clustering."""
+
+    vectors: list[list[int]]
+    features: tuple[InteractionKey, ...]
 
 
 SUMMARY_COLUMNS = (
@@ -27,6 +42,21 @@ SUMMARY_COLUMNS = (
     "medoid_compound_id",
     "consensus_ifp",
     "mean_within_cluster_jaccard_similarity",
+)
+
+LINKAGE_COLUMNS = (
+    "merge_index",
+    "left_child",
+    "right_child",
+    "jaccard_distance",
+    "member_count",
+)
+
+LEAF_ORDER_COLUMNS = (
+    "leaf_position",
+    "input_index",
+    "member_id",
+    "ifp_cluster_id",
 )
 
 
@@ -44,8 +74,15 @@ def cluster_binary_ifps(
 
     if len(fingerprints) != len(member_ids):
         raise ValueError("fingerprints and member_ids must have equal length")
+    member_ids_as_text = tuple(str(value) for value in member_ids)
+    if any(not value.strip() for value in member_ids_as_text):
+        raise ValueError("member_ids must be non-empty")
+    if len(set(member_ids_as_text)) != len(member_ids_as_text):
+        raise ValueError("member_ids must be unique")
     if not fingerprints:
-        return IFPClusteringResult([], pd.DataFrame(columns=SUMMARY_COLUMNS))
+        return IFPClusteringResult(
+            [], pd.DataFrame(columns=SUMMARY_COLUMNS), (), (), (), ()
+        )
 
     width = len(fingerprints[0])
     if width == 0 or any(len(value) != width for value in fingerprints):
@@ -54,15 +91,29 @@ def cluster_binary_ifps(
     if features.ndim != 2 or features.shape != (len(fingerprints), width):
         raise ValueError("fingerprints must form a two-dimensional binary matrix")
 
+    hierarchy = require_analysis_dependency(
+        "scipy.cluster.hierarchy",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
+    distance = require_analysis_dependency(
+        "scipy.spatial.distance",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
+
     if len(features) == 1:
         raw_labels = np.array([1], dtype=int)
+        tree = np.empty((0, 4), dtype=float)
+        leaf_indices = (0,)
     else:
-        distances = pdist(features, metric="jaccard")
+        distances = distance.pdist(features, metric="jaccard")
         # Explicitly define the empty-set Jaccard distance as zero. This keeps
         # all-zero fingerprints as one reproducible "no contacts" pattern.
         distances = np.nan_to_num(distances, nan=0.0)
-        tree = linkage(distances, method="average", optimal_ordering=False)
-        raw_labels = fcluster(
+        tree = hierarchy.linkage(distances, method="average", optimal_ordering=False)
+        leaf_indices = tuple(int(value) for value in hierarchy.leaves_list(tree))
+        raw_labels = hierarchy.fcluster(
             tree,
             t=1.0 - float(similarity_threshold),
             criterion="distance",
@@ -79,7 +130,6 @@ def cluster_binary_ifps(
     cluster_ids = [stable_names[label] for label in raw_labels]
 
     rows: list[dict[str, object]] = []
-    member_ids_as_text = [str(value) for value in member_ids]
     for raw_label in ordered_raw_labels:
         positions = np.flatnonzero(raw_labels == raw_label)
         cluster_features = features[positions]
@@ -102,6 +152,62 @@ def cluster_binary_ifps(
     return IFPClusteringResult(
         cluster_ids=cluster_ids,
         summary=pd.DataFrame(rows, columns=SUMMARY_COLUMNS),
+        member_ids=member_ids_as_text,
+        linkage_matrix=tuple(
+            tuple(float(value) for value in row) for row in tree.tolist()
+        ),
+        leaf_indices=leaf_indices,
+        leaf_member_ids=tuple(member_ids_as_text[index] for index in leaf_indices),
+    )
+
+
+def vectorize_interaction_fingerprints(
+    fingerprints: Sequence[InteractionFingerprint],
+    *,
+    feature_universe: Sequence[InteractionKey] | None = None,
+) -> IFPVectorizationResult:
+    """Vectorize compatible typed fingerprints using canonical feature ordering."""
+
+    if not fingerprints:
+        return IFPVectorizationResult([], tuple(sorted(feature_universe or ())))
+    taxonomies = {item.taxonomy for item in fingerprints}
+    if len(taxonomies) != 1:
+        raise ValueError("fingerprints must use one interaction taxonomy")
+    features = tuple(
+        sorted(
+            set(feature_universe or ())
+            | {
+                feature
+                for fingerprint in fingerprints
+                for feature in fingerprint.interactions
+            }
+        )
+    )
+    if not features:
+        # Preserve a meaningful all-zero dimension for no-contact fingerprints.
+        sentinel = InteractionKey.parse("_:0:no_interactions")
+        features = (sentinel,)
+    vectors = [
+        [int(feature in fingerprint.interactions) for feature in features]
+        for fingerprint in fingerprints
+    ]
+    return IFPVectorizationResult(vectors, features)
+
+
+def cluster_interaction_fingerprints(
+    fingerprints: Sequence[InteractionFingerprint],
+    member_ids: Sequence[str],
+    *,
+    similarity_threshold: float,
+    feature_universe: Sequence[InteractionKey] | None = None,
+) -> IFPClusteringResult:
+    """Cluster typed fingerprints through their deterministic binary matrix."""
+
+    vectorized = vectorize_interaction_fingerprints(
+        fingerprints, feature_universe=feature_universe
+    )
+    return cluster_binary_ifps(
+        vectorized.vectors, member_ids, similarity_threshold=similarity_threshold
     )
 
 
@@ -112,11 +218,16 @@ def _cluster_medoid_and_mean_similarity(features: np.ndarray) -> tuple[int, floa
     if size == 1:
         return 0, 1.0
 
+    distance = require_analysis_dependency(
+        "scipy.spatial.distance",
+        feature="Interaction-fingerprint clustering",
+        dependency_name="scipy",
+    )
     distance_sums = np.zeros(size, dtype=float)
     block_size = 256
     for start in range(0, size, block_size):
         stop = min(start + block_size, size)
-        block = cdist(features[start:stop], features, metric="jaccard")
+        block = distance.cdist(features[start:stop], features, metric="jaccard")
         block = np.nan_to_num(block, nan=0.0)
         distance_sums[start:stop] = block.sum(axis=1)
 

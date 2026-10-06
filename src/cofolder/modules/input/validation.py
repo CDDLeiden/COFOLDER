@@ -2,19 +2,59 @@
 
 from __future__ import annotations
 
-import pickle
 import math
+import pickle
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from rdkit import Chem
 
-from cofolder.modules.input.system import SUPPORTED_ENTITY_TYPES, System, SystemChain
-from cofolder.modules.runners.contracts import RunnerInputCapabilities
+from cofolder.modules.input.config import (
+    MsaValidationError,
+    SequenceValidationError,
+    SystemInputValidationError,
+)
+from cofolder.modules.input.system import (
+    SUPPORTED_ENTITY_TYPES,
+    System,
+    SystemChain,
+    iter_system_chains,
+)
+from cofolder.modules.runners.contracts import (
+    RunnerChainIdentity,
+    RunnerInputCapabilities,
+    build_runner_chain_identities,
+)
 
 
-class SystemInputValidationError(ValueError):
-    """Raised when a system cannot be faithfully handled by a selected runner."""
+@dataclass(frozen=True, slots=True)
+class WorkflowInputRequirements:
+    require_protein: bool = False
+    require_ligand: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedEntity:
+    entity_id: str
+    sequence_index: int
+    entity_type: Literal["protein", "ligand", "dna", "rna"]
+    chain_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ValidatedSystem:
+    system: System
+    entities: tuple[ValidatedEntity, ...]
+    chain_identities: tuple[RunnerChainIdentity, ...]
+
+
+_SEQUENCE_ALPHABETS = {
+    "protein": frozenset("ACDEFGHIKLMNPQRSTVWYX"),
+    "dna": frozenset("ACGTN"),
+    "rna": frozenset("ACGUN"),
+}
 
 
 _PROTEIN_SIDECHAIN_ATOMS = {
@@ -73,14 +113,26 @@ def _root(system_obj: Any) -> dict[str, Any]:
     return value
 
 
-def _error(runner_name: str, message: str) -> SystemInputValidationError:
+def _error(
+    runner_name: str,
+    message: str,
+    *,
+    source_path: Path | None = None,
+    field_path: tuple[str | int, ...] = (),
+) -> SystemInputValidationError:
     return SystemInputValidationError(
-        f"Runner '{runner_name}' cannot accept this system: {message}"
+        f"Runner '{runner_name}' cannot accept this system: {message}",
+        source_path=source_path,
+        field_path=field_path,
     )
 
 
 def _validated_chains(
-    root: dict[str, Any], runner_name: str, capabilities: RunnerInputCapabilities
+    root: dict[str, Any],
+    runner_name: str,
+    capabilities: RunnerInputCapabilities,
+    *,
+    source_path: Path | None,
 ) -> list[SystemChain]:
     sequences = root.get("sequences")
     if not isinstance(sequences, list) or not sequences:
@@ -123,12 +175,54 @@ def _validated_chains(
             raise _error(
                 runner_name, f"{entity_type} entry {index} requires 'sequence'."
             )
-        if entity_type == "ligand" and not any(
-            payload.get(key) for key in ("smiles", "ccd", "ccd_codes")
-        ):
-            raise _error(
-                runner_name, f"ligand entry {index} requires 'smiles' or 'ccd'."
+        if entity_type in _SEQUENCE_ALPHABETS:
+            sequence_key = "sequence" if payload.get("sequence") is not None else "fasta"
+            raw_sequence = payload.get(sequence_key)
+            normalized = re.sub(r"\s+", "", str(raw_sequence)).upper()
+            if not normalized:
+                first_chain = str(ids[0])
+                raise SequenceValidationError(
+                    f"{entity_type.title()} sequence is empty for chain "
+                    f"{first_chain!r} (entity:{index}).",
+                    source_path=source_path,
+                    field_path=("sequences", index, entity_type, sequence_key),
+                    entity_id=f"entity:{index}",
+                    chain_id=first_chain,
+                )
+            for position, symbol in enumerate(normalized, 1):
+                if symbol not in _SEQUENCE_ALPHABETS[entity_type]:
+                    first_chain = str(ids[0])
+                    raise SequenceValidationError(
+                        f"Invalid {entity_type} sequence symbol {symbol!r} at residue "
+                        f"{position} for chain {first_chain!r} (entity:{index}).",
+                        source_path=source_path,
+                        field_path=("sequences", index, entity_type, sequence_key),
+                        entity_id=f"entity:{index}",
+                        chain_id=first_chain,
+                        residue_position=position,
+                        character=symbol,
+                    )
+            payload[sequence_key] = normalized
+        if entity_type == "ligand":
+            representation_keys = tuple(
+                key
+                for key in ("smiles", "ccd", "ccd_codes")
+                if _has_ligand_representation(payload.get(key))
             )
+            if not representation_keys:
+                raise _error(
+                    runner_name,
+                    f"ligand entry {index} requires exactly one of "
+                    "'smiles', 'ccd', or 'ccd_codes'.",
+                )
+            if len(representation_keys) > 1:
+                conflicting = ", ".join(repr(key) for key in representation_keys)
+                raise _error(
+                    runner_name,
+                    f"ligand entry {index} defines conflicting representations: "
+                    f"{conflicting}; provide exactly one of 'smiles', 'ccd', or "
+                    "'ccd_codes'.",
+                )
         for raw_id in ids:
             chain_id = str(raw_id)
             if chain_id in seen:
@@ -138,6 +232,108 @@ def _validated_chains(
             seen.add(chain_id)
             chains.append(SystemChain(chain_id, entity_type, payload, index))
     return chains
+
+
+def _has_ligand_representation(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(str(item).strip() for item in value)
+    return bool(value)
+
+
+def _validated_entities(chains: list[SystemChain]) -> tuple[ValidatedEntity, ...]:
+    grouped: dict[int, list[SystemChain]] = {}
+    for chain in chains:
+        grouped.setdefault(chain.sequence_index, []).append(chain)
+    return tuple(
+        ValidatedEntity(
+            entity_id=f"entity:{index}",
+            sequence_index=index,
+            entity_type=items[0].entity_type,  # type: ignore[arg-type]
+            chain_ids=tuple(item.chain_id for item in items),
+        )
+        for index, items in sorted(grouped.items())
+    )
+
+
+def _validate_declared_msas(
+    chains: list[SystemChain], *, source_path: Path | None
+) -> None:
+    from cofolder.modules.runners.msa import read_msa_query
+
+    seen_entries: set[int] = set()
+    for chain in chains:
+        if chain.entity_type != "protein" or chain.sequence_index in seen_entries:
+            continue
+        seen_entries.add(chain.sequence_index)
+        raw = chain.entity_data.get("msa")
+        if raw is None or not str(raw).strip() or str(raw).strip().lower() == "empty":
+            continue
+        path = Path(str(raw)).expanduser()
+        if not path.is_absolute() and source_path is not None:
+            path = (source_path.parent / path).resolve()
+        field_path = ("sequences", chain.sequence_index, "protein", "msa")
+        common = {
+            "source_path": source_path,
+            "field_path": field_path,
+            "entity_id": f"entity:{chain.sequence_index}",
+            "chain_id": chain.chain_id,
+        }
+        if not path.exists():
+            raise MsaValidationError(f"Declared MSA does not exist: {path}", **common)
+        if not path.is_file():
+            raise MsaValidationError(f"Declared MSA is not a file: {path}", **common)
+        if path.suffix.lower() not in {".a3m", ".csv"}:
+            raise MsaValidationError(
+                f"Unsupported MSA format {path.suffix!r}: {path}; expected .a3m or .csv.",
+                **common,
+            )
+        query = read_msa_query(path)
+        if query is None:
+            raise MsaValidationError(f"Declared MSA is unreadable or malformed: {path}", **common)
+        expected = _sequence(chain)
+        if query != expected:
+            raise MsaValidationError(
+                f"Declared MSA query does not match protein chain {chain.chain_id!r}: {path}",
+                **common,
+            )
+        chain.entity_data["msa"] = str(path)
+
+
+def validate_declared_msas(
+    system_obj: System | dict[str, Any], *, source_path: Path | None = None
+) -> None:
+    """Validate every declared protein MSA against its completed system sequence."""
+
+    _validate_declared_msas(list(iter_system_chains(system_obj)), source_path=source_path)
+
+
+def _validate_ligand_smiles(
+    chains: list[SystemChain], *, source_path: Path | None
+) -> None:
+    from cofolder.modules.input.ligand import LigandSourceIdentity, validate_smiles
+
+    seen_entries: set[int] = set()
+    for chain in chains:
+        if chain.entity_type != "ligand" or chain.sequence_index in seen_entries:
+            continue
+        seen_entries.add(chain.sequence_index)
+        raw = chain.entity_data.get("smiles")
+        if raw is None:
+            continue
+        entry_chains = tuple(
+            item.chain_id for item in chains if item.sequence_index == chain.sequence_index
+        )
+        normalized = validate_smiles(
+            raw,
+            source=LigandSourceIdentity(
+                entity_id=f"entity:{chain.sequence_index}", chain_ids=entry_chains
+            ),
+            source_path=source_path,
+            field_path=("sequences", chain.sequence_index, "ligand", "smiles"),
+        )
+        chain.entity_data["smiles"] = normalized.canonical_smiles
 
 
 def _sequence(chain: SystemChain) -> str:
@@ -189,7 +385,7 @@ def _ccd_atom_names(
         return None
     try:
         with mol_path.open("rb") as handle:
-            mol = pickle.load(handle)  # noqa: S301 - runner-owned local cache artifact
+            mol = pickle.load(handle)
     except Exception as exc:
         raise SystemInputValidationError(
             f"Unable to read ligand CCD cache entry {mol_path}: {exc}"
@@ -340,15 +536,38 @@ def _validate_distance(payload: dict[str, Any], runner_name: str, label: str) ->
 def validate_system_input(
     system_obj: Any,
     *,
+    source_path: Path | None = None,
     runner_name: str,
     capabilities: RunnerInputCapabilities,
+    requirements: WorkflowInputRequirements | None = None,
     cache_path: str | None = None,
     check_atom_names: bool = True,
-) -> None:
+) -> ValidatedSystem:
     """Validate entity and constraint data before a backend command is launched."""
 
     root = _root(system_obj)
-    chain_list = _validated_chains(root, runner_name, capabilities)
+    normalized_system = system_obj if isinstance(system_obj, System) else System(system=root)
+    chain_list = _validated_chains(
+        root, runner_name, capabilities, source_path=source_path
+    )
+    requirements = requirements or WorkflowInputRequirements()
+    entity_types = {chain.entity_type for chain in chain_list}
+    if requirements.require_protein and "protein" not in entity_types:
+        raise _error(
+            runner_name,
+            "this workflow requires at least one protein entity.",
+            source_path=source_path,
+            field_path=("sequences",),
+        )
+    if requirements.require_ligand and "ligand" not in entity_types:
+        raise _error(
+            runner_name,
+            "this workflow requires at least one ligand entity.",
+            source_path=source_path,
+            field_path=("sequences",),
+        )
+    _validate_declared_msas(chain_list, source_path=source_path)
+    _validate_ligand_smiles(chain_list, source_path=source_path)
     chains = {chain.chain_id: chain for chain in chain_list}
     constraints = root.get("constraints", [])
     if constraints is None:
@@ -489,3 +708,9 @@ def validate_system_input(
             runner_name,
             f"at most {maximum} pocket constraint(s) are supported, found {pocket_count}.",
         )
+
+    return ValidatedSystem(
+        system=normalized_system,
+        entities=_validated_entities(chain_list),
+        chain_identities=build_runner_chain_identities(normalized_system),
+    )

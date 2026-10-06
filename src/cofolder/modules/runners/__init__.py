@@ -1,29 +1,43 @@
-"""Runner discovery and public import surface.
-
-New code should author against the explicit contract types imported from
-`cofolder.modules.runners.contracts`. Legacy alias names remain exportable for
-import compatibility, but they are not the recommended surface for new runner
-implementations or contributor docs.
-"""
+"""Runner discovery and public import surface."""
 
 from __future__ import annotations
 
 import importlib
 import pkgutil
 
-from cofolder.modules.runners.base import BaseRunner, Runner, RunnerPreparation, RunnerRequest, RunnerResult
+from cofolder.modules.runners.base import (
+    BaseRunner,
+    Runner,
+)
 from cofolder.modules.runners.contracts import (
+    RUNNER_PROVENANCE_COLUMNS,
+    PlannedExecution,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    RunnerChainIdentity,
     RunnerCompanionArtifact,
+    RunnerExecutionPlan,
     RunnerExecutionRequest,
     RunnerExecutionResult,
-    RunnerMetricOutcome,
     RunnerInputCapabilities,
+    RunnerMetricOutcome,
+    RunnerModelSlot,
     RunnerNormalizedBundle,
     RunnerPreparationResult,
     RunnerRuntime,
+    attach_runner_provenance,
+    attach_sample_provenance,
+    backend_manifest_value,
+    build_runner_chain_identities,
+    build_runner_public_records,
     merge_runner_runtime,
+    runner_provenance_values,
+    seed_manifest_value,
 )
-from cofolder.modules.runners.validators import RunnerBundleValidationError, validate_runner_bundle
+from cofolder.modules.runners.validators import (
+    RunnerBundleValidationError,
+    validate_runner_bundle,
+)
 
 
 def discover_runners() -> dict[str, Runner]:
@@ -50,27 +64,40 @@ def get_runner(name: str) -> Runner:
         return runners[name]
     except KeyError as exc:
         available = ", ".join(sorted(runners)) or "<none>"
-        raise ValueError(f"Unknown runner '{name}'. Available runners: {available}") from exc
+        raise ValueError(
+            f"Unknown runner '{name}'. Available runners: {available}"
+        ) from exc
 
 
 __all__ = [
-    "Runner",
+    "RUNNER_PROVENANCE_COLUMNS",
     "BaseRunner",
+    "PlannedExecution",
+    "RepeatSeedProvenance",
+    "Runner",
+    "RunnerBackendIdentity",
+    "RunnerBundleValidationError",
+    "RunnerChainIdentity",
     "RunnerCompanionArtifact",
+    "RunnerExecutionPlan",
     "RunnerExecutionRequest",
     "RunnerExecutionResult",
-    "RunnerMetricOutcome",
     "RunnerInputCapabilities",
+    "RunnerMetricOutcome",
+    "RunnerModelSlot",
     "RunnerNormalizedBundle",
-    "RunnerPreparation",
     "RunnerPreparationResult",
-    "RunnerRequest",
-    "RunnerResult",
     "RunnerRuntime",
-    "RunnerBundleValidationError",
+    "attach_runner_provenance",
+    "attach_sample_provenance",
+    "backend_manifest_value",
+    "build_runner_chain_identities",
+    "build_runner_public_records",
     "discover_runners",
     "get_runner",
     "list_runner_names",
     "merge_runner_runtime",
+    "runner_provenance_values",
+    "seed_manifest_value",
     "validate_runner_bundle",
 ]

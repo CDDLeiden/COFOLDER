@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+from rdkit import Chem
+import yaml
 
+from cofolder.modules.contracts import WorkflowExecutionError
 from cofolder.recipes.oracle import (
     Oracle,
     OracleGate,
@@ -13,6 +16,16 @@ from cofolder.recipes.oracle import (
     OracleScoreContext,
 )
 from cofolder.recipes.validate import DEFAULT_SCORING_FUNCTIONS
+
+
+@pytest.fixture(autouse=True)
+def _available_default_runner(monkeypatch):
+    """Keep Oracle unit tests independent of optional backend installation."""
+
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz2_runner.Boltz2Runner.check_availability",
+        lambda self: (True, None),
+    )
 
 
 class TestOracleInit:
@@ -38,7 +51,7 @@ class TestOracleInit:
     def test_requires_exactly_one_input(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="exactly one input"):
+        with pytest.raises(WorkflowExecutionError, match="exactly one input"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -46,12 +59,12 @@ class TestOracleInit:
                 input_smiles=None,
                 input_mol_file=None,
                 output_metric="affinity_pred_value",
-            )
+            ).run()
 
     def test_metric_requires_enabled_scoring_functions(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="requires one of scoring functions"):
+        with pytest.raises(WorkflowExecutionError, match="requires one of scoring functions"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -59,7 +72,7 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ifp_distance",
                 scoring_functions=["confidence_metrics"],
-            )
+            ).run()
 
     @pytest.mark.parametrize(
         "kwargs",
@@ -78,19 +91,19 @@ class TestOracleInit:
     def test_requires_exactly_one_score_source(
         self, kwargs, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="exactly one score source"):
+        with pytest.raises(WorkflowExecutionError, match="exactly one score source"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 **kwargs,
-            )
+            ).run()
 
     def test_gates_require_explicit_policy(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="gate_policy is required"):
+        with pytest.raises(WorkflowExecutionError, match="gate_policy is required"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -98,12 +111,12 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="confidence_score",
                 score_gates=[OracleGate("confidence_score", "ge", 0.5)],
-            )
+            ).run()
 
     def test_custom_pocket_coverage_dependencies_are_checked(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="pocket_coverage_reference"):
+        with pytest.raises(WorkflowExecutionError, match="pocket_coverage_reference"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -111,36 +124,36 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ligand_B__pocket_coverage_custom",
                 scoring_functions=["ifp_distance"],
-            )
+            ).run()
 
     def test_bias_metric_requires_bias_assessment(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="assess_bias=True"):
+        with pytest.raises(WorkflowExecutionError, match="assess_bias=True"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 output_metric="ligand_B__bias_lig_sim_train",
-            )
+            ).run()
 
     def test_reference_structural_metric_requires_reference(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="requires reference_path"):
+        with pytest.raises(WorkflowExecutionError, match="requires reference_path"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
                 options_path=str(sample_options_yaml),
                 input_smiles="CCO",
                 output_metric="ligand_B__ligand_rmsd_ref",
-            )
+            ).run()
 
     def test_vector_ifp_cannot_be_a_scalar_objective(
         self, sample_system_yaml, sample_options_yaml, temp_dir
     ):
-        with pytest.raises(ValueError, match="vector-valued"):
+        with pytest.raises(WorkflowExecutionError, match="vector-valued"):
             Oracle(
                 wrk_dir=str(temp_dir),
                 system_path=str(sample_system_yaml),
@@ -148,10 +161,57 @@ class TestOracleInit:
                 input_smiles="CCO",
                 output_metric="ifp_distance",
                 scoring_functions=["ifp_distance"],
-            )
+            ).run()
 
 
 class TestOracleRun:
+    @pytest.mark.parametrize("suffix", [".mol", ".sdf"])
+    @patch("cofolder.recipes.oracle.Validate.run")
+    def test_run_accepts_mol_file_and_replaces_ligand_with_canonical_smiles(
+        self,
+        mock_validate_run,
+        suffix,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        molecule = Chem.MolFromSmiles("C(C)O")
+        input_path = temp_dir / f"query{suffix}"
+        if suffix == ".sdf":
+            writer = Chem.SDWriter(str(input_path))
+            writer.write(molecule)
+            writer.close()
+        else:
+            input_path.write_text(Chem.MolToMolBlock(molecule), encoding="utf-8")
+        run_dir = temp_dir / "oracle_run" / "results"
+        run_dir.mkdir(parents=True)
+        pd.DataFrame([{"confidence_score": 0.75}]).to_csv(
+            run_dir / "system_metrics.csv", index=False
+        )
+        pd.DataFrame([{"CHAIN_ID": "A"}]).to_csv(
+            run_dir / "chain_metrics.csv", index=False
+        )
+        oracle = Oracle(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            input_mol_file=str(input_path),
+            output_metric="confidence_score",
+            scoring_functions=["confidence_metrics"],
+        )
+
+        assert oracle.run() == pytest.approx(0.75)
+
+        generated = yaml.safe_load(
+            (temp_dir / "oracle_run" / "oracle_system.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        ligand_definition = generated["sequences"][1]["ligand"]
+        assert ligand_definition["smiles"] == "CCO"
+        assert "ccd" not in ligand_definition
+        mock_validate_run.assert_called_once()
+
     @patch("cofolder.recipes.oracle.Validate")
     def test_run_uses_boltz2_as_default_runner(
         self,
@@ -170,6 +230,7 @@ class TestOracleRun:
             input_smiles="CCO",
             output_metric="affinity_pred_value",
             scoring_functions=["affinity_metrics"],
+            bias_query_cache_path=str(temp_dir / "shared-bias-cache"),
         )
 
         run_dir = temp_dir / "oracle_run" / "results"
@@ -181,6 +242,9 @@ class TestOracleRun:
         oracle.run()
 
         assert mock_validate_cls.call_args.kwargs["runner"] == "boltz2"
+        assert mock_validate_cls.call_args.kwargs["bias_query_cache_path"] == str(
+            temp_dir / "shared-bias-cache"
+        )
         mock_validator.run.assert_called_once()
 
     @patch("cofolder.recipes.oracle.Validate")
@@ -210,7 +274,11 @@ class TestOracleRun:
             run_dir / "chain_metrics.csv", index=False
         )
 
-        oracle.run()
+        with patch(
+            "cofolder.modules.runners.boltz_community_runner.BoltzCommunityRunner.check_availability",
+            return_value=(True, None),
+        ):
+            oracle.run()
 
         assert mock_validate_cls.call_args.kwargs["runner"] == "boltz-community"
         mock_validator.run.assert_called_once()
@@ -244,11 +312,12 @@ class TestOracleRun:
 
         assert mock_validate_run.call_count == 1
         assert value == pytest.approx(6.4)
-        result_csv = temp_dir / "oracle_result.csv"
+        result_csv = temp_dir / "results" / "metrics.csv"
         assert result_csv.exists()
         out = pd.read_csv(result_csv)
-        assert out.iloc[0]["output_metric"] == "affinity_pred_value"
-        assert float(out.iloc[0]["value"]) == pytest.approx(6.4)
+        score = out[out["metric_name"] == "oracle_score"].iloc[0]
+        assert float(score["value"]) == pytest.approx(6.4)
+        assert not (temp_dir / "oracle_result.csv").exists()
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_run_aggregate_mean(
@@ -373,7 +442,7 @@ class TestOracleScoring:
             output_metric="confidence_score",
             scoring_functions=["confidence_metrics"],
         )
-        with pytest.raises(ValueError, match="finite numeric values"):
+        with pytest.raises(WorkflowExecutionError, match="finite numeric values"):
             oracle.run()
 
     @patch("cofolder.recipes.oracle.Validate.run")
@@ -397,15 +466,15 @@ class TestOracleScoring:
             scoring_functions=["affinity_metrics", "confidence_metrics"],
         )
         assert oracle.run() == pytest.approx(-4.4)
-        audit = pd.read_csv(temp_dir / "oracle_result.csv").iloc[0]
-        assert audit["score_mode"] == "composite"
-        assert audit["base_value"] == pytest.approx(-4.4)
-        assert json.loads(audit["component_values"]) == {
-            "ligand_B__affinity_pred_value": 6.0,
-            "system__confidence_score": 0.8,
+        metrics = pd.read_csv(temp_dir / "results" / "metrics.csv")
+        values = dict(zip(metrics["metric_name"], metrics["value"]))
+        assert values["oracle_raw_score"] == pytest.approx(-4.4)
+        assert values["oracle_score"] == pytest.approx(-4.4)
+        manifest = json.loads((temp_dir / "results" / "manifest.json").read_text())
+        assert set(manifest["requested_metrics"]) == {
+            "ligand_B__affinity_pred_value",
+            "system__confidence_score",
         }
-        assert bool(audit["gate_pass"])
-        assert audit["gate_action"] == "none"
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_custom_function_receives_structured_context_once(
@@ -417,10 +486,9 @@ class TestOracleScoring:
             system=[{"confidence_score": 0.75}],
         )
         scoring_function = MagicMock(
-            side_effect=lambda context: context.aggregated_metrics[
-                "system__confidence_score"
-            ]
-            * 10
+            side_effect=lambda context: (
+                context.aggregated_metrics["system__confidence_score"] * 10
+            )
         )
         oracle = Oracle(
             str(temp_dir),
@@ -454,7 +522,7 @@ class TestOracleScoring:
             input_smiles="CCO",
             scoring_function=lambda context: invalid,
         )
-        with pytest.raises((TypeError, ValueError), match="finite numeric scalar"):
+        with pytest.raises(WorkflowExecutionError, match="finite numeric scalar"):
             oracle.run()
 
     @pytest.mark.parametrize(
@@ -516,13 +584,10 @@ class TestOracleScoring:
             scoring_functions=["affinity_metrics"],
         )
         assert oracle.run() == pytest.approx(expected)
-        audit = pd.read_csv(temp_dir / "oracle_result.csv").iloc[0]
-        assert not bool(audit["gate_pass"])
-        assert json.loads(audit["failed_gates"]) == [
-            "missing_structural_metric",
-            "another_missing_metric",
-        ]
-        assert audit["gate_action"] == mode
+        metrics = pd.read_csv(temp_dir / "results" / "metrics.csv")
+        values = dict(zip(metrics["metric_name"], metrics["value"]))
+        assert values["oracle_raw_score"] == pytest.approx(6.0)
+        assert values["oracle_gate_adjusted_score"] == pytest.approx(expected)
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_bias_similarity_scalar_regression(

@@ -9,8 +9,6 @@ from typing import Any, Iterator
 from cofolder.modules.utils import read
 from cofolder.modules.utils import write
 
-import logging
-
 logger = logging.getLogger(__name__)
 
 SUPPORTED_ENTITY_TYPES = frozenset({"protein", "ligand", "dna", "rna"})
@@ -86,10 +84,10 @@ class System:
     >>> sys = System(system_path="system.yaml")
     """
     def __init__(self, system=None, system_path=None):
-        if system and system_path:
+        if system is not None and system_path is not None:
             raise ValueError("Provide either 'system' or 'system_path', not both.")
 
-        if system:
+        if system is not None:
             self.system = system
         elif system_path:
             logger.debug(f"Loading system YAML from {system_path}")

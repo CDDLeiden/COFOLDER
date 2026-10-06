@@ -1,0 +1,85 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[development]"
+      - run: ruff check src tests scripts tutorials examples
+
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[docs]"
+      - run: python -m mkdocs build --strict
+
+  supported-tests:
+    name: ${{ matrix.lane }} (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.11"
+            lane: core
+            extras: test,analysis
+          - python-version: "3.11"
+            lane: contracts-tutorial
+            extras: test,tutorials,analysis
+          - python-version: "3.11"
+            lane: acceptance
+            extras: test,acceptance
+          - python-version: "3.12"
+            lane: core
+            extras: test,analysis
+          - python-version: "3.12"
+            lane: contracts-tutorial
+            extras: test,tutorials,analysis
+          - python-version: "3.12"
+            lane: acceptance
+            extras: test,acceptance
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[${{ matrix.extras }}]"
+      - run: python scripts/run_test_lane.py ${{ matrix.lane }}
+
+  artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[test,development]"
+      - run: python scripts/run_test_lane.py artifact
+      - run: python scripts/verify_release_artifacts.py

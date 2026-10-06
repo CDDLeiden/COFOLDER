@@ -1,41 +1,46 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cofolder"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Collection of helpful tools for performing various co-folding tasks using cofolding models (e.g. Boltz.)"
 readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_SOFTWARE.md"]
 authors = [
   {name = "Remco L. van den Broek", email = "r.l.van.den.broek@lacdr.leidenuniv.nl"},
   {name = "Bola Khalil", email = "b.a.a.khalil@lacdr.leidenuniv.nl"}
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "numpy",
     "pandas",
     "pyyaml",
     "biopython",
     "rdkit",
-    "matplotlib",
-    "seaborn",
-    "scipy",
-    "scikit-learn",
     "gemmi",
-    "prolif",
-    "pdb2pqr",
+    "packaging",
 ]
 
 [project.optional-dependencies]
+analysis = [
+    "scipy",
+    "scikit-learn",
+    "prolif",
+    "pdb2pqr",
+    "matplotlib",
+    "seaborn",
+]
 boltz1 = [
     "boltz==1.0.0; python_version < '3.13'",
 ]
 boltz2 = [
-    "boltz[cuda]; python_version < '3.13'",
+    "boltz[cuda]>=2.0.0,<3; python_version < '3.13'",
 ]
 boltz-community = [
-    "boltz-community[cuda] @ git+https://github.com/Novel-Therapeutics/boltz-community.git",
+    "boltz-community[cuda]==2.10.12",
 ]
 openfold3 = [
     "openfold3",
@@ -47,10 +52,14 @@ tutorials = [
     "marimo>=0.23,<0.24",
 ]
 test = [
-    "marimo>=0.23,<0.24",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
+]
+development = [
+    "black>=23.0.0",
+    "build>=1.2.0",
+    "ruff>=0.1.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -60,17 +69,37 @@ docs = [
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
-ui = [
-    "streamlit>=1.28.0",
-    "streamlit-option-menu>=0.3.6",
-]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
 
 [project.scripts]
 cofolder = "cofolder.cli:main"
+cofolder-tools = "cofolder.tools.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = {attr = "cofolder.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cofolder*"]
+exclude = ["cofolder.ui", "cofolder.ui.*"]
 
 [tool.setuptools.package-data]
 "cofolder.acceptance" = ["data/*.yaml", "data/*.csv"]
+"cofolder.resources.examples" = [
+    "*.cif",
+    "*.csv",
+    "*.md",
+    "*.mol",
+    "*.pdb",
+    "*.py",
+    "*.sdf",
+    "*.yaml",
+]
