@@ -287,6 +287,7 @@ def test_sdist_manifest_excludes_unsupported_and_generated_material():
     directives = _manifest_directives()
     required_exclusions = {
         "prune docs/project-knowledge",
+        "prune docs/release",
         "global-exclude __pycache__",
         "global-exclude *.py[cod]",
         "global-exclude .openfold3-cache",

@@ -19,6 +19,7 @@ recursive-include examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml
 recursive-include scripts *.md *.py *.sh
 
 prune docs/project-knowledge
+prune docs/release
 
 global-exclude __pycache__
 global-exclude *.py[cod]
