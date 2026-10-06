@@ -4,7 +4,7 @@ Issue: [#25 — COFOLDER Documentation Plan](https://github.com/CDDLeiden/COFOLD
 
 This record covers the publication-facing documentation gate for COFOLDER 1.0.0.
 The final candidate was revalidated on 2026-10-06 at
-`b8906443ad3851f9359c420d64465ccb9e2821a6`. The acceptance-record update that
+`1f67f346f0165e487943a0c63ce4edf7121dfe56`. The acceptance-record update that
 follows that commit changes documentation evidence only.
 
 ## Checklist reconciliation
@@ -45,6 +45,11 @@ runs `python -m mkdocs build --strict`. The contracts/tutorial lane additionally
 The complete gate was rerun from the repository root on 2026-10-06 with Python
 3.12.4 after the final mapped-screening, ProLIF/clustering, and structure-gated
 Oracle documentation changes.
+
+The Python 3.11/3.12 matrix exposed and then verified a correction to the
+structural-parity test: its bias snapshot now uses only the local reference fixtures
+instead of changing according to live RCSB availability. The deterministic baseline
+passes in both supported Python versions.
 
 | Command | Result |
 | --- | --- |
