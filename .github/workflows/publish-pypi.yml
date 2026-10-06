@@ -1,0 +1,69 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Check release tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import runpy
+
+          version = runpy.run_path("src/cofolder/__init__.py")["__version__"]
+          expected = f"v{version}"
+          if os.environ["RELEASE_TAG"] != expected:
+              raise SystemExit(f"Release tag must be {expected}")
+          PY
+      - name: Install build and validation dependencies
+        run: python -m pip install ".[test,development]" twine
+      - name: Build and smoke-test release artifacts
+        run: python scripts/verify_release_artifacts.py --workspace "$RUNNER_TEMP/release-artifacts"
+      - name: Collect verified distributions
+        run: |
+          mkdir dist
+          cp "$RUNNER_TEMP/release-artifacts/sdist/"*.tar.gz dist/
+          cp "$RUNNER_TEMP/release-artifacts/wheel/"*.whl dist/
+          python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/cofolder/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-distributions
+          path: dist/
+      - name: Publish verified distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
