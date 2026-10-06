@@ -1,31 +1,55 @@
 # Standard library
 import json
 import logging
-from pathlib import Path
-import pickle
 import re
-import importlib
+from pathlib import Path
+
+import gemmi
 
 # Third-party libraries
 import numpy as np
 import pandas as pd
-import gemmi
-from rdkit import Chem
-from rdkit.Chem import AllChem
 
 # Project-specific / external tools
 from Bio.PDB import MMCIFParser
 from Bio.PDB.SASA import ShrakeRupley
-import MDAnalysis as mda
-import prolif as plf
+from rdkit import Chem
+from rdkit.Chem import AllChem
+
+from cofolder.modules.analytics.reference_ifp import (
+    IFPExtractionConfig,
+    IFPTaxonomy,
+    LigandSelector,
+    ReferenceIFPError,
+    extract_interaction_fingerprint,
+)
+from cofolder.modules.utils._optional_dependencies import require_analysis_dependency
 
 # Logger
 logger = logging.getLogger(__name__)
 
 
+def _load_prolif_dependencies():
+    """Load ProLIF helpers only for explicitly requested legacy operations."""
+    return (
+        require_analysis_dependency(
+            "MDAnalysis",
+            feature="ProLIF interaction processing",
+        ),
+        require_analysis_dependency(
+            "prolif",
+            feature="ProLIF interaction processing",
+        ),
+    )
+
+
 def _run_pdb2pqr(args: list[str]) -> None:
     """Run pdb2pqr across the supported programmatic APIs."""
-    module = importlib.import_module("pdb2pqr.main")
+    module = require_analysis_dependency(
+        "pdb2pqr.main",
+        feature="PDB2PQR interaction preparation",
+        dependency_name="pdb2pqr",
+    )
 
     legacy_runner = getattr(module, "run_pdb2pqr", None)
     if legacy_runner is not None:
@@ -83,11 +107,10 @@ class Structure:
 
         self.receptor_chain_id = self._derive_receptor_chain()
 
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-        
+
     def add_sasa(
         self,
         *,
@@ -132,7 +155,6 @@ class Structure:
             cif_path = self.cif_folder / row[self.cif_file_col]
             chain_id = str(row[self.chain_id_col])
 
-
             if not cif_path.exists():
                 logger.warning("Missing CIF file: %s", cif_path)
                 continue
@@ -152,25 +174,15 @@ class Structure:
 
                 chain = model[chain_id]
 
-
-
-
-
                 total_sasa = 0.0
                 atom_count = 0
-
-
-
 
                 for residue in chain:
                     for atom in residue:
                         if not hasattr(atom, "sasa"):
                             continue
 
-
-
                         total_sasa += atom.sasa
-
 
                         if normalized:
                             if heavy_atoms_only:
@@ -181,10 +193,6 @@ class Structure:
 
                 if absolute:
                     self.chain_df.at[idx, "sasa"] = float(round(total_sasa, 3))
-
-
-
-
 
                 if normalized:
                     if atom_count == 0:
@@ -197,7 +205,9 @@ class Structure:
                         self.chain_df.at[idx, "sasa_norm_heavy"] = None
                     else:
                         value = total_sasa / atom_count
-                        self.chain_df.at[idx, "sasa_norm_heavy"] = float(round(value, 5))
+                        self.chain_df.at[idx, "sasa_norm_heavy"] = float(
+                            round(value, 5)
+                        )
 
             except Exception:
                 logger.exception(
@@ -211,8 +221,6 @@ class Structure:
                 if normalized:
                     self.chain_df.at[idx, "sasa_norm_heavy"] = None
 
-
-
         logger.info(
             "Completed SASA calculation | absolute=%s | normalized=%s",
             absolute,
@@ -220,11 +228,12 @@ class Structure:
         )
 
         return self.chain_df
-    
+
     def add_ifp_distance(
         self,
         cutoff: float = 5.0,
         column_name: str = "ifp_distance",
+        feature_column_name: str = "ifp_distance_features",
     ) -> pd.DataFrame:
         """
         Add distance-based interaction fingerprints to chain_df.
@@ -238,10 +247,13 @@ class Structure:
                 "Skipping interaction fingerprints: invalid receptor definition."
             )
             self.chain_df[column_name] = None
+            self.chain_df[feature_column_name] = None
             return self.chain_df
 
         if column_name not in self.chain_df.columns:
             self.chain_df[column_name] = None
+        if feature_column_name not in self.chain_df.columns:
+            self.chain_df[feature_column_name] = None
 
         for idx, row in self.chain_df.iterrows():
             if row[self.entity_type_col] != "ligand":
@@ -260,12 +272,37 @@ class Structure:
             )
 
             self.chain_df.at[idx, column_name] = fingerprint
+            try:
+                normalized = extract_interaction_fingerprint(
+                    cif_path,
+                    ligand=LigandSelector(chain_id=str(row[self.chain_id_col])),
+                    receptor_chains=(self.receptor_chain_id,),
+                    config=IFPExtractionConfig(distance_cutoff_angstrom=cutoff),
+                )
+                self.chain_df.at[idx, feature_column_name] = json.dumps(
+                    normalized.serialized_interactions()
+                )
+            except (
+                ReferenceIFPError,
+                OSError,
+                RuntimeError,
+                KeyError,
+                IndexError,
+            ) as exc:
+                logger.warning(
+                    "Normalized distance IFP extraction failed for %s: %s",
+                    cif_path,
+                    exc,
+                )
+                self.chain_df.at[idx, feature_column_name] = json.dumps([])
 
         return self.chain_df
 
     def add_ifp_prolif(
         self,
         column_name: str = "ifp_prolif",
+        feature_column_name: str = "ifp_prolif_features",
+        event_column_name: str = "ifp_prolif_events",
         save_folder: Path = Path("results/ifp/prolif"),
     ) -> pd.DataFrame:
         """
@@ -273,11 +310,14 @@ class Structure:
 
         - Must have exactly one protein defined in system
         - Converts CIF -> PDB on‑the‑fly for ProLIF compatibility
-        - Saves fingerprint DataFrame per chain as CSV
+        - Saves compact keys and atom-level event JSON per ligand chain
         """
         save_folder = self.wrk_dir / save_folder
         save_folder.mkdir(parents=True, exist_ok=True)
-
+        if feature_column_name not in self.chain_df.columns:
+            self.chain_df[feature_column_name] = None
+        if event_column_name not in self.chain_df.columns:
+            self.chain_df[event_column_name] = None
         for idx, row in self.chain_df.iterrows():
             if row[self.entity_type_col] != "ligand":
                 continue
@@ -287,74 +327,39 @@ class Structure:
                 logger.warning("Missing CIF file: %s", cif_path)
                 continue
 
-            # Deterministic pickle name
-            pickle_name = f"{cif_path.stem}_ligand_chain_{row[self.chain_id_col]}_ifp.pkl"
-            pickle_path = save_folder / pickle_name
-
-            # ---- EARLY EXIT UNLESS OVERWRITE ----
-            if pickle_path.exists():
-                logger.info("IFP exists, skipping (overwrite=False): %s", pickle_path)
-                self.chain_df.at[idx, column_name] = pickle_name
-                continue
-
-            # Step 1: CIF -> PDB
-            pdb_file = self.cif_to_pdb(
-                cif_file=cif_path,
-                output_folder=self.wrk_dir / "results/structures/pdb"
+            fingerprint = extract_interaction_fingerprint(
+                cif_path,
+                ligand=LigandSelector(chain_id=str(row[self.chain_id_col])),
+                receptor_chains=(self.receptor_chain_id,),
+                config=IFPExtractionConfig(taxonomy=IFPTaxonomy.PROLIF),
             )
-
-            # Step 2: Split PDB
-            split_files = self.split_pdb(
-                pdb_file=pdb_file,
-                chain_id=row[self.chain_id_col],
-                output_folder=self.wrk_dir / "results/structures/pdb"
+            serialized = fingerprint.serialized_interactions()
+            artifact_name = (
+                f"{cif_path.stem}_ligand_chain_{row[self.chain_id_col]}_ifp.json"
             )
-
-            protein_file = Path(split_files.get("protein"))
-            ligand_file = Path(split_files.get("ligand"))
-
-            # ---- Load protein ----
-            u_protein = mda.Universe(str(protein_file))
-            u_protein = self._sanitize_protein(u_protein)
-            protein_mol = plf.Molecule.from_mda(u_protein)
-
-            logger.info(
-                "Protein loaded: %s | residues=%d | atoms=%d",
-                protein_file,
-                protein_mol.n_residues,
-                protein_mol.GetNumAtoms(),
+            (save_folder / artifact_name).write_text(
+                json.dumps(serialized, indent=2) + "\n", encoding="utf-8"
             )
-
-            # ---- Load ligand ----
-            u_ligand = mda.Universe(str(ligand_file))
-            ligand_mol = plf.Molecule.from_mda(u_ligand)
-
-            logger.info(
-                "Ligand loaded: %s | residues=%d | atoms=%d",
-                ligand_file,
-                ligand_mol.n_residues,
-                ligand_mol.GetNumAtoms(),
+            event_artifact_name = (
+                f"{cif_path.stem}_ligand_chain_{row[self.chain_id_col]}_ifp_events.json"
             )
-
-            # ---- Generate ProLIF fingerprints ----
-            fp = plf.Fingerprint()
-            ifp = fp.generate(ligand_mol, protein_mol, metadata=True)
-            df = plf.to_dataframe({0: ifp}, fp.interactions)
-            logger.info("ProLIF fingerprint matrix:\n%s", df.T)
-
-            # ---- Save IFP pickle ----
-            pickle_name = ligand_file.stem + "_ifp.pkl"
-            pickle_path = save_folder / pickle_name
-
-            with open(pickle_path, "wb") as f:
-                pickle.dump(ifp, f)
-
-            logger.info("IFP saved to %s", pickle_path)
-
-            self.chain_df.at[idx, column_name] = pickle_name
+            (save_folder / event_artifact_name).write_text(
+                json.dumps(fingerprint.serialized_events(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+            self.chain_df.at[idx, column_name] = artifact_name
+            self.chain_df.at[idx, feature_column_name] = json.dumps(serialized)
+            event_path = save_folder / event_artifact_name
+            try:
+                event_reference = event_path.relative_to(
+                    self.wrk_dir / "results"
+                ).as_posix()
+            except ValueError:
+                event_reference = str(event_path)
+            self.chain_df.at[idx, event_column_name] = event_reference
 
         return self.chain_df
-        
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -366,8 +371,9 @@ class Structure:
         - Exactly one protein chain must exist
         """
         protein_chains = (
-            self.chain_df
-            .loc[self.chain_df[self.entity_type_col] == "protein", self.chain_id_col]
+            self.chain_df.loc[
+                self.chain_df[self.entity_type_col] == "protein", self.chain_id_col
+            ]
             .astype(str)
             .unique()
         )
@@ -397,43 +403,27 @@ class Structure:
         str
             JSON-serialized list of 0/1 values (CSV-safe).
         """
-        structure = gemmi.read_structure(str(cif_path))
-        model = structure[0]
-
         try:
-            chain_rec = model[receptor_chain]
-            chain_lig = model[ligand_chain]
-        except KeyError:
-            logger.warning(
-                "Missing receptor (%s) or ligand (%s) chain in CIF: %s",
-                receptor_chain,
-                ligand_chain,
+            fingerprint = extract_interaction_fingerprint(
                 cif_path,
+                ligand=LigandSelector(chain_id=ligand_chain),
+                receptor_chains=(receptor_chain,),
+                config=IFPExtractionConfig(distance_cutoff_angstrom=cutoff),
             )
+            active = {
+                (item.receptor.residue_number, item.receptor.insertion_code)
+                for item in fingerprint.interactions
+            }
+            model = gemmi.read_structure(str(cif_path))[0]
+            return json.dumps(
+                [
+                    int((int(res.seqid.num), str(res.seqid.icode).strip()) in active)
+                    for res in model[receptor_chain]
+                ]
+            )
+        except (ReferenceIFPError, OSError, RuntimeError, KeyError, IndexError) as exc:
+            logger.warning("Distance IFP extraction failed for %s: %s", cif_path, exc)
             return json.dumps([])
-
-        rec_residues = list(chain_rec)
-        lig_atoms = [
-            atom
-            for res in chain_lig
-            for atom in res
-            if atom.element.name != "H"
-        ]
-
-        bitvector = np.zeros(len(rec_residues), dtype=int)
-
-        for i, res in enumerate(rec_residues):
-            rec_atoms = [atom for atom in res if atom.element.name != "H"]
-
-            for ra in rec_atoms:
-                for la in lig_atoms:
-                    if ra.pos.dist(la.pos) <= cutoff:
-                        bitvector[i] = 1
-                        break
-                if bitvector[i]:
-                    break
-
-        return json.dumps(bitvector.tolist())
 
     def cif_to_pdb(self, cif_file: Path, output_folder: Path) -> Path | None:
         """
@@ -464,7 +454,6 @@ class Structure:
 
         return pdb_file
 
-
     def split_pdb(self, pdb_file: Path, chain_id: str, output_folder: Path) -> dict:
         """
         Split a PDB file into protein and ligand PDBs, ensuring hydrogens are present.
@@ -478,6 +467,7 @@ class Structure:
         Returns:
             dict with keys 'protein' and 'ligand' and their PDB paths.
         """
+        mda, _ = _load_prolif_dependencies()
         output_folder.mkdir(parents=True, exist_ok=True)
         universe = mda.Universe(str(pdb_file))
 
@@ -485,7 +475,10 @@ class Structure:
         protein_pdb_path = output_folder / f"{pdb_file.stem}_protein.pdb"
 
         if protein_pdb_path.exists():
-            logger.warning("Protein PDB already exists at %s. Skipping and not overwriting.", protein_pdb_path)
+            logger.warning(
+                "Protein PDB already exists at %s. Skipping and not overwriting.",
+                protein_pdb_path,
+            )
         else:
             # ---- Protein ----
             prot_atoms = universe.select_atoms("protein and not resname HOH")
@@ -493,15 +486,21 @@ class Structure:
 
             # Add hydrogens using PDB2PQR
             n_atoms_before = len(prot_atoms)
-            protein_pdb_path = self.add_hydrogens_with_pdb2pqr(protein_pdb_path, protein_pdb_path)
+            protein_pdb_path = self.add_hydrogens_with_pdb2pqr(
+                protein_pdb_path, protein_pdb_path
+            )
             u_prot_h = mda.Universe(str(protein_pdb_path))
             n_atoms_after = len(u_prot_h.atoms)
-            logger.info("Protein atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+            logger.info(
+                "Protein atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after
+            )
 
             # Check proper protonation
             mol = Chem.MolFromPDBFile(str(protein_pdb_path), removeHs=False)
             if mol is None:
-                logger.error("RDKit failed to parse protein PDB! Check hydrogens/valence.")
+                logger.error(
+                    "RDKit failed to parse protein PDB! Check hydrogens/valence."
+                )
             else:
                 logger.debug("Protein PDB parsed by RDKit: atoms=%d", mol.GetNumAtoms())
 
@@ -510,12 +509,14 @@ class Structure:
             universe=universe,
             chain_id=chain_id,
             output_folder=output_folder,
-            pdb_file=pdb_file
+            pdb_file=pdb_file,
         )
 
         return {"protein": protein_pdb_path, "ligand": ligand_pdb_path}
 
-    def add_hydrogens_with_pdb2pqr(self, input_pdb: Path, output_pdb: Path, ph: float = 7.4):
+    def add_hydrogens_with_pdb2pqr(
+        self, input_pdb: Path, output_pdb: Path, ph: float = 7.4
+    ):
         """
         Add hydrogens to a protein PDB using PDB2PQR (minimal options).
 
@@ -530,12 +531,15 @@ class Structure:
         args = [
             str(input_pdb),
             str(output_pdb),
-            "--ff", "PARSE",
-            "--with-ph", str(ph),
-            "--pdb-output", str(output_pdb),
+            "--ff",
+            "PARSE",
+            "--with-ph",
+            str(ph),
+            "--pdb-output",
+            str(output_pdb),
         ]
         _run_pdb2pqr(args)
-        return output_pdb        
+        return output_pdb
 
     def _remove_overbonding_hydrogens(self, u_protein):
         """Remove only the HZ3 hydrogen from Lys residues."""
@@ -548,13 +552,23 @@ class Structure:
             return u_protein
 
         # Log which hydrogens are being removed
-        removed_list = [f"{atom.resname}{atom.resid}-{atom.name}" for atom in hs_to_remove]
-        logger.debug("_remove_overbonding_hydrogens | Removing Lys HZ3 atoms: %s", ", ".join(removed_list))
+        removed_list = [
+            f"{atom.resname}{atom.resid}-{atom.name}" for atom in hs_to_remove
+        ]
+        logger.debug(
+            "_remove_overbonding_hydrogens | Removing Lys HZ3 atoms: %s",
+            ", ".join(removed_list),
+        )
 
         # Remove the selected atoms
-        u_clean = u_protein.atoms[np.setdiff1d(np.arange(len(u_protein.atoms)), hs_to_remove.indices)]
+        u_clean = u_protein.atoms[
+            np.setdiff1d(np.arange(len(u_protein.atoms)), hs_to_remove.indices)
+        ]
 
-        logger.info("_remove_overbonding_hydrogens | Total HZ3 atoms removed: %d", len(hs_to_remove))
+        logger.info(
+            "_remove_overbonding_hydrogens | Total HZ3 atoms removed: %d",
+            len(hs_to_remove),
+        )
         return u_clean
 
     def _sanitize_protein(self, u_protein, max_attempts=100):
@@ -565,6 +579,7 @@ class Structure:
         No additional RDKit/plf calls are made inside the loop.
         Atom indices remain stable by using a persistent mask.
         """
+        mda, plf = _load_prolif_dependencies()
         n_atoms = len(u_protein.atoms)
         keep_mask = np.ones(n_atoms, dtype=bool)
 
@@ -598,7 +613,6 @@ class Structure:
                     raise
 
                 rdkit_index = int(match.group(1))
-                atom_symbol = match.group(2)
 
                 # RDKit index == index into u_protein.atoms[keep_mask]
                 active_indices = np.flatnonzero(keep_mask)
@@ -632,19 +646,17 @@ class Structure:
 
                 # ---- Case 2: remove an attached hydrogen ----
                 else:
-                    target_ag = u_protein.atoms[target_atom.index : target_atom.index + 1]
+                    target_ag = u_protein.atoms[
+                        target_atom.index : target_atom.index + 1
+                    ]
 
                     attached_hs = u_protein.select_atoms(
-                        "resid {} and name H* and around 1.2 group target_ag".format(
-                            target_atom.resid
-                        ),
+                        f"resid {target_atom.resid} and name H* and around 1.2 group target_ag",
                         target_ag=target_ag,
                     )
 
                     # Only consider still-active hydrogens
-                    attached_hs = attached_hs[
-                        keep_mask[attached_hs.indices]
-                    ]
+                    attached_hs = attached_hs[keep_mask[attached_hs.indices]]
 
                     if len(attached_hs) == 0:
                         logger.error(
@@ -669,8 +681,10 @@ class Structure:
         raise RuntimeError(
             f"_sanitize_protein | Failed to sanitize protein after {max_attempts} attempts"
         )
-    
-    def _sanitize_ligand(self, universe, chain_id: str, output_folder: Path, pdb_file: Path):
+
+    def _sanitize_ligand(
+        self, universe, chain_id: str, output_folder: Path, pdb_file: Path
+    ):
         canonical_chain = chain_id
         canonical_resid = 1
         canonical_resname = "LIG"
@@ -702,7 +716,11 @@ class Structure:
             logger.warning("Ligand has no hydrogens; adding using RDKit.")
             lig_mol_h = Chem.AddHs(lig_mol, addCoords=True)
             ff = AllChem.UFFGetMoleculeForceField(lig_mol_h)
-            heavy_idx = [atom.GetIdx() for atom in lig_mol_h.GetAtoms() if atom.GetAtomicNum() > 1]
+            heavy_idx = [
+                atom.GetIdx()
+                for atom in lig_mol_h.GetAtoms()
+                if atom.GetAtomicNum() > 1
+            ]
             for idx in heavy_idx:
                 ff.AddFixedPoint(idx)
             ff.Minimize()
@@ -715,10 +733,12 @@ class Structure:
             for line in pdb_block.splitlines():
                 if line.startswith("HETATM") or line.startswith("ATOM"):
                     line = (
-                        line[:17] + f"{canonical_resname:<3}" +  # resname
-                        line[20:21] + canonical_chain +          # chainID
-                        f"{canonical_resid:>4}" +                # resid
-                        line[26:]
+                        line[:17]
+                        + f"{canonical_resname:<3}"  # resname
+                        + line[20:21]
+                        + canonical_chain  # chainID
+                        + f"{canonical_resid:>4}"  # resid
+                        + line[26:]
                     )
                 pdb_lines.append(line)
 
@@ -729,5 +749,7 @@ class Structure:
         else:
             n_atoms_after = lig_mol.GetNumAtoms()
 
-        logger.info("Ligand atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after)
+        logger.info(
+            "Ligand atoms: before H=%d, after H=%d", n_atoms_before, n_atoms_after
+        )
         return ligand_pdb_path

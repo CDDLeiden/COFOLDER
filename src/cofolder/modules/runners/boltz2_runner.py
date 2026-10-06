@@ -1,20 +1,34 @@
 from __future__ import annotations
 
 from cofolder.modules.runners.boltz_runner import BoltzRunner
+from cofolder.modules.runners.contracts import RunnerInputCapabilities
 
 
 class Boltz2Runner(BoltzRunner):
     """Runner for the current Boltz-2 package line."""
 
     name = "boltz2"
+    backend_name = "boltz"
+    backend_distribution = "boltz"
     capabilities = {
         "confidence_metrics",
         "affinity_metrics",
         "affinity_metrics_ext",
     }
     model_name = "boltz2"
+    input_capabilities = RunnerInputCapabilities(
+        entity_types=frozenset({"protein", "ligand", "dna", "rna"}),
+        constraint_types=frozenset({"bond", "pocket", "contact"}),
+    )
 
     def check_availability(self) -> tuple[bool, str | None]:
+        compatible, message = self._check_python_compatibility(
+            runner_name=self.name,
+            maximum_exclusive=(3, 13),
+        )
+        if not compatible:
+            return compatible, message
+
         available, message = self.check_distribution_available(
             distribution_name="boltz",
             missing_message=(

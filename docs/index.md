@@ -1,6 +1,8 @@
 # COFOLDER Documentation
 
 COFOLDER provides command-line workflows for protein-ligand co-folding and pre-cofolding diagnostics.
+This site documents COFOLDER 1.0.0, released under the MIT licence from the
+[CDDLeiden/COFOLDER](https://github.com/CDDLeiden/COFOLDER) repository.
 
 The supported user-facing workflows are:
 
@@ -41,6 +43,14 @@ If you are new to COFOLDER, follow this order:
 - Read [Adding New Runners](tutorials/runners.md)
 - Use [Backend Acceptance](tutorials/backend-acceptance.md) before promoting backend or CLI-adjacent changes
 
+### I want to use the Python API
+
+- Follow the [Bias recipe](reference/python-api/bias-recipe-flow.md)
+- Follow the [Validate recipe](reference/python-api/validate-recipe-flow.md)
+- Follow the [Screen recipe](reference/python-api/screen-recipe-flow.md)
+- Follow the [Oracle recipe](reference/python-api/oracle-recipe-flow.md)
+- Read [Constructing a new backend runner](reference/python-api/new-backend-runner.md)
+
 ## Repository Orientation
 
 The public repo is organized around a few distinct user paths:
@@ -49,10 +59,12 @@ The public repo is organized around a few distinct user paths:
 - `examples/`: copy-and-run input files
 - repository `tutorials/`: interactive notebooks
 - `scripts/`: optional setup and bias-data helpers
-- `legacy/`: archived historical material
 
 For a concise map of those roles, see [Repository Tour](getting-started/repository-tour.md).
 
 ## Scientific Scope
 
-COFOLDER keeps validation metrics, model-derived confidence metrics, and structure-derived diagnostics distinct. Structural confidence should not be described as a proxy for binding affinity.
+COFOLDER keeps validation metrics, model-derived confidence metrics, and structure-derived diagnostics distinct. Structural confidence is not a proxy for binding affinity.
+
+Machine-readable citation metadata is available in the repository's
+[`CITATION.cff`](https://github.com/CDDLeiden/COFOLDER/blob/main/CITATION.cff).

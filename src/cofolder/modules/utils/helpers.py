@@ -1,10 +1,17 @@
 # Script containing general functions
-import os
-import pandas as pd
-import random
-from typing import Optional, List
-
 import logging
+import os
+import random
+from typing import List, Optional
+
+import pandas as pd
+
+from cofolder.modules.contracts import (
+    RepeatSeedProvenance,
+    SeedOrigin,
+    SeedPlan,
+    SeedResolutionError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +36,6 @@ def create_dir(path: str):
         logger.info(f"Created working directory '{path}'")
     else:
         logger.debug(f"Directory already exists: '{path}'")
-
-def set_dir(path):
-    """Create a directory if it doesn't exist.
-
-    Parameters
-    ----------
-    path : str
-        The directory path to create.
-
-    Notes
-    -----
-    This is a legacy function. Consider using `create_dir()` instead,
-    which has more detailed logging and type hints.
-
-    Examples
-    --------
-    >>> set_dir("./experiments")
-    """
-    if not (os.path.isdir(path)):
-        os.makedirs(path)
-        logger.info("Created working dir {0}".format(path))
 
 def parse_list_as_str(
     list_as_str: str,
@@ -121,11 +107,93 @@ def parse_list_as_str(
 
     return typed_items
 
+_MAX_SEED = 2**32 - 1
+
+
+def _validate_seed(value: object, *, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise SeedResolutionError(f"{label} must be an integer, got {value!r}.")
+    if not 0 <= value <= _MAX_SEED:
+        raise SeedResolutionError(
+            f"{label} must be between 0 and {_MAX_SEED}, got {value}."
+        )
+    return value
+
+
+def resolve_seed_plan(
+    repeats: int,
+    requested_base_seed: int | None = None,
+    logger: logging.Logger | None = None,
+) -> SeedPlan:
+    """Resolve one validated base seed and deterministic, distinct repeat seeds."""
+    if isinstance(repeats, bool) or not isinstance(repeats, int) or repeats < 1:
+        raise SeedResolutionError(
+            f"repeats must be a positive integer, got {repeats!r}."
+        )
+    if repeats > _MAX_SEED + 1:
+        raise SeedResolutionError(
+            f"repeats cannot exceed the {_MAX_SEED + 1} distinct seed values."
+        )
+    if logger is None:
+        logger = logging.getLogger(__name__)
+
+    if requested_base_seed is None:
+        resolved_base_seed = random.randint(0, _MAX_SEED)
+        origin = SeedOrigin.GENERATED
+        logger.info(
+            "No global seed provided. Generated random global seed: %d",
+            resolved_base_seed,
+        )
+    else:
+        resolved_base_seed = _validate_seed(
+            requested_base_seed, label="requested_base_seed"
+        )
+        origin = SeedOrigin.USER_SPECIFIED
+        logger.info("Using provided global seed: %d", resolved_base_seed)
+
+    if repeats == 1:
+        derived = [resolved_base_seed]
+    else:
+        rng = random.Random(resolved_base_seed)
+        derived = []
+        observed: set[int] = set()
+        while len(derived) < repeats:
+            for _ in range(1024):
+                candidate = rng.randint(0, _MAX_SEED)
+                if candidate not in observed:
+                    observed.add(candidate)
+                    derived.append(candidate)
+                    break
+            else:
+                raise SeedResolutionError(
+                    "Could not derive a distinct repeat seed after 1024 attempts."
+                )
+
+    repeat_provenance = tuple(
+        RepeatSeedProvenance(
+            repeat_id=index,
+            requested_base_seed=requested_base_seed,
+            resolved_base_seed=resolved_base_seed,
+            derived_seed=seed,
+            effective_seed=seed,
+            origin=origin,
+        )
+        for index, seed in enumerate(derived, 1)
+    )
+    logger.info("Run seeds to be used for this workflow: %s", derived)
+    return SeedPlan(
+        requested_base_seed=requested_base_seed,
+        resolved_base_seed=resolved_base_seed,
+        origin=origin,
+        repeats=repeat_provenance,
+    )
+
+
 def get_seeds(
     repeats: int,
     seed: Optional[int] = None,
     logger: Optional[logging.Logger] = None
-) -> (int, List[int]):
+) -> tuple[int, List[int]]:
     """
     Generate a global seed and run seeds for repeated workflow runs.
 
@@ -150,32 +218,12 @@ def get_seeds(
     - If repeats == 1, the run seed list contains only the global seed.
     - If repeats > 1, run seeds are generated deterministically from the global seed.
     """
-    if logger is None:
-        logger = logging.getLogger(__name__)
-
-    # Generate global seed if not provided
-    if seed is None:
-        global_seed = generate_seeds(num_seeds=1, seed=None)[0]
-        logger.info("No global seed provided. Generated random global seed: %d", global_seed)
-    else:
-        global_seed = seed
-        logger.info("Using provided global seed: %d", global_seed)
-
-    # Generate run seeds based on repeats
-    if repeats == 1:
-        run_seeds = [global_seed]
-        logger.debug("Single repeat: using global seed as run seed: %s", run_seeds)
-    else:
-        run_seeds = generate_seeds(num_seeds=repeats, seed=global_seed)
-        logger.debug(
-            "Multiple repeats: %d run seeds generated from global seed %d: %s",
-            repeats,
-            global_seed,
-            run_seeds
-        )
-
-    logger.info("Run seeds to be used for this workflow: %s", run_seeds)
-    return global_seed, run_seeds
+    plan = resolve_seed_plan(
+        repeats=repeats,
+        requested_base_seed=seed,
+        logger=logger,
+    )
+    return plan.resolved_base_seed, [item.effective_seed for item in plan.repeats]
 
 def generate_seeds(num_seeds: int, seed: Optional[int] = None) -> List[int]:
     """
@@ -236,118 +284,3 @@ def drop_and_log_nans(df: pd.DataFrame, cols: list, context: str = "") -> pd.Dat
     if nan_count > 0:
         logging.info(f"Removed {nan_count} rows with NaN in {cols} {f'for {context}' if context else ''}.")
     return df.dropna(subset=cols)
-
-
-def read_yaml(path: str):
-    """Compatibility wrapper for YAML loading helpers."""
-    from cofolder.modules.utils import read
-
-    return read.read_yaml(path)
-
-
-def read_csv(path: str, columns):
-    """Compatibility wrapper for CSV loading helpers."""
-    from cofolder.modules.utils import read
-
-    return read.read_csv(path, columns)
-
-
-def read_sdf(path: str):
-    """Compatibility wrapper for SDF loading helpers."""
-    from cofolder.modules.utils import read
-
-    return read.read_sdf(path)
-
-
-def delete_last_line(file_path: str) -> None:
-    """Compatibility wrapper for file mutation helpers."""
-    from cofolder.modules.utils import write
-
-    write.delete_last_line(file_path)
-
-
-def parse_censored_affinity(affinity_series: pd.Series, keep_sign: bool = True) -> pd.DataFrame:
-    """Compatibility wrapper for affinity dataset helpers."""
-    from cofolder.modules.analytics import dataset
-
-    return dataset.parse_censored_affinity(affinity_series, keep_sign=keep_sign)
-
-
-def remove_censored_affinity(df: pd.DataFrame, cols: list) -> pd.DataFrame:
-    """Compatibility wrapper for affinity dataset helpers."""
-    from cofolder.modules.analytics import dataset
-
-    return dataset.remove_censored_affinity(df, cols)
-
-
-def strip_censoring_signs(df: pd.DataFrame, cols: list) -> pd.DataFrame:
-    """Compatibility wrapper for affinity dataset helpers."""
-    from cofolder.modules.analytics import dataset
-
-    return dataset.strip_censoring_signs(df, cols)
-
-
-def prepare_affinity_dataframe(
-    df: pd.DataFrame,
-    cols: list,
-    censoring: str = "remove",
-) -> pd.DataFrame:
-    """Compatibility wrapper for affinity dataset helpers."""
-    from cofolder.modules.analytics import dataset
-
-    return dataset.prepare_affinity_dataframe(df, cols, censoring=censoring)
-
-
-def convert_boltz_affinity_to_ic50(
-    df: pd.DataFrame,
-    affinity_col: str = "affinity_pred_value",
-    output_path: str | None = None,
-) -> pd.DataFrame:
-    """Compatibility wrapper for affinity statistics helpers."""
-    from cofolder.modules.analytics import stats
-
-    return stats.convert_boltz_affinity_to_ic50(
-        df,
-        affinity_col=affinity_col,
-        output_path=output_path,
-    )
-
-
-def calculate_affinity_correlations(
-    df: pd.DataFrame,
-    pred_col: str,
-    exp_col: str,
-    sample_size: int | None = None,
-    censoring: str = "strip",
-) -> dict:
-    """Compatibility wrapper for affinity statistics helpers."""
-    from cofolder.modules.analytics import stats
-
-    return stats.calculate_affinity_correlations(
-        df,
-        pred_col,
-        exp_col,
-        sample_size=sample_size,
-        censoring=censoring,
-    )
-
-
-def plot_affinity_correlation(
-    df: pd.DataFrame,
-    pred_col: str,
-    exp_col: str,
-    sample_size: int | None = None,
-    censoring: str = "strip",
-    output_path: str | None = None,
-):
-    """Compatibility wrapper for affinity plotting helpers."""
-    from cofolder.modules.analytics import plots
-
-    return plots.plot_affinity_correlation(
-        df,
-        pred_col,
-        exp_col,
-        sample_size=sample_size,
-        censoring=censoring,
-        output_path=output_path,
-    )

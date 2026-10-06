@@ -1,0 +1,11 @@
+schema_version: 1
+workflow: bias
+assessment_root: bias-comparison
+system_path: system.yaml
+bias_training_data_protein_path: ~/.cofolder/data/bias/protein
+bias_training_data_ligand_path: ~/.cofolder/data/bias/ligand
+bias_query_cache_path: ~/.cofolder/cache/bias_queries
+custom_bias_reference_path: custom-bias
+release_cutoff: 2023-06-01
+bias_protein_similarity_threshold: 0.25
+bias_ligand_similarity_threshold: 0.35

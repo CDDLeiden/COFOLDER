@@ -1,0 +1,36 @@
+{
+  "schema_version": 2,
+  "status": "completed_saved_prediction_reanalysis",
+  "prediction_backend": "boltz2 2.2.1",
+  "prediction_executed_at": "2026-09-28",
+  "reanalysed_at": "2026-09-29",
+  "device": "CUDA_VISIBLE_DEVICES=3 (NVIDIA L40S)",
+  "seed": 20260928,
+  "candidates": 6,
+  "evaluable": 6,
+  "policy_sha256": "9c78ca871fce170b534dd82e5b284539b2e0b36bdb0f1077e5ef7e9d0077d45b",
+  "summary_csv": {"path": "acceptance-v2.csv", "sha256": "2ec584241f5ae8a4e178b2e91bdd2355b00632022882a0536d4bbfc3fa8ddcc8"},
+  "atom_evidence": {"path": "acceptance-v2-interactions.json", "sha256": "e62e589d17e760acbfb7ce2cbab58e4ba92a185e478c0ea21b2929202413ce14"},
+  "provenance": {"path": "acceptance-v2-provenance.json", "sha256": "13d2f7052a787ed8c8a1e3903f04411e2cf62e72155cfc8339e0810463db1068"},
+  "reference_evidence": {"path": "reference-validation.json", "sha256": "b501c511fa979934a4ff40cb188116fb8843991ef2ca8e38080ed5d2be3daa0c"},
+  "reference_checks": {
+    "1KV2": {
+      "dfg_d1_angstrom": 5.949,
+      "dfg_d2_angstrom": 11.076,
+      "dfg_out": true,
+      "glu71_sidechain_hbond": {"distance_angstrom": 2.977, "dha_angle_degrees": 159.72},
+      "asp168_backbone_hbond": {"distance_angstrom": 2.890, "dha_angle_degrees": 163.29},
+      "met109_backbone_hbond": {"distance_angstrom": 2.900, "dha_angle_degrees": 152.14}
+    },
+    "1A9U": {"dfg_d1_angstrom": 8.096, "dfg_d2_angstrom": 8.555, "dfg_out": false, "met109_backbone_hbond": true}
+  },
+  "observed_structure_gated_order": ["birb796", "birb48", "birb43", "um101", "sb203580", "sb202474"],
+  "observations": [
+    "All three BIRB-series predictions met the pocket-occupancy and SI D1/D2 Type II predicate.",
+    "BIRB796 and compound 48 recovered all three features; affinity broke their equal-interaction tie.",
+    "Compound 43 recovered the Glu71 and Asp168 features but not the additional Met109 interaction.",
+    "The predicted UM101 pose recovered two designated interactions but remained outside the Type II tier; this disagrees with its expected remote-site label and is retained as an observed prediction outcome.",
+    "SB203580 and SB202474 recovered only the Met109 feature and remained outside the Type II tier.",
+    "The literature expectation labels were not inputs to any reward."
+  ]
+}

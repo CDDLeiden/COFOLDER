@@ -7,9 +7,11 @@ and file output.
 
 import logging
 import sys
-import weakref
 from pathlib import Path
 from typing import Optional
+
+CONCISE_FORMAT = "%(levelname)s | %(message)s"
+"""str: Concise format used for normal console progress."""
 
 DEFAULT_FORMAT = (
     "%(asctime)s | "
@@ -36,9 +38,8 @@ def setup_root_logger(
     Sets up the root logger with a standardized format for consistent logging
     across the entire application. Repeated calls update the root log level and
     ensure the requested console/file handlers exist without duplicating them.
-    The compatibility contract also preserves pytest `caplog` visibility after
-    tests clear root handlers, even though that currently depends on pytest and
-    Python logging internals rather than a public hook.
+    Only handlers created by COFOLDER are updated; unrelated application handlers
+    remain untouched.
 
     Parameters
     ----------
@@ -64,7 +65,10 @@ def setup_root_logger(
     """
     root = logging.getLogger()
 
-    formatter = logging.Formatter(DEFAULT_FORMAT)
+    detailed_formatter = logging.Formatter(DEFAULT_FORMAT)
+    console_formatter = logging.Formatter(
+        DEFAULT_FORMAT if level <= logging.DEBUG else CONCISE_FORMAT
+    )
 
     root.setLevel(level)
 
@@ -72,28 +76,15 @@ def setup_root_logger(
         (
             handler
             for handler in root.handlers
-            if isinstance(handler, logging.StreamHandler)
-            and not isinstance(handler, logging.FileHandler)
-            and getattr(handler, "stream", None) is sys.stdout
+            if getattr(handler, "_cofolder_console_handler", False)
         ),
         None,
     )
     if console is None:
         console = logging.StreamHandler(sys.stdout)
+        console._cofolder_console_handler = True
         root.addHandler(console)
-    console.setFormatter(formatter)
-
-    # Compatibility contract: tests may clear root.handlers before calling this
-    # helper, but caplog-based assertions should still observe root logger
-    # output afterward. Pytest does not expose a public reattachment hook, so
-    # we intentionally depend on logging/pytest internals here and cover that
-    # behavior with a narrow regression test.
-    for handler_ref in list(getattr(logging, "_handlerList", [])):
-        handler = handler_ref() if isinstance(handler_ref, weakref.ReferenceType) else None
-        if handler is None:
-            continue
-        if handler.__class__.__module__.startswith("_pytest.logging") and handler not in root.handlers:
-            root.addHandler(handler)
+    console.setFormatter(console_formatter)
 
     if log_file:
         log_path = str(Path(log_file).resolve())
@@ -102,11 +93,13 @@ def setup_root_logger(
                 handler
                 for handler in root.handlers
                 if isinstance(handler, logging.FileHandler)
+                and getattr(handler, "_cofolder_file_handler", False)
                 and Path(handler.baseFilename).resolve() == Path(log_path)
             ),
             None,
         )
         if file_handler is None:
             file_handler = logging.FileHandler(log_path)
+            file_handler._cofolder_file_handler = True
             root.addHandler(file_handler)
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(detailed_formatter)

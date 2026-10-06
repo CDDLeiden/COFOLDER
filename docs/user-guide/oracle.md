@@ -1,58 +1,164 @@
-# Oracle Command
+# Oracle Command and Python API
 
-The `oracle` command runs `validate` once for a **single input ligand**
-and returns **one scalar value** selected from validate outputs.
+Bias-derived Oracle metrics use the source bundles described in
+[Providing bias training data](bias-training-data.md). Repeated candidates reuse the
+invariant protein search, while ligand reuse follows canonical molecular identity.
 
-## Basic Usage
+The Oracle workflow runs `validate` for one query ligand in a fixed system and
+returns one finite scalar. The command line exposes standard single-metric calls;
+the Python API additionally supports weighted objectives, structure gates, and
+arbitrary scoring functions.
+
+## Single-metric command
 
 ```bash
 cofolder oracle \
-  -s system.yaml \
-  -o options.yaml \
+  -s examples/system.yaml -o examples/options.yaml \
   --input_smiles "CCO" \
-  --output_metric affinity_pred_value \
-  --aggregate first
+  --output_metric ligand_B__affinity_pred_value \
+  --runner boltz2 --scoring_functions affinity_metrics \
+  --aggregate first \
+  -w oracle_affinity
 ```
 
-## Required Arguments
+Exactly one of `--input_smiles` and `--input_mol_file` is required. `--aggregate`
+can be `first`, `mean`, `max`, `min`, or `median` and reduces values across repeats
+and diffusion samples.
 
-- `-s, --system_path`: Path to system YAML file
-- `-o, --options_path`: Path to runner options YAML file
-- exactly one input:
-  - `--input_smiles <smiles>`
-  - `--input_mol_file <path>`
-- `--output_metric <column_name>`: metric to extract (e.g. `affinity_pred_value`)
+Metric selectors use the same qualification as Screen: `system__<metric>` or
+`<entity>_<chain ID>__<metric>`. Bare names remain supported and prefer the query
+ligand, then the system. Qualify a selector whenever a system has multiple matching
+chains.
 
-## Optional Arguments
+## Ligand training-set similarity
 
-- `--aggregate {first,mean,max,min,median}`: how to reduce multiple metric rows
-- all common validate arguments are supported and forwarded
-- `-w, --wrk_dir`: Working directory
-- `-d, --debug`: Enable debug logging
+Bias is ligand similarity/proximity to a supplied training reference, not a binding
+score or a separately inferred error estimate.
 
-## Scoring Function Checks
+```bash
+cofolder oracle \
+  -s examples/system.yaml -o examples/options.yaml \
+  --input_smiles "CCO" \
+  --output_metric ligand_B__bias_lig_sim_train \
+  --assess_bias --bias_chains B \
+  --ligand_training_data_path \
+    src/cofolder/acceptance/data/ligand_training_data.csv \
+  -w oracle_bias
+```
 
-Oracle validates that your requested `--output_metric` is compatible
-with enabled `--scoring_functions` before running.
+## Custom pocket/IFP-reference coverage
 
-Examples:
+Raw `ifp_distance` is a vector and cannot be returned as a scalar. Supply a pocket
+reference and request its numerical coverage instead:
 
-- `ifp_distance` requires `ifp_distance`
-- `sasa_norm_heavy` requires `sasa_normalized`
-- `affinity_pred_value` requires affinity metrics
-- `bias_*` requires `--assess_bias`
+```bash
+cofolder oracle \
+  -s examples/system.yaml -o examples/options.yaml \
+  --input_smiles "CCO" \
+  --scoring_functions ifp_distance \
+  --reproduction_metrics pocket_coverage \
+  --pocket_coverage_reference "A25 G48 Y51" \
+  --output_metric ligand_B__pocket_coverage_custom \
+  -w oracle_pocket
+```
 
-Requesting a `bias_*` metric here still runs the full validate-backed prediction path and
-then reads the shared bias diagnostics. If you only want reference-overlap diagnostics,
-use the dedicated [`bias`](bias.md) workflow instead.
+The pocket residue list is illustrative. Derive target-specific definitions and
+thresholds during system validation.
 
-## Output
+## Composite and structure-gated scoring
 
-- Scalar return value from `Oracle.run()`
-- CSV file: `<wrk_dir>/oracle_result.csv`
+Composite objectives and gates are deliberately Python-only. A weighted composite is
+the unnormalized sum of each aggregated metric times its weight.
+
+```python
+from cofolder.recipes.oracle import Oracle, OracleGate, OracleGatePolicy
+
+oracle = Oracle(
+    wrk_dir="oracle_gated",
+    system_path="examples/system.yaml",
+    options_path="examples/options.yaml",
+    input_smiles="CCO",
+    aggregate="mean",
+    scoring_functions=[
+        "confidence_metrics",
+        "affinity_metrics_ext",
+        "ifp_distance",
+        "sasa_normalized",
+    ],
+    pocket_coverage_reference="A25 G48 Y51",
+    reproduction_metrics=["pocket_coverage"],
+    score_components={
+        "ligand_B__pIC50": 1.0,
+        "system__confidence_score": 1.0,
+    },
+    score_gates=[
+        OracleGate("ligand_B__pocket_coverage_custom", "ge", 0.60),
+        OracleGate("ligand_B__sasa_norm_heavy", "le", 2.0),
+    ],
+    gate_policy=OracleGatePolicy("downweight", 0.25),
+)
+score = oracle.run()
+```
+
+All gates must pass. If any metric is missing or fails its comparison, the policy is
+applied once. The available policies are:
+
+- `OracleGatePolicy("downweight", factor)` multiplies the base score by a factor in
+  `[0, 1]`.
+- `OracleGatePolicy("fixed_penalty", value)` returns the supplied penalty.
+- `OracleGatePolicy("non_binder", value)` assigns the supplied non-binder score and
+  records that interpretation in the audit output.
+
+## Arbitrary Python scoring
+
+A scoring function receives an `OracleScoreContext` with the query SMILES, run path,
+raw system and chain DataFrames, and a read-only mapping of aggregated qualified
+metrics:
+
+```python
+from cofolder.recipes.oracle import Oracle
+
+
+def custom_score(context):
+    affinity = context.aggregated_metrics["ligand_B__pIC50"]
+    confidence = context.aggregated_metrics["system__confidence_score"]
+    return affinity * confidence
+
+
+score = Oracle(
+    wrk_dir="oracle_custom",
+    system_path="examples/system.yaml",
+    options_path="examples/options.yaml",
+    input_smiles="CCO",
+    scoring_functions=["confidence_metrics", "affinity_metrics_ext"],
+    scoring_function=custom_score,
+).run()
+```
+
+Exactly one base-score source is allowed: `output_metric`, `score_components`, or
+`scoring_function`.
+
+## Output and audit trail
+
+`Oracle.run()` returns the final `float` and writes the versioned public contract
+under `<wrk_dir>/results/`. The base, final, and gate-adjusted values are long-form
+Oracle metric records. Raw Validate outputs remain under `<wrk_dir>/oracle_run/results/`.
+
+## Metric prerequisites
+
+- Affinity and confidence selectors require their corresponding scoring groups.
+- `sasa` and `sasa_norm_heavy` require SASA scoring.
+- `bias_*` requires `assess_bias=True` and appropriate training references.
+- Custom pocket coverage requires `ifp_distance`, a pocket reference, and the
+  `pocket_coverage` reproduction metric.
+- Reference-derived pocket coverage requires `reference_path`.
+
+No confidence, affinity, structural, or bias metric is a universal pass/fail test.
+Calibrate objectives and gates against the validated target system.
 
 ## Related
 
+- [MAPK14 structure-gated Oracle tutorial](../tutorials/structure-gated-oracle.md)
 - [Bias Command](bias.md)
+- [Screen Command](screen.md)
 - [Oracle API Reference](../api/recipes/oracle.md)
-- [Validate Command](validate.md)

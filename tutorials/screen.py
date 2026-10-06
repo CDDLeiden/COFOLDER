@@ -14,45 +14,31 @@ def _():
         sys.path.insert(0, str(notebook_dir))
 
     import marimo as mo
+    from _marimo_helpers import (
+        EXAMPLES_DIR,
+        code_block,
+        format_command,
+        make_workspace,
+        read_text,
+        run_command,
+    )
+    from _workflow_examples import build_screen_command
 
-    from _marimo_helpers import EXAMPLES_DIR, code_block, format_command, make_workspace, read_text, run_command
-
-    return EXAMPLES_DIR, code_block, format_command, make_workspace, mo, read_text, run_command
+    return EXAMPLES_DIR, build_screen_command, code_block, format_command, make_workspace, mo, read_text, run_command
 
 
 @app.cell
-def _(EXAMPLES_DIR, make_workspace):
+def _(EXAMPLES_DIR, build_screen_command, make_workspace):
     workspace = make_workspace("cofolder-tutorial-screen-")
     system_path = EXAMPLES_DIR / "system_screen.yaml"
     options_path = EXAMPLES_DIR / "options.yaml"
     screen_csv = EXAMPLES_DIR / "ligand_screen.csv"
-    return options_path, screen_csv, system_path, workspace
+    screen_command = build_screen_command(EXAMPLES_DIR, workspace)
+    return options_path, screen_command, screen_csv, system_path, workspace
 
 
 @app.cell
-def _(code_block, format_command, mo, options_path, read_text, screen_csv, system_path, workspace):
-    screen_command = [
-        "cofolder",
-        "screen",
-        "-s",
-        system_path,
-        "-o",
-        options_path,
-        "-c",
-        screen_csv,
-        "--col_id",
-        "Name",
-        "--variable",
-        "sequences,1,ligand,smiles",
-        "--col_variable",
-        "SMILES",
-        "--merge_data",
-        "pIC50",
-        "-w",
-        workspace,
-        "--runner",
-        "boltz2",
-    ]
+def _(code_block, format_command, mo, options_path, read_text, screen_command, screen_csv, system_path):
     mo.md(
         f"""
         # Screen Workflow
@@ -100,7 +86,6 @@ def _(mo, run_command, run_screen, screen_command, workspace):
 @app.cell
 def _(mo, screen_output):
     mo.md(f"## Command output\n```text\n{screen_output}\n```")
-    return
 
 
 if __name__ == "__main__":

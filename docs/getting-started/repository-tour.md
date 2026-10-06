@@ -12,13 +12,8 @@ This page explains the role of the main publication-facing files and folders in 
 ## Support And Maintenance Material
 
 - `scripts/`: optional setup and data-preparation helpers
-- `run_ui.sh`: launcher for the optional Streamlit UI
 - `LICENSE`: repository license
-- `THIRD_PARTY_LICENSES.md`: attribution for adapted or bundled third-party components
-
-## Archived Material
-
-- `legacy/`: historical files retained for traceability and migration support, not the recommended path for new users
+- `THIRD_PARTY_SOFTWARE.md`: attribution for adapted or bundled third-party components
 
 ## Recommended Reading Order
 

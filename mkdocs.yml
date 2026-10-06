@@ -1,4 +1,5 @@
 site_name: COFOLDER Documentation
+site_url: https://cddleiden.github.io/COFOLDER/
 site_description: Documentation for COFOLDER co-folding workflows, diagnostics, and tutorials
 site_author: Bola Khalil
 repo_url: https://github.com/CDDLeiden/COFOLDER
@@ -78,18 +79,31 @@ nav:
   - User Guide:
       - Overview: user-guide/overview.md
       - Bias: user-guide/bias.md
+      - Bias training data: user-guide/bias-training-data.md
       - Validate: user-guide/validate.md
       - Screen: user-guide/screen.md
       - Oracle: user-guide/oracle.md
+      - Public output contract: user-guide/public-output-contract.md
+      - Metric reference: user-guide/metric-reference.md
+      - Troubleshooting: user-guide/troubleshooting.md
   - Tutorials:
       - Tutorial Map: tutorials/index.md
       - Basic Usage: tutorials/basic.md
       - Virtual Screening: tutorials/screening.md
       - Ligand Handling: tutorials/ligands.md
       - Advanced Features: tutorials/advanced.md
+      - MAPK14 Structure-gated Oracle: tutorials/structure-gated-oracle.md
       - Adding New Runners: tutorials/runners.md
       - Backend Acceptance: tutorials/backend-acceptance.md
   - API Reference:
+      - Command line: reference/cli.md
+      - Python execution flows:
+          - Overview: reference/python-api/index.md
+          - Bias recipe: reference/python-api/bias-recipe-flow.md
+          - Validate recipe: reference/python-api/validate-recipe-flow.md
+          - Screen recipe: reference/python-api/screen-recipe-flow.md
+          - Oracle recipe: reference/python-api/oracle-recipe-flow.md
+          - New backend runner: reference/python-api/new-backend-runner.md
       - Recipes:
           - Bias: api/recipes/bias.md
           - Validate: api/recipes/validate.md
@@ -100,8 +114,13 @@ nav:
           - Entities: api/modules/entities.md
           - Utils: api/modules/utils.md
           - Analytics: api/modules/analytics.md
+          - Public Contracts: api/modules/contracts.md
   - Contributing: contributing.md
   - Changelog: changelog.md
+  - Release Evidence:
+      - Issue 16 tutorial acceptance: release/issue-16-tutorial-acceptance.md
+      - Issue 25 documentation acceptance: release/issue-25-documentation-acceptance.md
+      - v1.0 documentation claim audit: release/documentation_claim_audit_21092026.md
 
 extra:
   version:

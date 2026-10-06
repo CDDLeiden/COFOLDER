@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import csv
-import os
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from time import perf_counter
 
+from cofolder.modules.utils.executables import resolve_mmseqs_executable
 from cofolder.modules.utils.timing import DebugTimingCollector
 
 
@@ -20,29 +19,7 @@ _PROTEIN_STAGE_MARKERS = (
 )
 
 def _resolve_mmseqs_bin() -> str | None:
-    explicit_env = os.environ.get("COFOLDER_MMSEQS_BIN")
-    candidates = []
-    if explicit_env:
-        candidates.append(explicit_env)
-    candidates.extend(
-        [
-            str(Path.home() / ".cofolder/vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[4] / "vendor/mmseqs/bin/mmseqs"),
-            str(Path(__file__).resolve().parents[4] / "vendor/mmseqs/mmseqs"),
-        ]
-    )
-    from_path = shutil.which("mmseqs")
-    if from_path:
-        candidates.append(from_path)
-
-    for cand in candidates:
-        p = Path(cand).expanduser()
-        if p.exists() and p.is_file():
-            return str(p)
-        found = shutil.which(cand)
-        if found:
-            return found
-    return None
+    return resolve_mmseqs_executable().path
 
 
 def run_build_bias_training_data(
@@ -51,6 +28,7 @@ def run_build_bias_training_data(
     output_protein_csv: Path,
     output_ligand_csv: Path,
     release_cutoff: str,
+    protein_similarity_threshold: float = 25.0,
     ligand_similarity_threshold: float = 0.35,
     overwrite: bool = True,
     skip_bias_csv: bool = True,
@@ -80,7 +58,7 @@ def run_build_bias_training_data(
             sys.executable,
             "-u",
             "-m",
-            "cofolder.modules.analytics.build_bias_training_data",
+            "cofolder.tools.build_bias_training_data",
             "--system_path",
             str(system_path),
             "--components_cif",
@@ -93,6 +71,8 @@ def run_build_bias_training_data(
             str(release_cutoff),
             "--ligand_similarity_threshold",
             str(threshold),
+            "--protein_similarity_threshold",
+            str(float(protein_similarity_threshold)),
         ]
         if overwrite:
             cmd.append("--overwrite")

@@ -1,303 +1,186 @@
 # Advanced Features
 
-Explore advanced capabilities and customization options in COFOLDER.
+This guide uses only supported COFOLDER 1.0 interfaces. Start with the
+[Basic Usage](basic.md) and [Virtual Screening](screening.md) tutorials first.
 
 ## Multi-Chain Systems
 
-### Protein-Protein-Ligand Complexes
+Protein, DNA, RNA, and ligand entities use the same versioned system schema:
 
 ```yaml
 version: 1
 sequences:
   - protein:
-      id: "chain_A"
-      fasta: "SEQUENCE_A..."
+      id: A
+      sequence: ACDEFGHIK
   - protein:
-      id: "chain_B"
-      fasta: "SEQUENCE_B..."
+      id: B
+      sequence: LMNPQRSTV
   - ligand:
-      smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
+      id: L
+      smiles: CCO
 ```
 
-### Multiple Ligands
+Use a list of IDs only when multiple chains share one entity. Separate ligand entries
+represent separate chemistry and require `--ligand_chain` for Screen or Oracle when
+the replacement target would otherwise be ambiguous.
+
+## Repeats and Sampling
+
+Use `--repeats` for workflow-level repeats and configure backend diffusion samples in
+the options YAML:
+
+```bash
+cofolder validate -s examples/system.yaml -o examples/options.yaml \
+  --repeats 3 --seed 2026 -w ./repeat-output
+```
 
 ```yaml
 version: 1
-sequences:
-  - protein:
-      id: "protein"
-      fasta: "SEQUENCE..."
-  - ligand:
-      smiles: "SMILES_1"
-      ccd: "LIG1"
-  - ligand:
-      smiles: "SMILES_2"
-      ccd: "LIG2"
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 5
+runner:
+  recycling_steps: 3
 ```
 
-## Ensemble Predictions
-
-Generate multiple predictions for uncertainty estimation:
-
-```yaml
-# options.yaml
-out_dir: ensemble_output
-devices: [0]
-num_models: 5           # Generate 5 models
-recycling_steps: 5
-diffusion_samples: 10   # 10 samples per model
-```
-
-## Custom Boltz Parameters
-
-### High-Quality Predictions
-
-```yaml
-out_dir: high_quality
-devices: [0]
-num_models: 5
-recycling_steps: 10
-diffusion_samples: 20
-sampling_steps: 500
-diffusion_temperature: 0.8
-```
-
-### Fast Screening
-
-```yaml
-out_dir: fast_screen
-devices: [0]
-num_models: 1
-recycling_steps: 1
-diffusion_samples: 1
-sampling_steps: 100
-```
+The manifest records requested, resolved, derived, and effective seeds. Metric rows
+retain repeat, model, and sample identity.
 
 ## Covalent Binding
 
-For covalent inhibitors, specify the covalent bond:
+Use a CCD ligand when atom names are needed by a bond constraint:
 
 ```yaml
 version: 1
 sequences:
   - protein:
-      id: "protease"
-      fasta: "SEQUENCE..."
+      id: A
+      sequence: ACDEFGHIK
   - ligand:
-      smiles: "COVALENT_SMILES"
-      ccd: "COV"
-      covalent:
-        protein_residue: "CYS145"
-        ligand_atom: 12
+      id: B
+      ccd: COV
+constraints:
+  - bond:
+      atom1: [A, 2, SG]
+      atom2: [B, 1, C12]
 ```
 
-## Custom Scoring Functions
+Residue positions are one-based. Both atom names must exist in the selected protein
+residue or preprocessed ligand CCD. See [Ligand Handling](ligands.md) for custom CCDs.
 
-### Implement Custom Oracle
+## Supported Python Workflows
+
+The recipe classes mirror the CLI and write the same public records:
 
 ```python
-from cofolder.recipes.oracle import Oracle
-import numpy as np
+from cofolder.recipes.validate import Validate
 
-
-class CustomOracle(Oracle):
-    def score(self, prediction):
-        # Custom scoring logic
-        confidence = prediction['confidence']
-        rmsd = self.calculate_rmsd(prediction)
-
-        # Combined score
-        score = confidence * np.exp(-rmsd)
-        return score
-
-    def calculate_rmsd(self, prediction):
-        # RMSD calculation
-        pass
+Validate(
+    wrk_dir="validate-output",
+    system_path="examples/system.yaml",
+    options_path="examples/options.yaml",
+    runner="boltz2",
+    repeats=2,
+    seed=2026,
+).run()
 ```
-
-## Batch Processing
-
-### Parallel Screening
 
 ```python
-import multiprocessing as mp
-from functools import partial
+from cofolder.recipes.screen import Screen
 
-def screen_batch(compounds, gpu_id):
-    # Configure to use specific GPU
-    options = load_options()
-    options['devices'] = [gpu_id]
-
-    # Run screening
-    results = []
-    for compound in compounds:
-        result = run_prediction(compound, options)
-        results.append(result)
-    return results
-
-# Split compounds across GPUs
-n_gpus = 4
-compound_batches = split_list(compounds, n_gpus)
-
-with mp.Pool(n_gpus) as pool:
-    func = partial(screen_batch)
-    all_results = pool.starmap(func,
-        [(batch, i) for i, batch in enumerate(compound_batches)])
+screen_results = Screen(
+    wrk_dir="screen-output",
+    system_path="examples/system_screen.yaml",
+    options_path="examples/options.yaml",
+    library="examples/ligand_screen.csv",
+    ligand_chain="B",
+    col_id="Name",
+    smiles_column="SMILES",
+    merge_data="pIC50",
+).run()
 ```
 
-## Result Post-Processing
+`Screen.run()` returns a convenience `DataFrame`; the files under `results/` retain
+the authoritative versioned record contract.
 
-### Aggregate Multiple Predictions
+## Custom Oracle Scores and Gates
+
+```python
+from cofolder.recipes.oracle import Oracle, OracleGate, OracleGatePolicy
+
+
+def custom_score(context):
+    affinity = context.aggregated_metrics["ligand_B__pIC50"]
+    confidence = context.aggregated_metrics["system__confidence_score"]
+    return affinity * confidence
+
+
+score = Oracle(
+    wrk_dir="oracle-output",
+    system_path="examples/system.yaml",
+    options_path="examples/options.yaml",
+    input_smiles="CCO",
+    aggregate="mean",
+    scoring_functions=["confidence_metrics", "affinity_metrics_ext", "sasa_normalized"],
+    scoring_function=custom_score,
+    score_gates=[OracleGate("ligand_B__sasa_norm_heavy", "le", 2.0)],
+    gate_policy=OracleGatePolicy("downweight", 0.25),
+).run()
+```
+
+The threshold is illustrative and must be calibrated for the target system. Supported
+reducers are `first`, `mean`, `max`, `min`, and `median`; gate policies are
+`downweight`, `fixed_penalty`, and `non_binder`.
+
+## Analyze Public Metrics
+
+Read the long-form output directly instead of relying on runner-owned files:
 
 ```python
 import pandas as pd
-import glob
 
-# Collect all results
-result_files = glob.glob("output/*/results.csv")
-dfs = [pd.read_csv(f) for f in result_files]
-combined = pd.concat(dfs, ignore_index=True)
+metrics = pd.read_csv("screen-output/results/metrics.csv")
+computed = metrics[metrics["status"] == "computed"]
 
-# Calculate statistics
-stats = combined.groupby('compound_id').agg({
-    'confidence': ['mean', 'std', 'min', 'max'],
-    'rmsd': ['mean', 'std']
-})
+confidence = computed[computed["metric_name"] == "confidence_score"]
+affinity = computed[computed["metric_name"] == "affinity_pred_value"]
+distance_ifp = computed[computed["metric_name"] == "ifp_distance"]
 ```
 
-### Extract Interaction Fingerprints
+For reference-free contact-pattern grouping, enable `--cluster_ifps` on Screen and
+read `results/ifp_cluster_summary.csv`. For reference-overlap decisions, configure the
+documented IFP filter options instead of calling analytics implementation details.
 
-```python
-from cofolder.modules.analytics import calculate_ifp
+## Parallel Jobs and Recovery
 
-predictions = load_predictions("output/")
-reference = load_reference("reference.pdb")
+COFOLDER 1.0 does not expose an in-process multi-GPU scheduler or checkpoint API.
+For independent library shards, create each CSV explicitly and submit one supported
+Screen command per GPU through the site scheduler:
 
-for pred in predictions:
-    ifp = calculate_ifp(pred, reference)
-    overlap = ifp.overlap()
-    print(f"IFP overlap: {overlap:.2f}")
+```bash
+CUDA_VISIBLE_DEVICES=0 cofolder screen -s examples/system_screen.yaml \
+  -o examples/options.yaml -c library-part-1.csv --col_id Name \
+  --smiles_column SMILES --ligand_chain B -w ./screen-part-1
+
+CUDA_VISIBLE_DEVICES=1 cofolder screen -s examples/system_screen.yaml \
+  -o examples/options.yaml -c library-part-2.csv --col_id Name \
+  --smiles_column SMILES --ligand_chain B -w ./screen-part-2
 ```
 
-## Integration with Other Tools
+Each work directory has its own manifest, execution records, and failures. Recovery
+means rerunning the failed source members in a new, auditable Screen invocation; no
+public checkpoint-resume interface is claimed.
 
-### PyMOL Automation
+## Post-v1 Scope
 
-```python
-import pymol
-from pymol import cmd
-
-def visualize_results(predictions, reference=None):
-    cmd.load(predictions[0], "pred1")
-
-    if reference:
-        cmd.load(reference, "ref")
-        cmd.align("pred1", "ref")
-
-    cmd.show("cartoon", "pred1")
-    cmd.show("sticks", "organic")
-    cmd.png("visualization.png", dpi=300)
-```
-
-### RDKit Integration
-
-```python
-from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
-
-def analyze_ligand(smiles):
-    mol = Chem.MolFromSmiles(smiles)
-
-    # Calculate properties
-    props = {
-        'MW': Descriptors.MolWt(mol),
-        'LogP': Descriptors.MolLogP(mol),
-        'TPSA': Descriptors.TPSA(mol),
-        'HBD': Descriptors.NumHDonors(mol),
-        'HBA': Descriptors.NumHAcceptors(mol),
-    }
-
-    return props
-```
-
-## Performance Optimization
-
-### GPU Memory Management
-
-```python
-import torch
-
-def clear_gpu_cache():
-    torch.cuda.empty_cache()
-    torch.cuda.synchronize()
-
-# Clear between predictions
-for compound in compounds:
-    result = predict(compound)
-    clear_gpu_cache()
-```
-
-### Disk I/O Optimization
-
-```python
-import tempfile
-import shutil
-
-def predict_with_tmpdir(compound):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Run prediction in temp directory
-        result = run_prediction(compound, work_dir=tmpdir)
-
-        # Copy only essential results
-        shutil.copytree(
-            f"{tmpdir}/results/structures",
-            "output/structures",
-            dirs_exist_ok=True,
-        )
-
-    return result
-```
-
-## Debugging
-
-### Detailed Logging
-
-```python
-import logging
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('debug.log'),
-        logging.StreamHandler()
-    ]
-)
-```
-
-### Checkpoint Recovery
-
-```python
-import pickle
-
-def save_checkpoint(state, filename):
-    with open(filename, 'wb') as f:
-        pickle.dump(state, f)
-
-def load_checkpoint(filename):
-    with open(filename, 'rb') as f:
-        return pickle.load(f)
-
-# In screening loop
-for i, compound in enumerate(compounds):
-    if i % 100 == 0:
-        save_checkpoint({'index': i, 'results': results},
-                       f'checkpoint_{i}.pkl')
-```
+Protein-iteration/selectivity screening, ligand soaking, and a standalone molecule-
+generation workflow are not implemented COFOLDER 1.0 capabilities. Molecule generators
+may integrate externally through the Oracle interface, but this documentation does not
+present those three ambitions as available release functionality.
 
 ## Related
 
-- [API Reference](../api/recipes/validate.md)
+- [Oracle Guide](../user-guide/oracle.md)
+- [Public Output Contract](../user-guide/public-output-contract.md)
 - [Configuration Guide](../getting-started/configuration.md)
-- [Contributing](../contributing.md)

@@ -11,13 +11,15 @@ def _():
     from pathlib import Path
 
     import marimo as mo
+    from cofolder.resources.examples import copy_examples
 
     from cofolder.acceptance.shared import (
         AFFINITY_COLUMNS,
-        SCREEN_AFFINITY_COLUMNS,
-        assert_runner_available,
+        SCREEN_MANUSCRIPT_COLUMNS,
         assert_csv_columns_have_values,
         assert_file_exists,
+        assert_runner_available,
+        assert_screen_msa_reused_once,
         build_oracle_command,
         build_screen_command,
         build_validate_command,
@@ -60,13 +62,15 @@ def _():
     return (
         AFFINITY_COLUMNS,
         Path,
-        SCREEN_AFFINITY_COLUMNS,
+        SCREEN_MANUSCRIPT_COLUMNS,
         assert_csv_columns_have_values,
         assert_file_exists,
         assert_runner_available,
+        assert_screen_msa_reused_once,
         build_oracle_command,
         build_screen_command,
         build_validate_command,
+        copy_examples,
         format_command,
         install_command_for_backend,
         materialize_acceptance_inputs,
@@ -88,11 +92,11 @@ def _(mo):
     Install command for a fresh environment:
 
     ```bash
-    pip install "cofolder[acceptance,boltz2]"
+    pip install "cofolder[acceptance,analysis,boltz2]"
     ```
 
     This manual lane is intentionally expensive and is **not** part of routine `pytest` or CI-default checks.
-    Run each expensive command deliberately by enabling its checkbox: `validate`, then `screen`, then `oracle`.
+    Run each expensive command deliberately by enabling its checkbox: `validate`, then `screen`, then `oracle`, then the ligand-input routes.
 
     Live log behavior:
 
@@ -124,9 +128,20 @@ def _(mo):
 
 
 @app.cell
+def _(mo):
+    run_ligand_routes = mo.ui.checkbox(
+        value=False,
+        label="Run SDF, MOL, and custom CCD tutorial acceptance steps",
+    )
+    run_ligand_routes
+    return (run_ligand_routes,)
+
+
+@app.cell
 def _(
     Path,
     assert_runner_available,
+    copy_examples,
     install_command_for_backend,
     materialize_acceptance_inputs,
     tempfile,
@@ -145,6 +160,14 @@ def _(
         )
     options_text = options_text.replace(cache_placeholder, str(cache_dir), 1)
     fixtures.options_path.write_text(options_text, encoding="utf-8")
+    tutorial_examples = copy_examples(workspace / "tutorial-examples")
+    tutorial_options = tutorial_examples / "options.yaml"
+    tutorial_options.write_text(
+        tutorial_options.read_text(encoding="utf-8").replace(
+            cache_placeholder, str(cache_dir), 1
+        ),
+        encoding="utf-8",
+    )
     install_command = install_command_for_backend(runner)
     availability_message = assert_runner_available(runner)
     return (
@@ -153,6 +176,8 @@ def _(
         fixtures,
         install_command,
         runner,
+        tutorial_examples,
+        tutorial_options,
         workspace,
     )
 
@@ -229,8 +254,8 @@ def _(
         scoring_functions=scoring,
     )
     validate_output = stream_cli_in_notebook(validate_command, workspace)
-    chain_metrics = validate_dir / "results" / "chain_metrics.csv"
-    system_metrics = validate_dir / "results" / "system_metrics.csv"
+    chain_metrics = validate_dir / "results" / "metrics.csv"
+    system_metrics = chain_metrics
     assert_file_exists(chain_metrics)
     assert_file_exists(system_metrics)
     assert_csv_columns_have_values(chain_metrics, AFFINITY_COLUMNS)
@@ -247,9 +272,10 @@ def _(mo, validate_output):
 
 @app.cell
 def _(
-    SCREEN_AFFINITY_COLUMNS,
+    SCREEN_MANUSCRIPT_COLUMNS,
     assert_csv_columns_have_values,
     assert_file_exists,
+    assert_screen_msa_reused_once,
     build_screen_command,
     fixtures,
     mo,
@@ -270,21 +296,34 @@ def _(
         wrk_dir=screen_dir,
         system_path=fixtures.system_screen_path,
         options_path=fixtures.options_path,
-        variable_csv=fixtures.ligand_csv_path,
+        library=fixtures.ligand_csv_path,
         scoring_functions=scoring,
+        protein_training_data_path=fixtures.protein_training_data_path,
+        ligand_training_data_path=fixtures.ligand_training_data_path,
+        pocket_coverage_reference="F1",
     )
+    screen_command.append("--cluster_ifps")
     screen_output = stream_cli_in_notebook(screen_command, workspace)
-    summary_csv = screen_dir / "screen_results.csv"
-    merged_csv = screen_dir / "screen_results_with_scores.csv"
+    summary_csv = screen_dir / "results" / "metrics.csv"
+    merged_csv = summary_csv
+    cluster_summary_csv = screen_dir / "results" / "ifp_cluster_summary.csv"
     assert_file_exists(summary_csv)
     assert_file_exists(merged_csv)
-    assert_csv_columns_have_values(merged_csv, SCREEN_AFFINITY_COLUMNS)
-    return (screen_output,)
+    assert_file_exists(cluster_summary_csv)
+    assert_csv_columns_have_values(merged_csv, SCREEN_MANUSCRIPT_COLUMNS)
+    assert_csv_columns_have_values(
+        summary_csv,
+        ("ifp_cluster_id", "ifp_cluster_status"),
+    )
+    msa_reuse_message = assert_screen_msa_reused_once(screen_dir, runner)
+    return msa_reuse_message, screen_output
 
 
 @app.cell
-def _(mo, screen_output):
+def _(mo, msa_reuse_message, screen_output):
     mo.md(f"""
+    **MSA reuse check:** `{msa_reuse_message}`
+
     ### Screen output\n```text\n{screen_output}\n```
     """)
     return
@@ -321,9 +360,9 @@ def _(
         scoring_functions=oracle_scoring_functions_for_runner(runner),
     )
     oracle_output = stream_cli_in_notebook(oracle_command, workspace)
-    oracle_csv = oracle_dir / "oracle_result.csv"
+    oracle_csv = oracle_dir / "results" / "metrics.csv"
     assert_file_exists(oracle_csv)
-    assert_csv_columns_have_values(oracle_csv, ("value",))
+    assert_csv_columns_have_values(oracle_csv, ("oracle_score",))
     return (oracle_output,)
 
 
@@ -331,6 +370,97 @@ def _(
 def _(mo, oracle_output):
     mo.md(f"""
     ### Oracle output\n```text\n{oracle_output}\n```
+    """)
+    return
+
+
+@app.cell
+def _(
+    assert_csv_columns_have_values,
+    assert_file_exists,
+    cache_dir,
+    mo,
+    reset_work_dir,
+    run_ligand_routes,
+    runner,
+    stream_cli_in_notebook,
+    tutorial_examples,
+    tutorial_options,
+    workspace,
+):
+    mo.stop(
+        not run_ligand_routes.value,
+        mo.md(
+            "Enable `Run SDF, MOL, and custom CCD tutorial acceptance steps` "
+            "after the core workflow checks."
+        ),
+    )
+    setup_output = stream_cli_in_notebook(
+        [
+            "cofolder-tools",
+            "setup-boltz2-cache",
+            "--cache-path",
+            str(cache_dir),
+        ],
+        workspace,
+    )
+    populate_output = stream_cli_in_notebook(
+        [
+            "cofolder-tools",
+            "populate-ccd-cache",
+            "--sdf",
+            str(tutorial_examples / "ethanol.sdf"),
+            "--property-id",
+            "ID",
+            "--cache-path",
+            str(cache_dir),
+            "--on-conflict",
+            "overwrite",
+        ],
+        workspace,
+    )
+
+    commands = {
+        "validate_sdf": [
+            "cofolder", "validate", "-s", str(tutorial_examples / "system_screen.yaml"),
+            "-o", str(tutorial_options), "-w", str(workspace / "validate-sdf"),
+            "--runner", runner, "--scoring_functions", "confidence_metrics",
+            "--conformers", "sdf", "--sdf_file", str(tutorial_examples / "ethanol.sdf"),
+        ],
+        "screen_sdf": [
+            "cofolder", "screen", "-s", str(tutorial_examples / "system_screen.yaml"),
+            "-o", str(tutorial_options), "-w", str(workspace / "screen-sdf"),
+            "--runner", runner, "--scoring_functions", "confidence_metrics",
+            "-c", str(tutorial_examples / "ethanol.sdf"), "--ligand_chain", "B",
+            "--id_property", "ID",
+        ],
+        "screen_mol": [
+            "cofolder", "screen", "-s", str(tutorial_examples / "system_screen.yaml"),
+            "-o", str(tutorial_options), "-w", str(workspace / "screen-mol"),
+            "--runner", runner, "--scoring_functions", "confidence_metrics",
+            "-c", str(tutorial_examples / "ethanol.mol"), "--ligand_chain", "B",
+        ],
+        "validate_ccd": [
+            "cofolder", "validate", "-s", str(tutorial_examples / "system_custom_ccd.yaml"),
+            "-o", str(tutorial_options), "-w", str(workspace / "validate-ccd"),
+            "--runner", runner, "--scoring_functions", "confidence_metrics",
+        ],
+    }
+    outputs = [setup_output, populate_output]
+    for name, command in commands.items():
+        reset_work_dir(workspace / name.replace("_", "-"))
+        outputs.append(stream_cli_in_notebook(command, workspace))
+        metrics_path = workspace / name.replace("_", "-") / "results" / "metrics.csv"
+        assert_file_exists(metrics_path)
+        assert_csv_columns_have_values(metrics_path, ("confidence_score",))
+    ligand_routes_output = "\n".join(outputs)
+    return (ligand_routes_output,)
+
+
+@app.cell
+def _(ligand_routes_output, mo):
+    mo.md(f"""
+    ### Ligand route output\n```text\n{ligand_routes_output}\n```
     """)
     return
 

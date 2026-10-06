@@ -1,14 +1,17 @@
-cache_path: ./cache/.openfold3
-samples_per_seed: 1
-extra_args:
-  - --use-msa-server=False
-model_update:
-  presets:
-    - predict
-  custom:
-    settings:
-      memory:
-        eval:
-          use_deepspeed_evo_attention: false
-          use_cueq_triangle_kernels: false
-          use_triton_triangle_kernels: false
+version: 1
+runtime:
+  cache_path: ./cache/.openfold3-cache
+  diffusion_samples: 1
+  extra_args:
+    - --use-msa-server=False
+runner:
+  model_update:
+    presets:
+      - predict
+    custom:
+      settings:
+        memory:
+          eval:
+            use_deepspeed_evo_attention: false
+            use_cueq_triangle_kernels: false
+            use_triton_triangle_kernels: false

@@ -1,5 +1,19 @@
 # Quick Start Guide
 
+Copy the packaged inputs and inspect a complete Screen plan without running a
+backend or service:
+
+```bash
+cofolder-tools copy-examples ./cofolder-example
+cofolder screen --preflight_only \
+  --system_path ./cofolder-example/system_screen.yaml \
+  --options_path ./cofolder-example/options.yaml \
+  --library ./cofolder-example/ligand_screen.csv \
+  --col_id Name --smiles_column SMILES
+```
+
+The example contains one ligand entity, so `--ligand_chain` is inferred.
+
 This guide will walk you through your first COFOLDER workflow.
 
 ## Basic Workflow
@@ -15,8 +29,8 @@ sequences:
       id: "protein_1"
       fasta: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
   - ligand:
+      id: B
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
 
 ### 2. Configure Runner Options
@@ -24,11 +38,13 @@ sequences:
 Create a runner options file (`options.yaml`):
 
 ```yaml
-out_dir: output
-devices: [0]
-num_models: 1
-recycling_steps: 3
-diffusion_samples: 1
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ### 3. Run Validation
@@ -44,8 +60,10 @@ cofolder validate -s system.yaml -o options.yaml -w ./output
 After successful execution, you'll find:
 
 - `raw/` - runner-owned raw execution artifacts
-- `results/system_metrics.csv` - merged system-level metrics
-- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/records.jsonl` - authoritative versioned records
+- `results/metrics.csv` - long-form metric view
+- `results/successes.csv` and `results/failures.csv` - outcome views
+- `results/manifest.json` - invocation manifest
 - `results/structures/` - gathered output structures
 - logs and additional metadata in the working directory
 
@@ -60,13 +78,15 @@ cofolder validate -s system.yaml -o options.yaml
 ### Screen a Library
 
 ```bash
-cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --variable sequences,1,ligand,smiles --col_variable smiles
+cofolder screen -s system.yaml -o options.yaml -c compounds.csv --col_id compound_id --ligand_chain B --smiles_column smiles
 ```
 
 ### Use as Oracle
 
 ```bash
-cofolder oracle -s system.yaml -o options.yaml --input_smiles "CCO" --output_metric affinity_pred_value
+cofolder oracle -s system.yaml -o options.yaml \
+  --input_smiles "CCO" --output_metric system__confidence_score \
+  --scoring_functions confidence_metrics
 ```
 
 ## Getting Help

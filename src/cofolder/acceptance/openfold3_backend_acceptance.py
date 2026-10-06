@@ -100,12 +100,12 @@ def _(mo):
     Recommended fresh-environment install path for this notebook:
 
     ```bash
-    python -m pip install -e ".[acceptance,openfold3]"
+    python -m pip install -e ".[acceptance,analysis,openfold3]"
     ```
 
     This is a dedicated OpenFold3 lane. Before running the expensive cells:
 
-    - prepare the OpenFold3 cache and model data with `scripts/setup_openfold3.sh`
+    - prepare the OpenFold3 cache and model data with `cofolder-tools setup-openfold3`
     - launch this notebook with `OPENFOLD_CACHE` already set, or enter the cache path in the notebook before enabling any expensive step
     - treat this lane as confidence-only: it requests `confidence_metrics`, not affinity groups
     - keep MSA/template experiments separate unless you are deliberately testing them
@@ -151,7 +151,7 @@ def _(
 def _(cache_path_default, mo):
     cache_path_input = mo.ui.text(
         value=cache_path_default,
-        placeholder="/absolute/path/to/.openfold3-cache",
+        placeholder="/absolute/path/to/cache/.openfold3-cache",
         label="OpenFold3 cache root",
         full_width=True,
     )
@@ -182,7 +182,11 @@ def _(
     setup_ready = setup_status.ready
     setup_message = setup_status.message
     openfold_cache_display = str(openfold_cache) if openfold_cache is not None else "(not configured)"
-    export_target = openfold_cache_display if openfold_cache is not None else "$PWD/.openfold3-cache"
+    export_target = (
+        openfold_cache_display
+        if openfold_cache is not None
+        else "$PWD/cache/.openfold3-cache"
+    )
     if openfold_cache is not None:
         rewrite_openfold3_options_cache_path(
             fixtures.options_path,
@@ -193,7 +197,7 @@ def _(
 
     **Availability check:** `{availability_message}`
 
-    **Setup requirement:** choose a cache path and run `scripts/setup_openfold3.sh` against that path before starting any expensive workflow cell.
+    **Setup requirement:** choose a cache path and run `cofolder-tools setup-openfold3` against that path before starting any expensive workflow cell.
 
     **OPENFOLD_CACHE for this notebook:** `{openfold_cache_display}`
 
@@ -207,7 +211,7 @@ def _(
 
     ```bash
     export OPENFOLD_CACHE="{export_target}"
-    scripts/setup_openfold3.sh
+    cofolder-tools setup-openfold3
     ```
 
     The OpenFold3 extra installs the backend package, while the setup script prepares the cache, checkpoints, and CCD in the chosen cache root.
@@ -305,8 +309,8 @@ def _(
         scoring_functions=scoring,
     )
     validate_output = stream_cli_in_notebook(validate_command, workspace, env=env)
-    chain_metrics = validate_dir / "results" / "chain_metrics.csv"
-    system_metrics = validate_dir / "results" / "system_metrics.csv"
+    chain_metrics = validate_dir / "results" / "metrics.csv"
+    system_metrics = chain_metrics
     assert_file_exists(chain_metrics)
     assert_file_exists(system_metrics)
     assert_csv_columns_have_values(system_metrics, ("sample_ranking_score", "avg_plddt"))
@@ -359,12 +363,12 @@ def _(
         wrk_dir=screen_dir,
         system_path=fixtures.system_screen_path,
         options_path=fixtures.options_path,
-        variable_csv=fixtures.ligand_csv_path,
+        library=fixtures.ligand_csv_path,
         scoring_functions=scoring,
     )
     screen_output = stream_cli_in_notebook(screen_command, workspace, env=env)
-    summary_csv = screen_dir / "screen_results.csv"
-    merged_csv = screen_dir / "screen_results_with_scores.csv"
+    summary_csv = screen_dir / "results" / "metrics.csv"
+    merged_csv = summary_csv
     assert_file_exists(summary_csv)
     assert_file_exists(merged_csv)
     assert_csv_columns_have_values(
@@ -423,9 +427,9 @@ def _(
         scoring_functions=oracle_scoring_functions_for_runner(runner),
     )
     oracle_output = stream_cli_in_notebook(oracle_command, workspace, env=env)
-    oracle_csv = oracle_dir / "oracle_result.csv"
+    oracle_csv = oracle_dir / "results" / "metrics.csv"
     assert_file_exists(oracle_csv)
-    assert_csv_columns_have_values(oracle_csv, ("value",))
+    assert_csv_columns_have_values(oracle_csv, ("oracle_score",))
     return (oracle_output,)
 
 

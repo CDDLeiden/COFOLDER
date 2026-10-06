@@ -1,0 +1,9 @@
+# Usage: chimerax structure.cif view_interactions.cxc
+style /B stick
+style /A:71@OE1,OE2 /A:109@N /A:168@N stick
+color /B cornflowerblue
+color /A:71@OE1,OE2 /A:109@N /A:168@N salmon
+hbonds /B restrict /A:71,109,168 reveal true log true
+show /A:71,155,169@CA atoms
+style /A:71,155,169@CA sphere
+view /B /A:71,109,168

@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-from typing import Collection
+from typing import Any, Collection
 
 import pandas as pd
 
+from cofolder.modules.contracts import RunnerProvenanceError
 from cofolder.modules.runners.contracts import (
+    RUNNER_PROVENANCE_COLUMNS,
     RunnerCompanionArtifact,
     RunnerExecutionResult,
     RunnerMetricOutcome,
     RunnerNormalizedBundle,
+    backend_manifest_value,
+    seed_manifest_value,
 )
 
 CANONICAL_SYSTEM_COLUMNS = (
@@ -84,6 +87,9 @@ def validate_runner_bundle(
     system_df = _read_csv(bundle, bundle.system_metrics_path, "system_metrics.csv")
     chain_df = _read_csv(bundle, bundle.chain_metrics_path, "chain_metrics.csv")
     _validate_required_columns(bundle, system_df, chain_df)
+    _validate_execution_provenance(bundle, manifest, system_df, chain_df)
+    _validate_chain_identity_mapping(bundle, chain_df)
+    _validate_typed_records(bundle)
     structure_files = _validate_structures(bundle)
     _validate_referenced_structures(bundle, system_df, chain_df, structure_files)
     _validate_sample_records(bundle, structure_files)
@@ -121,6 +127,77 @@ def validate_runner_bundle(
     bundle.metric_outcomes = validated_outcomes
     _raise_for_non_continuable_outcomes(bundle, requested_groups=requested_groups)
     return bundle
+
+
+def _validate_chain_identity_mapping(
+    bundle: RunnerNormalizedBundle,
+    chain_df: pd.DataFrame,
+) -> None:
+    if not bundle.chain_identities:
+        return
+    mapping = {item.conf_chain_id: item for item in bundle.chain_identities}
+    if len(mapping) != len(bundle.chain_identities):
+        raise RunnerBundleValidationError(
+            f"Runner '{bundle.runner_name}' returned duplicate conf_chain_id values "
+            "in its chain identity mapping."
+        )
+    if any(
+        not item.entity_id.strip()
+        or not item.entity_type.strip()
+        or not item.chain_id.strip()
+        for item in bundle.chain_identities
+    ):
+        raise RunnerBundleValidationError(
+            f"Runner '{bundle.runner_name}' returned an incomplete chain identity mapping."
+        )
+    try:
+        observed = {int(value) for value in chain_df["conf_chain_id"].dropna()}
+    except (TypeError, ValueError) as exc:
+        raise RunnerBundleValidationError(
+            f"Runner '{bundle.runner_name}' emitted a non-integer conf_chain_id."
+        ) from exc
+    missing = sorted(observed - mapping.keys())
+    if missing:
+        raise RunnerBundleValidationError(
+            f"Runner '{bundle.runner_name}' emitted chain indices without normalized "
+            f"identity mappings: {missing}."
+        )
+
+
+def _validate_typed_records(bundle: RunnerNormalizedBundle) -> None:
+    if not bundle.records:
+        return
+    from cofolder.modules.contracts import PublicContractError, validate_public_record
+
+    try:
+        for record in bundle.records:
+            validate_public_record(record)
+            if record.envelope.identity.runner_id != bundle.runner_name:
+                raise RunnerBundleValidationError(
+                    f"Runner '{bundle.runner_name}' emitted a typed record with runner_id "
+                    f"{record.envelope.identity.runner_id!r}."
+                )
+            if (
+                bundle.backend_identity is not None
+                and bundle.seed_provenance is not None
+            ):
+                identity = record.envelope.identity
+                if (
+                    identity.runner_version != bundle.backend_identity.version
+                    or identity.backend_name != bundle.backend_identity.backend_name
+                    or identity.backend_version_status
+                    != bundle.backend_identity.version_status
+                    or identity.effective_seed
+                    != bundle.seed_provenance.effective_seed
+                ):
+                    raise RunnerProvenanceError(
+                        f"{_bundle_prefix(bundle)}: typed record provenance does not "
+                        "match the bundle."
+                    )
+    except PublicContractError as exc:
+        raise RunnerBundleValidationError(
+            f"Runner '{bundle.runner_name}' emitted an invalid typed public record: {exc}"
+        ) from exc
 
 
 def _bundle_prefix(bundle: RunnerNormalizedBundle) -> str:
@@ -193,6 +270,73 @@ def _validate_manifest(bundle: RunnerNormalizedBundle) -> dict[str, Any]:
                 f"{sorted(bundle.capabilities)!r}."
             )
     return manifest
+
+
+def _validate_execution_provenance(
+    bundle: RunnerNormalizedBundle,
+    manifest: dict[str, Any],
+    system_df: pd.DataFrame,
+    chain_df: pd.DataFrame,
+) -> None:
+    backend = bundle.backend_identity
+    seed = bundle.seed_provenance
+    if (backend is None) != (seed is None):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: backend and seed provenance must be "
+            "declared together."
+        )
+    if backend is None or seed is None:
+        return
+    if manifest.get("backend") != backend_manifest_value(backend):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: manifest backend provenance does not "
+            "match the bundle."
+        )
+    if manifest.get("seed") != seed_manifest_value(seed):
+        raise RunnerProvenanceError(
+            f"{_bundle_prefix(bundle)}: manifest seed provenance does not match "
+            "the bundle."
+        )
+
+    expected = {
+        "runner_id": backend.runner_name,
+        "backend_name": backend.backend_name,
+        "runner_version": backend.version,
+        "backend_version_status": backend.version_status.value,
+        "effective_seed": seed.effective_seed,
+    }
+    for label, frame in (
+        ("system_metrics.csv", system_df),
+        ("chain_metrics.csv", chain_df),
+    ):
+        missing = sorted(set(RUNNER_PROVENANCE_COLUMNS) - set(frame.columns))
+        if missing:
+            raise RunnerProvenanceError(
+                f"{_bundle_prefix(bundle)}: {label} is missing provenance columns "
+                f"{missing!r}."
+            )
+        for column, value in expected.items():
+            observed = frame[column]
+            if value is None:
+                matches = observed.isna()
+            elif column == "effective_seed":
+                numeric = pd.to_numeric(observed, errors="coerce")
+                matches = numeric.notna() & (numeric == value) & (numeric % 1 == 0)
+            else:
+                matches = observed.astype(str) == str(value)
+            if not bool(matches.all()):
+                raise RunnerProvenanceError(
+                    f"{_bundle_prefix(bundle)}: {label} {column!r} does not match "
+                    "provenance."
+                )
+
+    for record in bundle.sample_records:
+        for column, value in expected.items():
+            if record.get(column) != value:
+                raise RunnerProvenanceError(
+                    f"{_bundle_prefix(bundle)}: sample record {column!r} does not "
+                    "match provenance."
+                )
 
 
 def _validate_companion_artifacts(
@@ -347,14 +491,18 @@ def _validate_required_columns(
     system_df: pd.DataFrame,
     chain_df: pd.DataFrame,
 ) -> None:
-    missing_system = [column for column in CANONICAL_SYSTEM_COLUMNS if column not in system_df.columns]
+    missing_system = [
+        column for column in CANONICAL_SYSTEM_COLUMNS if column not in system_df.columns
+    ]
     if missing_system:
         raise RunnerBundleValidationError(
             f"{_bundle_prefix(bundle)}: system_metrics.csv is missing required columns "
             f"{missing_system!r}."
         )
 
-    missing_chain = [column for column in CANONICAL_CHAIN_COLUMNS if column not in chain_df.columns]
+    missing_chain = [
+        column for column in CANONICAL_CHAIN_COLUMNS if column not in chain_df.columns
+    ]
     if missing_chain:
         raise RunnerBundleValidationError(
             f"{_bundle_prefix(bundle)}: chain_metrics.csv is missing required columns "
@@ -400,7 +548,11 @@ def _validate_sample_records(
     structure_files: set[str],
 ) -> None:
     for record in bundle.sample_records:
-        if "repeat" not in record or "diffusion_sample" not in record or "cif_file" not in record:
+        if (
+            "repeat" not in record
+            or "diffusion_sample" not in record
+            or "cif_file" not in record
+        ):
             raise RunnerBundleValidationError(
                 f"{_bundle_prefix(bundle)}: sample_records entries must include "
                 "'repeat', 'diffusion_sample', and 'cif_file'."
@@ -478,7 +630,10 @@ def _missing_metric_columns_for_frame(
 ) -> list[str]:
     missing_columns: list[str] = []
     for canonical_name, accepted_columns in columns.items():
-        if not any(_matches_metric_column(frame.columns, candidate) for candidate in accepted_columns):
+        if not any(
+            _matches_metric_column(frame.columns, candidate)
+            for candidate in accepted_columns
+        ):
             missing_columns.append(f"{file_label}.{canonical_name}")
     return missing_columns
 
@@ -524,16 +679,23 @@ def _required_metric_artifacts(
     group_name: str,
 ) -> tuple[str, ...]:
     requirement = _metric_requirement(group_name)
-    return tuple(f"companion_artifacts.{label}" for label in requirement.get("companion_artifacts", ()))
+    return tuple(
+        f"companion_artifacts.{label}"
+        for label in requirement.get("companion_artifacts", ())
+    )
 
 
 def _missing_metric_artifacts(
     bundle: RunnerNormalizedBundle,
     group_name: str,
 ) -> list[str]:
-    required_labels = set(_metric_requirement(group_name).get("companion_artifacts", ()))
+    required_labels = set(
+        _metric_requirement(group_name).get("companion_artifacts", ())
+    )
     present_labels = {artifact.label for artifact in bundle.companion_artifacts}
-    return sorted(f"companion_artifacts.{label}" for label in required_labels - present_labels)
+    return sorted(
+        f"companion_artifacts.{label}" for label in required_labels - present_labels
+    )
 
 
 def _present_metric_artifacts(
@@ -829,9 +991,15 @@ def _confidence_payload_present(
     system_df: pd.DataFrame,
     chain_df: pd.DataFrame,
 ) -> bool:
-    if any(_matches_metric_column(system_df.columns, column) for column in CONFIDENCE_SYSTEM_MARKERS):
+    if any(
+        _matches_metric_column(system_df.columns, column)
+        for column in CONFIDENCE_SYSTEM_MARKERS
+    ):
         return True
-    if any(_matches_metric_column(chain_df.columns, column) for column in CONFIDENCE_CHAIN_MARKERS):
+    if any(
+        _matches_metric_column(chain_df.columns, column)
+        for column in CONFIDENCE_CHAIN_MARKERS
+    ):
         return True
     artifact_labels = {artifact.label for artifact in bundle.companion_artifacts}
     return any(label in artifact_labels for label in CONFIDENCE_ARTIFACT_LABELS)

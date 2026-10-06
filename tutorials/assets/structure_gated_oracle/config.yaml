@@ -1,0 +1,87 @@
+version: 2
+target:
+  name: MAPK14
+  uniprot: Q16539
+  protein_chain: A
+  ligand_chain: B
+  sequence_numbering: UniProt canonical sequence positions
+references:
+  type_ii:
+    pdb_id: 1KV2
+    url: https://files.rcsb.org/download/1KV2.cif
+    sha256: af6cf6216403755f2566b1f295997dba7e65fa17182a4df958ee696c528bec66
+    ligand_residue: B96
+    ligand_candidate_id: birb796
+    purpose: DFG-out and Type II positive reference
+  type_i:
+    pdb_id: 1A9U
+    url: https://files.rcsb.org/download/1A9U.cif
+    sha256: 14e00552fd1b0d52ae0ce1cbfbeb02012f488bbed3254bd2b4af9c7686247276
+    ligand_residue: SB2
+    ligand_candidate_id: sb203580
+    purpose: ATP-site and DFG-in contrasting reference
+structural_predicate:
+  contact_cutoff_angstrom: 4.5
+  atp_site_residues: [51, 53, 106, 109]
+  back_pocket_residues: [71, 75, 84, 86, 104, 168, 169]
+  dfg_conformation:
+    method: COFOLDER manuscript SI classical DFG-out D1/D2 rule
+    d1:
+      atom_1: [155, CA]
+      atom_2: [169, CA]
+      operator: le
+      threshold_angstrom: 7.2
+      type_ii_reference_angstrom: 5.949
+      type_i_reference_angstrom: 8.096
+    d2:
+      atom_1: [71, CA]
+      atom_2: [169, CA]
+      operator: ge
+      threshold_angstrom: 9.0
+      type_ii_reference_angstrom: 11.076
+      type_i_reference_angstrom: 8.555
+  remote_um101_region: [177, 180, 181, 182, 183, 186, 252, 255, 292, 294]
+interaction_policy:
+  terminology: ligand-centric ProLIF 2.x
+  defaults:
+    distance_angstrom: 3.5
+    dha_angle_degrees: [130, 180]
+  preparation:
+    force_field: AMBER
+    ph: 7.4
+    max_heavy_atom_displacement_angstrom: 0.002
+  prolif_interactions: [Hydrophobic, HBAcceptor, HBDonor, PiStacking, Anionic, Cationic, CationPi, PiCation, VdWContact]
+  features:
+    - id: glu71_sidechain_hbond
+      key: A:71:hb_donor
+      ligand_role: donor
+      protein_role: acceptor
+      receptor_atoms: [OE1, OE2]
+      citation: https://doi.org/10.1021/jm020057r
+      rationale: Urea NH donates to the Glu71 side-chain carboxylate.
+    - id: asp168_backbone_hbond
+      key: A:168:hb_acceptor
+      ligand_role: acceptor
+      protein_role: donor
+      receptor_atoms: [N]
+      citation: https://doi.org/10.1021/jm020057r
+      rationale: Urea carbonyl accepts from the Asp168 backbone NH.
+    - id: met109_backbone_hbond
+      key: A:109:hb_acceptor
+      ligand_role: acceptor
+      protein_role: donor
+      receptor_atoms: [N]
+      citation: https://doi.org/10.1021/jm030121k
+      rationale: The ATP-region tail accepts from the Met109 backbone NH; this is the principal additional interaction tested across tail variants.
+ranking:
+  order: [is_type_II, matched_interactions, raw_score]
+  direction: descending
+  score_transform: arctangent_cdf
+  type_ii_weight: 4
+execution:
+  runner: boltz2
+  repeats: 1
+  diffusion_samples: 1
+  seed: 20260928
+  score_metric: ligand_B__affinity_pred_value
+  score_multiplier: -1

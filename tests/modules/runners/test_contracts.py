@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from importlib import metadata
 from pathlib import Path
 
 import pytest
 
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.runners.base import BaseRunner
+from cofolder.modules.runners.boltz1_runner import Boltz1Runner
+from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
 from cofolder.modules.runners.contracts import (
     RunnerCompanionArtifact,
     RunnerExecutionRequest,
@@ -17,6 +27,7 @@ from cofolder.modules.runners.contracts import (
     RunnerRuntime,
     merge_runner_runtime,
 )
+from cofolder.modules.runners.openfold3_runner import OpenFold3Runner
 
 
 class _SimpleRunner(BaseRunner):
@@ -62,6 +73,63 @@ def test_base_runner_prepare_system_defaults_to_noop():
     assert preparation.runtime == RunnerRuntime()
 
 
+def test_backend_detection_normalizes_distribution_version(monkeypatch):
+    monkeypatch.setattr(
+        "cofolder.modules.runners.base.metadata.version", lambda name: "1.0RC1"
+    )
+    identity = _SimpleRunner().detect_backend_identity()
+    assert identity.version == "1.0rc1"
+    assert identity.version_status == BackendVersionStatus.DETECTED
+    assert identity.raw_version == "1.0RC1"
+
+
+@pytest.mark.parametrize(
+    ("runner", "backend_name", "distribution"),
+    [
+        (Boltz1Runner(), "boltz", "boltz"),
+        (Boltz2Runner(), "boltz", "boltz"),
+        (BoltzCommunityRunner(), "boltz-community", "boltz-community"),
+        (OpenFold3Runner(), "openfold3", "openfold3"),
+    ],
+)
+def test_selectable_runner_backend_declarations(runner, backend_name, distribution):
+    assert runner.backend_name == backend_name
+    assert runner.backend_distribution == distribution
+
+
+def test_backend_detection_records_unavailable_without_raising(monkeypatch):
+    def missing(name):
+        raise metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr("cofolder.modules.runners.base.metadata.version", missing)
+    identity = _SimpleRunner().detect_backend_identity()
+    assert identity.version is None
+    assert identity.raw_version is None
+    assert identity.version_status == BackendVersionStatus.UNAVAILABLE
+
+
+def test_backend_detection_sanitizes_unexpected_lookup_error(monkeypatch):
+    def broken(name):
+        raise RuntimeError("secret filesystem detail")
+
+    monkeypatch.setattr("cofolder.modules.runners.base.metadata.version", broken)
+    identity = _SimpleRunner().detect_backend_identity()
+    assert identity.version_status == BackendVersionStatus.UNAVAILABLE
+    assert identity.detail == "Version lookup failed (RuntimeError)."
+    assert "secret" not in identity.detail
+
+
+@pytest.mark.parametrize("raw_version", ["", "not a version"])
+def test_backend_detection_preserves_unparseable_value(monkeypatch, raw_version):
+    monkeypatch.setattr(
+        "cofolder.modules.runners.base.metadata.version", lambda name: raw_version
+    )
+    identity = _SimpleRunner().detect_backend_identity()
+    assert identity.version is None
+    assert identity.raw_version == raw_version
+    assert identity.version_status == BackendVersionStatus.UNPARSEABLE
+
+
 def test_runtime_metadata_is_typed_and_explicit():
     runtime = RunnerRuntime(
         cache_path="~/.boltz",
@@ -85,6 +153,21 @@ def test_execution_request_carries_typed_runtime_metadata():
         options_obj={},
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(
+            repeat_id=1,
+            requested_base_seed=123,
+            resolved_base_seed=123,
+            derived_seed=123,
+            effective_seed=123,
+            origin=SeedOrigin.USER_SPECIFIED,
+        ),
+        backend_identity=RunnerBackendIdentity(
+            runner_name="simple",
+            backend_name="simple",
+            version="1.0",
+            version_status=BackendVersionStatus.DETECTED,
+            raw_version="1.0",
+        ),
         repeat_dir=Path("repeat_1"),
         raw_dir=Path("raw"),
         logger=None,
@@ -93,29 +176,6 @@ def test_execution_request_carries_typed_runtime_metadata():
 
     assert request.runtime is runtime
     assert request.runtime.diffusion_samples == 2
-
-
-def test_runner_preparation_result_no_longer_accepts_legacy_runtime_context():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'runtime_context'"):
-        RunnerPreparationResult(
-            system_obj=object(),
-            options_obj={},
-            runtime_context={"diffusion_samples": 3},
-        )
-
-
-def test_runner_execution_result_no_longer_accepts_legacy_runtime_context():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'runtime_context'"):
-        RunnerExecutionResult(
-            runner_name="simple",
-            raw_output_dir=Path("raw"),
-            normalized_dir=Path("normalized"),
-            structures_dir=Path("normalized/structures"),
-            system_metrics_path=Path("normalized/system_metrics.csv"),
-            chain_metrics_path=Path("normalized/chain_metrics.csv"),
-            manifest_path=Path("normalized/manifest.json"),
-            runtime_context={"diffusion_samples": 4},
-        )
 
 
 def test_merge_runner_runtime_preserves_later_explicit_single_sample_value():

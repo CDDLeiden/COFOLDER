@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import shlex
 import shutil
@@ -8,13 +9,11 @@ import subprocess
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Iterable
-from typing import Mapping
+from typing import Iterable, Mapping
 
 import yaml
 
 from cofolder.modules.runners import get_runner
-
 
 PACKAGE_NAME = "cofolder.acceptance"
 DATA_PACKAGE = f"{PACKAGE_NAME}.data"
@@ -27,12 +26,33 @@ AFFINITY_COLUMNS = (
     "pIC50_kcal_per_mol",
 )
 SCREEN_AFFINITY_COLUMNS = tuple(f"ligand_B__{column}" for column in AFFINITY_COLUMNS)
+SCREEN_MANUSCRIPT_COLUMNS = (
+    "system__confidence_score",
+    "system__ptm",
+    "system__iptm",
+    "ligand_B__pair_chains_iptm_A",
+    "ligand_B__affinity_pred_value",
+    "ligand_B__affinity_probability_binary",
+    "ligand_B__pIC50",
+    "ligand_B__sasa",
+    "ligand_B__sasa_norm_heavy",
+    "ligand_B__ifp_distance",
+    "system__bias_prot_sim_train_max",
+    "system__bias_lig_sim_train_max",
+    "protein_A__bias_prot_sim_train",
+    "ligand_B__bias_lig_sim_train",
+    "system__pocket_coverage_custom",
+    "system__pocket_coverage_custom_mean",
+    "ligand_B__pocket_coverage_custom",
+    "ifp_filter_pass",
+    "ifp_filter_overlap",
+)
 DEFAULT_MANUAL_ROOT = Path.cwd() / ".cofolder-acceptance-runs"
 _BACKEND_INSTALL_COMMANDS = {
-    "boltz1": 'pip install "cofolder[acceptance,boltz1]"',
-    "boltz2": 'pip install "cofolder[acceptance,boltz2]"',
-    "boltz-community": 'pip install "cofolder[acceptance,boltz-community]"',
-    "openfold3": 'python -m pip install -e ".[acceptance,openfold3]"',
+    "boltz1": 'pip install "cofolder[acceptance,analysis,boltz1]"',
+    "boltz2": 'pip install "cofolder[acceptance,analysis,boltz2]"',
+    "boltz-community": 'pip install "cofolder[acceptance,analysis,boltz-community]"',
+    "openfold3": 'python -m pip install -e ".[acceptance,analysis,openfold3]"',
 }
 _BACKEND_ORACLE_METRICS = {
     "boltz1": "confidence_score",
@@ -48,12 +68,23 @@ _BACKEND_ORACLE_SCORING = {
 }
 _BACKEND_ACCEPTANCE_SCORING = {
     "boltz1": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
-    "boltz2": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
-    "boltz-community": ["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+    "boltz2": [
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+        "ifp_distance",
+        "sasa",
+        "sasa_normalized",
+    ],
+    "boltz-community": [
+        "confidence_metrics",
+        "affinity_metrics",
+        "affinity_metrics_ext",
+    ],
     "openfold3": ["confidence_metrics"],
 }
 _BACKEND_OPTIONS_RESOURCES = {
-    "boltz1": "options_acceptance.yaml",
+    "boltz1": "options_boltz1_acceptance.yaml",
     "boltz2": "options_acceptance.yaml",
     "boltz-community": "options_acceptance.yaml",
     "openfold3": "options_openfold3_acceptance.yaml",
@@ -66,6 +97,10 @@ class AcceptanceInputs:
     system_screen_path: Path
     options_path: Path
     ligand_csv_path: Path
+    protein_training_data_path: Path
+    ligand_training_data_path: Path
+    nucleic_acid_system_path: Path
+    constrained_system_paths: dict[str, Path]
 
 
 @dataclass(frozen=True)
@@ -114,14 +149,45 @@ def materialize_acceptance_inputs(
 ) -> AcceptanceInputs:
     target_dir.mkdir(parents=True, exist_ok=True)
     system_path = _write_package_file("system.yaml", target_dir / "system.yaml")
-    system_screen_path = _write_package_file("system_screen.yaml", target_dir / "system_screen.yaml")
-    options_path = _write_package_file(options_resource, target_dir / "options_acceptance.yaml")
-    ligand_csv_path = _write_package_file("ligand_screen.csv", target_dir / "ligand_screen.csv")
+    system_screen_path = _write_package_file(
+        "system_screen.yaml", target_dir / "system_screen.yaml"
+    )
+    options_path = _write_package_file(
+        options_resource, target_dir / "options_acceptance.yaml"
+    )
+    ligand_csv_path = _write_package_file(
+        "ligand_screen.csv", target_dir / "ligand_screen.csv"
+    )
+    protein_training_data_path = _write_package_file(
+        "protein_training_data.csv", target_dir / "protein_training_data.csv"
+    )
+    ligand_training_data_path = _write_package_file(
+        "ligand_training_data.csv", target_dir / "ligand_training_data.csv"
+    )
+    nucleic_acid_system_path = _write_package_file(
+        "system_nucleic_acid.yaml", target_dir / "system_nucleic_acid.yaml"
+    )
+    constrained_system_paths = {
+        runner: _write_package_file(
+            resource,
+            target_dir / resource,
+        )
+        for runner, resource in {
+            "boltz1": "system_constraints_boltz1.yaml",
+            "boltz2": "system_constraints_boltz2.yaml",
+            "boltz-community": "system_constraints_boltz2.yaml",
+            "openfold3": "system_constraints_openfold3.yaml",
+        }.items()
+    }
     return AcceptanceInputs(
         system_path=system_path,
         system_screen_path=system_screen_path,
         options_path=options_path,
         ligand_csv_path=ligand_csv_path,
+        protein_training_data_path=protein_training_data_path,
+        ligand_training_data_path=ligand_training_data_path,
+        nucleic_acid_system_path=nucleic_acid_system_path,
+        constrained_system_paths=constrained_system_paths,
     )
 
 
@@ -186,6 +252,60 @@ def assert_runner_available(runner: str) -> str:
     return message or f"Runner '{runner}' is available."
 
 
+def assert_screen_msa_reused_once(screen_dir: Path, runner: str) -> str:
+    """Verify one fixed-protein generation attempt and reuse in every row YAML."""
+
+    shared_dir = screen_dir / "shared" / "msa" / runner
+    attempt_markers = sorted(shared_dir.glob(".generation_attempted_*"))
+    if len(attempt_markers) != 1:
+        raise AssertionError(
+            "Expected exactly one fixed-protein MSA-server generation attempt, "
+            f"found {len(attempt_markers)} markers in {shared_dir}."
+        )
+    manifest_path = shared_dir / "manifest.json"
+    assert_file_exists(manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("version") != 2:
+        raise AssertionError(
+            "Expected a settings-aware reusable MSA manifest with version 2."
+        )
+    proteins = manifest.get("proteins", {})
+    if len(proteins) != 1:
+        raise AssertionError(
+            f"Expected one reusable protein MSA manifest entry, found {len(proteins)}."
+        )
+    entry = next(iter(proteins.values()))
+    if not isinstance(entry, dict) or not entry.get("settings_sha256"):
+        raise AssertionError(
+            "Expected the reusable MSA manifest entry to include its settings identity."
+        )
+
+    row_yamls = sorted(screen_dir.glob("[0-9]*_*/screen_system.yaml"))
+    if len(row_yamls) < 2:
+        raise AssertionError("Expected at least two completed screen row YAMLs.")
+    staged_paths: set[str] = set()
+    for row_yaml in row_yamls:
+        payload = yaml.safe_load(row_yaml.read_text(encoding="utf-8"))
+        proteins_in_row = [
+            entry["protein"]
+            for entry in payload.get("sequences", [])
+            if isinstance(entry, dict) and isinstance(entry.get("protein"), dict)
+        ]
+        if len(proteins_in_row) != 1 or not proteins_in_row[0].get("msa"):
+            raise AssertionError(f"Expected one resolved protein MSA in {row_yaml}.")
+        msa_path = Path(str(proteins_in_row[0]["msa"])).resolve()
+        if not msa_path.is_file() or shared_dir.resolve() not in msa_path.parents:
+            raise AssertionError(
+                f"Row YAML does not use the shared MSA artifact: {row_yaml}."
+            )
+        staged_paths.add(str(msa_path))
+    if len(staged_paths) != 1:
+        raise AssertionError(
+            f"Expected every screen row to reuse one MSA artifact, found {len(staged_paths)}."
+        )
+    return f"One MSA-server attempt supplied {len(row_yamls)} screen rows."
+
+
 def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None) -> str:
     _validate_runner(runner)
     if runner != "openfold3":
@@ -200,6 +320,166 @@ def assert_runner_setup_ready(runner: str, *, env: dict[str, str] | None = None)
             f"Expected {runner} setup to be ready before running expensive acceptance cells. {detail}"
         )
     return message or f"Runner '{runner}' setup is ready."
+
+
+def assert_chain_ids(path: Path, expected: Iterable[str]) -> None:
+    """Assert normalized chain metadata contains the expected ordered IDs."""
+
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    actual: list[str] = []
+    for row in rows:
+        chain_id = str(row.get("CHAIN_ID") or row.get("chain_id") or "").strip()
+        if chain_id and chain_id not in actual:
+            actual.append(chain_id)
+    expected_ids = [str(value) for value in expected]
+    if actual != expected_ids:
+        raise AssertionError(
+            f"Expected ordered chain IDs {expected_ids!r} in {path}, found {actual!r}."
+        )
+
+
+def assert_constraints_preserved(
+    source_path: Path, prepared_path: Path
+) -> list[object]:
+    """Assert that runner preparation preserved canonical top-level constraints."""
+
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    prepared = yaml.safe_load(prepared_path.read_text(encoding="utf-8"))
+    source_constraints = (
+        source.get("constraints", []) if isinstance(source, dict) else []
+    )
+    prepared_constraints = (
+        prepared.get("constraints", []) if isinstance(prepared, dict) else []
+    )
+    if prepared_constraints != source_constraints:
+        raise AssertionError(
+            "Runner preparation changed the canonical constraints: "
+            f"expected {source_constraints!r}, found {prepared_constraints!r}."
+        )
+    return source_constraints
+
+
+def assert_openfold3_query_translation(
+    source_path: Path,
+    query_path: Path,
+    *,
+    system_name: str,
+) -> dict[str, object]:
+    """Assert that an OpenFold3 query preserves chains and translates its pocket."""
+
+    source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    payload = json.loads(query_path.read_text(encoding="utf-8"))
+    try:
+        query = payload["queries"][system_name]
+    except (KeyError, TypeError) as exc:
+        raise AssertionError(
+            f"OpenFold3 query payload does not contain system {system_name!r}."
+        ) from exc
+
+    expected_chains: list[tuple[str, list[str]]] = []
+    for entry in source.get("sequences", []):
+        entity_type, entity = next(iter(entry.items()))
+        raw_ids = entity.get("id")
+        chain_ids = raw_ids if isinstance(raw_ids, list) else [raw_ids]
+        expected_chains.append(
+            (str(entity_type).lower(), [str(value) for value in chain_ids])
+        )
+    actual_chains = [
+        (
+            str(chain.get("molecule_type")).lower(),
+            [str(value) for value in chain.get("chain_ids", [])],
+        )
+        for chain in query.get("chains", [])
+    ]
+    if actual_chains != expected_chains:
+        raise AssertionError(
+            "OpenFold3 query chain mapping changed: "
+            f"expected {expected_chains!r}, found {actual_chains!r}."
+        )
+
+    pockets = [
+        constraint["pocket"]
+        for constraint in source.get("constraints", [])
+        if isinstance(constraint, dict) and "pocket" in constraint
+    ]
+    if len(pockets) != 1:
+        raise AssertionError(
+            f"Tutorial input must contain exactly one pocket constraint, found {len(pockets)}."
+        )
+    pocket = pockets[0]
+    expected_pocket = {
+        "ligand_chain_id": str(pocket["binder"]),
+        "pocket_residues": [
+            [str(chain_id), int(residue_id)]
+            for chain_id, residue_id in pocket["contacts"]
+        ],
+        "max_distance": float(pocket.get("max_distance", 6.0)),
+    }
+    if query.get("pocket_constraint") != expected_pocket:
+        raise AssertionError(
+            "OpenFold3 pocket translation changed: "
+            f"expected {expected_pocket!r}, found {query.get('pocket_constraint')!r}."
+        )
+    return query
+
+
+def materialize_invalid_constraint_input(
+    runner: str,
+    source_path: Path,
+    destination: Path,
+) -> Path:
+    """Create the tutorial's runner-specific preflight rejection example."""
+
+    _validate_runner(runner)
+    system = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+    constraints = system.setdefault("constraints", [])
+    if runner == "boltz1":
+        constraints.append(
+            {
+                "contact": {
+                    "token1": ["A", 2],
+                    "token2": ["R", 2],
+                    "max_distance": 6.0,
+                }
+            }
+        )
+    elif runner in {"boltz2", "boltz-community"}:
+        contact = next(
+            (
+                item["contact"]
+                for item in constraints
+                if isinstance(item, dict) and "contact" in item
+            ),
+            None,
+        )
+        if contact is None:
+            raise AssertionError(
+                f"Expected {runner} tutorial input to contain a contact constraint."
+            )
+        contact["token2"] = ["Z", 2]
+    else:
+        constraints.append(
+            {
+                "bond": {
+                    "atom1": ["A", 2, "CA"],
+                    "atom2": ["L", 1, "C1"],
+                }
+            }
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(yaml.safe_dump(system, sort_keys=False), encoding="utf-8")
+    return destination
+
+
+def assert_backend_not_started(work_dir: Path) -> None:
+    """Assert that preflight rejection happened before a repeat/backend launch."""
+
+    repeat_dirs = list((work_dir / "raw").glob("repeat_*"))
+    if repeat_dirs:
+        raise AssertionError(
+            f"Expected preflight rejection before inference, found repeat outputs: {repeat_dirs}."
+        )
 
 
 def resolve_openfold3_notebook_cache(
@@ -267,7 +547,10 @@ def rewrite_openfold3_options_cache_path(options_path: Path, cache_path: Path) -
         raise AssertionError(
             f"Expected a mapping in {options_path}, but found {type(settings)!r}."
         )
-    settings["cache_path"] = str(cache_path)
+    runtime = settings.get("runtime")
+    if not isinstance(runtime, dict):
+        raise AssertionError(f"Expected a runtime mapping in {options_path}.")
+    runtime["cache_path"] = str(cache_path)
     options_path.write_text(
         yaml.safe_dump(settings, sort_keys=False),
         encoding="utf-8",
@@ -314,11 +597,14 @@ def build_screen_command(
     wrk_dir: Path,
     system_path: Path,
     options_path: Path,
-    variable_csv: Path,
+    library: Path,
     scoring_functions: list[str],
+    protein_training_data_path: Path | None = None,
+    ligand_training_data_path: Path | None = None,
+    pocket_coverage_reference: str | None = None,
 ) -> list[str]:
     _validate_runner(runner)
-    return [
+    command = [
         "cofolder",
         "screen",
         "-s",
@@ -334,16 +620,38 @@ def build_screen_command(
         "--scoring_functions",
         *scoring_functions,
         "-c",
-        str(variable_csv),
+        str(library),
         "--col_id",
         "Name",
-        "--variable",
-        "sequences,1,ligand,smiles",
-        "--col_variable",
+        "--ligand_chain",
+        "B",
+        "--smiles_column",
         "SMILES",
         "--merge_data",
         "pIC50",
     ]
+    if protein_training_data_path is not None and ligand_training_data_path is not None:
+        command.extend(
+            [
+                "--assess_bias",
+                "--protein_training_data_path",
+                str(protein_training_data_path),
+                "--ligand_training_data_path",
+                str(ligand_training_data_path),
+            ]
+        )
+    if pocket_coverage_reference is not None:
+        command.extend(
+            [
+                "--reproduction_metrics",
+                "pocket_coverage",
+                "--pocket_coverage_reference",
+                pocket_coverage_reference,
+                "--ifp_filter_threshold",
+                "0.0",
+            ]
+        )
+    return command
 
 
 def build_oracle_command(
@@ -397,18 +705,50 @@ def assert_csv_has_columns(path: Path, expected_columns: Iterable[str]) -> None:
 
 def assert_csv_columns_all_empty(path: Path, columns: Iterable[str]) -> None:
     rows = _read_csv(path)
+    if rows and "metric_name" in rows[0]:
+        for column in columns:
+            metric = _public_metric_name(column)
+            matching = [row for row in rows if row.get("metric_name") == metric]
+            if not matching:
+                raise AssertionError(f"Missing expected metric '{metric}' in {path}")
+            if any(row.get("status") == "computed" and _has_value(row.get("value")) for row in matching):
+                raise AssertionError(f"Expected metric '{metric}' to remain empty in {path}")
+        return
     assert_csv_has_columns(path, columns)
     for column in columns:
         if any(_has_value(row.get(column)) for row in rows):
-            raise AssertionError(f"Expected column '{column}' to remain empty in {path}")
+            raise AssertionError(
+                f"Expected column '{column}' to remain empty in {path}"
+            )
 
 
 def assert_csv_columns_have_values(path: Path, columns: Iterable[str]) -> None:
     rows = _read_csv(path)
+    if rows and "metric_name" in rows[0]:
+        for column in columns:
+            metric = _public_metric_name(column)
+            if not any(
+                row.get("metric_name") == metric
+                and row.get("status") == "computed"
+                and _has_value(row.get("value"))
+                for row in rows
+            ):
+                raise AssertionError(f"Expected metric '{metric}' to contain a value in {path}")
+        return
     assert_csv_has_columns(path, columns)
     for column in columns:
         if not any(_has_value(row.get(column)) for row in rows):
-            raise AssertionError(f"Expected column '{column}' to contain at least one value in {path}")
+            raise AssertionError(
+                f"Expected column '{column}' to contain at least one value in {path}"
+            )
+
+
+def _public_metric_name(column: str) -> str:
+    name = str(column).rsplit("__", 1)[-1]
+    for prefix in ("pair_chains_iptm_", "chain_pair_iptm_", "bespoke_iptm_"):
+        if name.startswith(prefix):
+            return prefix.removesuffix("_")
+    return name
 
 
 def assert_output_contains(output: str, expected_text: str) -> None:
@@ -440,4 +780,6 @@ def _has_value(value: str | None) -> bool:
 def _validate_runner(runner: str) -> None:
     if runner not in SUPPORTED_BACKENDS:
         supported = ", ".join(SUPPORTED_BACKENDS)
-        raise ValueError(f"Unsupported backend '{runner}'. Expected one of: {supported}")
+        raise ValueError(
+            f"Unsupported backend '{runner}'. Expected one of: {supported}"
+        )

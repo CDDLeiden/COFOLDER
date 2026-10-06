@@ -23,8 +23,8 @@ sequences:
       id: "protein_1"
       fasta: "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
   - ligand:
+      id: B
       smiles: "CC(C)Cc1ccc(cc1)C(C)C(=O)O"
-      ccd: "IBP"
 ```
 
 ## Step 2: Configure Runner Options
@@ -32,14 +32,25 @@ sequences:
 Create `options.yaml`:
 
 ```yaml
-out_dir: output
-devices: [0]
-num_models: 1
-recycling_steps: 3
-diffusion_samples: 1
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 1
+runner:
+  devices: 1
+  recycling_steps: 3
 ```
 
 ## Step 3: Run Prediction
+
+Check the complete input contract without starting inference:
+
+```bash
+cofolder validate -s system.yaml -o options.yaml \
+  -w ./tutorial_output --preflight_only
+```
+
+After preflight reports `preflight=ready`, run the prediction:
 
 ```bash
 cofolder validate -s system.yaml -o options.yaml -w ./tutorial_output
@@ -55,8 +66,9 @@ ls -l tutorial_output/
 
 You should see:
 - `raw/` - runner-owned raw execution artifacts
-- `results/system_metrics.csv` - merged system-level metrics
-- `results/chain_metrics.csv` - merged chain-level metrics
+- `results/records.jsonl` - authoritative versioned records
+- `results/{executions,successes,metrics,failures}.csv` - long-form views
+- `results/manifest.json` - invocation, backend, evidence, and completion metadata
 - `results/structures/` - gathered output structures
 - log files in the working directory
 
@@ -75,10 +87,18 @@ Examine the confidence scores:
 ```python
 import pandas as pd
 
-system_df = pd.read_csv("tutorial_output/results/system_metrics.csv")
+metrics_df = pd.read_csv("tutorial_output/results/metrics.csv")
+confidence = metrics_df[
+    (metrics_df["metric_name"] == "confidence_score")
+    & (metrics_df["status"] == "computed")
+]
 
-print(system_df[["model_name", "confidence_score"]].head())
+print(confidence[["repeat_id", "model_id", "sample_id", "value"]].head())
 ```
+
+`metrics.csv` is deliberately long-form: metric names live in `metric_name` and
+their numeric result lives in `value`. Do not expect the retired wide
+`system_metrics.csv` or `chain_metrics.csv` files in `results/`.
 
 ## Next Steps
 
@@ -87,12 +107,12 @@ print(system_df[["model_name", "confidence_score"]].head())
 Experiment with different runner parameters:
 
 ```yaml
-# Higher quality prediction
-recycling_steps: 5
-diffusion_samples: 5
-
-# Ensemble prediction
-num_models: 5
+version: 1
+runtime:
+  cache_path: ./cache/.boltz
+  diffusion_samples: 5
+runner:
+  recycling_steps: 5
 ```
 
 ### Add 3D Conformer Generation

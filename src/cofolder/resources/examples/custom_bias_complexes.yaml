@@ -1,0 +1,12 @@
+schema_version: 1
+dataset_name: example-custom-complexes
+complexes:
+  - complex_id: 4HJO-example
+    structure_path: 4HJO.cif
+    proteins:
+      - chain_id: A
+    ligands:
+      - chain_id: A
+        residue_name: AQ4
+        residue_number: 1001
+        smiles: C#Cc1cccc(Nc2ncnc3cc(OCCOC)c(OCCOC)cc23)c1

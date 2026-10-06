@@ -1,0 +1,5433 @@
+{
+  "candidates": [
+    {
+      "candidate_id": "sb203580",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.947463485778916
+            }
+          ],
+          "interaction_key": "A:168:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C32",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 4
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "OD2",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2754
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.2321535213960306
+            }
+          ],
+          "interaction_key": "A:107:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H034",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 34
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "O",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "HIS",
+              "residue_number": 107,
+              "source_index": 1749
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.498328578483346
+            }
+          ],
+          "interaction_key": "A:35:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C28",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 5
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 558
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.009639513297232
+            }
+          ],
+          "interaction_key": "A:35:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C29",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 25
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 560
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.007374436281588
+            }
+          ],
+          "interaction_key": "A:155:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C43",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "OD1",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "ASN",
+              "residue_number": 155,
+              "source_index": 2552
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 1.9620557795693678
+            }
+          ],
+          "interaction_key": "A:154:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H029",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 29
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "SER",
+              "residue_number": 154,
+              "source_index": 2541
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.995411324008775
+            }
+          ],
+          "interaction_key": "A:109:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "N19",
+              "chain_id": "B",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 13
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "N",
+              "chain_id": "A",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "MET",
+              "residue_number": 109,
+              "source_index": 1782
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.368549530450583
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C37",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 17
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CD",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 820
+            }
+          ],
+          "protein_role": "hydrophobic"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [],
+        "glu71_sidechain_hbond": [],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 168.40848479950455
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.995411324008775
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N19",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 13
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1782
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1790
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 16,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "S",
+              "source_atom_name": "S42",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O17",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C38",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C32",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C28",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C36",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C39",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N20",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C23",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C35",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C26",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C21",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N19",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C22",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C27",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C40",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C37",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C30",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C24",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C34",
+              "source_index": 20,
+              "template_index": 20
+            },
+            {
+              "element": "F",
+              "source_atom_name": "F18",
+              "source_index": 21,
+              "template_index": 21
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C25",
+              "source_index": 22,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C31",
+              "source_index": 23,
+              "template_index": 23
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N41",
+              "source_index": 24,
+              "template_index": 24
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C29",
+              "source_index": 25,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C33",
+              "source_index": 26,
+              "template_index": 26
+            }
+          ],
+          "canonical_isomeric_smiles": "CS(=O)c1ccc(-c2nc(-c3ccncc3)c(-c3ccc(F)cc3)[nH]2)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 27,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HIE",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HID",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HID",
+            "A:77": "HIE",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.304061848128216,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    },
+    {
+      "candidate_id": "birb43",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.535006490826557
+            }
+          ],
+          "interaction_key": "A:67:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H040",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 40
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "NH2",
+              "chain_id": "A",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 67,
+              "source_index": 1071
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.464657433667224
+            }
+          ],
+          "interaction_key": "A:104:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C49",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 33
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.6753661976322256
+            }
+          ],
+          "interaction_key": "A:104:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H074",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 74
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7487776344428445
+            }
+          ],
+          "interaction_key": "A:111:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H067",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 67
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "C",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ALA",
+              "residue_number": 111,
+              "source_index": 1808
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.1488236356789447
+            }
+          ],
+          "interaction_key": "A:108:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H062",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 62
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HD13",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 108,
+              "source_index": 1778
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.69664345670602
+            }
+          ],
+          "interaction_key": "A:84:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H053",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 53
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 84,
+              "source_index": 1386
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7548441810124484
+            }
+          ],
+          "interaction_key": "A:51:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H072",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 72
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ALA",
+              "residue_number": 51,
+              "source_index": 792
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7331710831513543
+            }
+          ],
+          "interaction_key": "A:109:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H064",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 64
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "MET",
+              "residue_number": 109,
+              "source_index": 1786
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.473018443959291
+            }
+          ],
+          "interaction_key": "A:169:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C52",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 19
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2765
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.1284666497340807
+            }
+          ],
+          "interaction_key": "A:169:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H056",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 56
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HA",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2771
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.433944293741184
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C61",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 31
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 818
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.5252710745581353
+            }
+          ],
+          "interaction_key": "A:167:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O40",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 16
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 167,
+              "source_index": 2738
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.777652445633399
+            }
+          ],
+          "interaction_key": "A:168:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C53",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 12
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2751
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.744747347207025
+            }
+          ],
+          "interaction_key": "A:168:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C60",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 13
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB3",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2758
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.141838480674977
+            }
+          ],
+          "interaction_key": "A:70:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C47",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 2
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 70,
+              "source_index": 1125
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7646744835513637
+            }
+          ],
+          "interaction_key": "A:170:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C48",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 38
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HA3",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "GLY",
+              "residue_number": 170,
+              "source_index": 2785
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.6356050390547097
+            }
+          ],
+          "interaction_key": "A:71:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C55",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1148
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.726856248503026
+            }
+          ],
+          "interaction_key": "A:71:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C55",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1155
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.491023001501879
+            }
+          ],
+          "interaction_key": "A:74:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H043",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 43
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 74,
+              "source_index": 1208
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.5885337548504173
+            }
+          ],
+          "interaction_key": "A:106:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C56",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 32
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG23",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "THR",
+              "residue_number": 106,
+              "source_index": 1744
+            }
+          ],
+          "protein_role": "van_der_waals"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 166.29543929854043
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.822794891592373
+              }
+            ],
+            "interaction_key": "A:168:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O40",
+                "chain_id": "B",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 16
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2747
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2755
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ],
+        "glu71_sidechain_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 151.54619959889212
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.925889437418988
+              }
+            ],
+            "interaction_key": "A:71:hb_donor",
+            "interaction_type": "hb_donor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N64",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 14
+              },
+              {
+                "atom_name": "H054",
+                "chain_id": "B",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 54
+              }
+            ],
+            "ligand_role": "donor",
+            "protein_atoms": [
+              {
+                "atom_name": "OE2",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "GLU",
+                "residue_number": 71,
+                "source_index": 1152
+              }
+            ],
+            "protein_role": "acceptor"
+          }
+        ],
+        "met109_backbone_hbond": []
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 39,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C67",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C55",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C47",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C45",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C54",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N66",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N41",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C44",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C78",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C68",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C69",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C70",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C53",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C60",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N64",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O40",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N63",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C59",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C52",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C51",
+              "source_index": 20,
+              "template_index": 20
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C58",
+              "source_index": 21,
+              "template_index": 21
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O42",
+              "source_index": 22,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C71",
+              "source_index": 23,
+              "template_index": 23
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C72",
+              "source_index": 24,
+              "template_index": 24
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N65",
+              "source_index": 25,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C73",
+              "source_index": 26,
+              "template_index": 26
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C75",
+              "source_index": 27,
+              "template_index": 27
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C77",
+              "source_index": 28,
+              "template_index": 28
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C76",
+              "source_index": 29,
+              "template_index": 29
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C74",
+              "source_index": 30,
+              "template_index": 30
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C61",
+              "source_index": 31,
+              "template_index": 31
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C56",
+              "source_index": 32,
+              "template_index": 32
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C49",
+              "source_index": 33,
+              "template_index": 33
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C50",
+              "source_index": 34,
+              "template_index": 34
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C57",
+              "source_index": 35,
+              "template_index": 35
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C62",
+              "source_index": 36,
+              "template_index": 36
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C46",
+              "source_index": 37,
+              "template_index": 37
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C48",
+              "source_index": 38,
+              "template_index": 38
+            }
+          ],
+          "canonical_isomeric_smiles": "Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCN3CCCCC3)c3ccccc23)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 39,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HID",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HID",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HID",
+            "A:77": "HID",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.366538400280038,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    },
+    {
+      "candidate_id": "birb48",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.603525686449051
+            }
+          ],
+          "interaction_key": "A:109:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C39",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 28
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "H",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "MET",
+              "residue_number": 109,
+              "source_index": 1790
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.291598536676048
+            }
+          ],
+          "interaction_key": "A:35:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C71",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 24
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 559
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7397304365449897
+            }
+          ],
+          "interaction_key": "A:35:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H060",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 60
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 561
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.4633274244403647
+            }
+          ],
+          "interaction_key": "A:167:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O34",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 16
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 167,
+              "source_index": 2738
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.5488760723276305
+            }
+          ],
+          "interaction_key": "A:74:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H043",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 43
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 74,
+              "source_index": 1208
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.757376867554094
+            }
+          ],
+          "interaction_key": "A:51:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H065",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 65
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ALA",
+              "residue_number": 51,
+              "source_index": 792
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.433093840648988
+            }
+          ],
+          "interaction_key": "A:67:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C54",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 67,
+              "source_index": 1066
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.966670018724698
+            }
+          ],
+          "interaction_key": "A:67:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C66",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 67,
+              "source_index": 1066
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.6394586566188147
+            }
+          ],
+          "interaction_key": "A:170:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C46",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 38
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HA3",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "GLY",
+              "residue_number": 170,
+              "source_index": 2785
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.413412058713757
+            }
+          ],
+          "interaction_key": "A:104:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C48",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 33
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7033151554448294
+            }
+          ],
+          "interaction_key": "A:104:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H068",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 68
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.778386762133739
+            }
+          ],
+          "interaction_key": "A:38:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C71",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 24
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG13",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "VAL",
+              "residue_number": 38,
+              "source_index": 605
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.656531932483078
+            }
+          ],
+          "interaction_key": "A:84:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H053",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 53
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 84,
+              "source_index": 1386
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.471872762053947
+            }
+          ],
+          "interaction_key": "A:168:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C72",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 8
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2751
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.6039402834934604
+            }
+          ],
+          "interaction_key": "A:168:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "N65",
+              "chain_id": "B",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 5
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB3",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2758
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.672302547448944
+            }
+          ],
+          "interaction_key": "A:71:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C54",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1148
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.765528520916029
+            }
+          ],
+          "interaction_key": "A:71:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C54",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1155
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.316170061524452
+            }
+          ],
+          "interaction_key": "A:70:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C45",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 2
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 70,
+              "source_index": 1125
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.343108564150797
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C61",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 31
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 818
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.927537269078424
+            }
+          ],
+          "interaction_key": "A:169:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C51",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 19
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2765
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.460069307966749
+            }
+          ],
+          "interaction_key": "A:169:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C70",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 23
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HE1",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2776
+            }
+          ],
+          "protein_role": "van_der_waals"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 169.46981967897273
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.866848443849099
+              }
+            ],
+            "interaction_key": "A:168:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O34",
+                "chain_id": "B",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 16
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2747
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2755
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ],
+        "glu71_sidechain_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 149.18228942564255
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.989932106252582
+              }
+            ],
+            "interaction_key": "A:71:hb_donor",
+            "interaction_type": "hb_donor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N64",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 14
+              },
+              {
+                "atom_name": "H054",
+                "chain_id": "B",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 54
+              }
+            ],
+            "ligand_role": "donor",
+            "protein_atoms": [
+              {
+                "atom_name": "OE2",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "GLU",
+                "residue_number": 71,
+                "source_index": 1152
+              }
+            ],
+            "protein_role": "acceptor"
+          }
+        ],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 161.40788460148505
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 3.181877747494394
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N35",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 29
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1782
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1790
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 33,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C66",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C54",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C45",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C53",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N65",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N36",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C41",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C72",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C67",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C68",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C69",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C52",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C60",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N64",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C38",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O34",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N63",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C59",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C51",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C50",
+              "source_index": 20,
+              "template_index": 20
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C58",
+              "source_index": 21,
+              "template_index": 21
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O37",
+              "source_index": 22,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C70",
+              "source_index": 23,
+              "template_index": 23
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C71",
+              "source_index": 24,
+              "template_index": 24
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C55",
+              "source_index": 25,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C47",
+              "source_index": 26,
+              "template_index": 26
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C42",
+              "source_index": 27,
+              "template_index": 27
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C39",
+              "source_index": 28,
+              "template_index": 28
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N35",
+              "source_index": 29,
+              "template_index": 29
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C40",
+              "source_index": 30,
+              "template_index": 30
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C61",
+              "source_index": 31,
+              "template_index": 31
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C56",
+              "source_index": 32,
+              "template_index": 32
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C48",
+              "source_index": 33,
+              "template_index": 33
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C49",
+              "source_index": 34,
+              "template_index": 34
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C57",
+              "source_index": 35,
+              "template_index": 35
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C62",
+              "source_index": 36,
+              "template_index": 36
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C44",
+              "source_index": 37,
+              "template_index": 37
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C46",
+              "source_index": 38,
+              "template_index": 38
+            }
+          ],
+          "canonical_isomeric_smiles": "Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCc3cccnc3)c3ccccc23)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 39,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HIE",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HID",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HIE",
+            "A:77": "HID",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.362018204840936,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    },
+    {
+      "candidate_id": "birb796",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.023505188265575
+            }
+          ],
+          "interaction_key": "A:169:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C51",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 19
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2765
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7438203293947656
+            }
+          ],
+          "interaction_key": "A:169:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C50",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 20
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HD1",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2774
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.4932032506695987
+            }
+          ],
+          "interaction_key": "A:74:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H043",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 43
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 74,
+              "source_index": 1208
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.6568109798576525
+            }
+          ],
+          "interaction_key": "A:51:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H062",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 62
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ALA",
+              "residue_number": 51,
+              "source_index": 792
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.370533377060516
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C60",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 31
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 818
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7352875891167394
+            }
+          ],
+          "interaction_key": "A:84:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H053",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 53
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 84,
+              "source_index": 1386
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.748496680005272
+            }
+          ],
+          "interaction_key": "A:170:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C47",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 38
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "O",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "GLY",
+              "residue_number": 170,
+              "source_index": 2782
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.0690208536274226
+            }
+          ],
+          "interaction_key": "A:67:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C66",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 67,
+              "source_index": 1066
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7804737006488662
+            }
+          ],
+          "interaction_key": "A:106:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C55",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 32
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG21",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "THR",
+              "residue_number": 106,
+              "source_index": 1742
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.697788122648456
+            }
+          ],
+          "interaction_key": "A:104:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C49",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 34
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.527604992873689
+            }
+          ],
+          "interaction_key": "A:167:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O38",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 16
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 167,
+              "source_index": 2738
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.28560917490151
+            }
+          ],
+          "interaction_key": "A:70:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C46",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 2
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ARG",
+              "residue_number": 70,
+              "source_index": 1125
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7146281513312283
+            }
+          ],
+          "interaction_key": "A:109:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C71",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 27
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "H",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "MET",
+              "residue_number": 109,
+              "source_index": 1790
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.663134313671832
+            }
+          ],
+          "interaction_key": "A:71:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C54",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1148
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.762074763651411
+            }
+          ],
+          "interaction_key": "A:71:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C54",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1155
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.798516684180813
+            }
+          ],
+          "interaction_key": "A:168:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C52",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 12
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2751
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.1077162032592356
+            }
+          ],
+          "interaction_key": "A:168:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C42",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 15
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "O",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2750
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.0485192565587536
+            }
+          ],
+          "interaction_key": "A:35:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H059",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 59
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB3",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 569
+            }
+          ],
+          "protein_role": "van_der_waals"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 166.11232158937543
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.8580370886326865
+              }
+            ],
+            "interaction_key": "A:168:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O38",
+                "chain_id": "B",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 16
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2747
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2755
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ],
+        "glu71_sidechain_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 147.71402849088634
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.950962724264743
+              }
+            ],
+            "interaction_key": "A:71:hb_donor",
+            "interaction_type": "hb_donor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N63",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 14
+              },
+              {
+                "atom_name": "H054",
+                "chain_id": "B",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 54
+              }
+            ],
+            "ligand_role": "donor",
+            "protein_atoms": [
+              {
+                "atom_name": "OE2",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "GLU",
+                "residue_number": 71,
+                "source_index": 1152
+              }
+            ],
+            "protein_role": "acceptor"
+          }
+        ],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 160.00967739296783
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.717975349409924
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O41",
+                "chain_id": "B",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 28
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1782
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1790
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 37,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C66",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C54",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C46",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C44",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C53",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N65",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N39",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C76",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C67",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C68",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C69",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C52",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C59",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N63",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C42",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O38",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N62",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C58",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C51",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C50",
+              "source_index": 20,
+              "template_index": 20
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C57",
+              "source_index": 21,
+              "template_index": 21
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O40",
+              "source_index": 22,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C70",
+              "source_index": 23,
+              "template_index": 23
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C73",
+              "source_index": 24,
+              "template_index": 24
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N64",
+              "source_index": 25,
+              "template_index": 25
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C74",
+              "source_index": 26,
+              "template_index": 26
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C71",
+              "source_index": 27,
+              "template_index": 27
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O41",
+              "source_index": 28,
+              "template_index": 28
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C72",
+              "source_index": 29,
+              "template_index": 29
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C75",
+              "source_index": 30,
+              "template_index": 30
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C60",
+              "source_index": 31,
+              "template_index": 31
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C55",
+              "source_index": 32,
+              "template_index": 32
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C48",
+              "source_index": 33,
+              "template_index": 33
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C49",
+              "source_index": 34,
+              "template_index": 34
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C56",
+              "source_index": 35,
+              "template_index": 35
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C61",
+              "source_index": 36,
+              "template_index": 36
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C45",
+              "source_index": 37,
+              "template_index": 37
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C47",
+              "source_index": 38,
+              "template_index": 38
+            }
+          ],
+          "canonical_isomeric_smiles": "Cc1ccc(-n2nc(C(C)(C)C)cc2NC(=O)Nc2ccc(OCCN3CCOCC3)c3ccccc23)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 39,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HIE",
+            "A:126": "HID",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HIE",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HID",
+            "A:77": "HID",
+            "A:80": "HID"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.3243590514376224,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 1,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    },
+    {
+      "candidate_id": "sb202474",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.218173064254239
+            }
+          ],
+          "interaction_key": "A:35:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C32",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 5
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 558
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.2800746942714585
+            }
+          ],
+          "interaction_key": "A:35:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C28",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 6
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "TYR",
+              "residue_number": 35,
+              "source_index": 560
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.219144917520801
+            }
+          ],
+          "interaction_key": "A:106:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C38",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 1
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "OG1",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "THR",
+              "residue_number": 106,
+              "source_index": 1737
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.0989945211934216
+            }
+          ],
+          "interaction_key": "A:109:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "N18",
+              "chain_id": "B",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 18
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "H",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "MET",
+              "residue_number": 109,
+              "source_index": 1790
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.309649753750297
+            }
+          ],
+          "interaction_key": "A:168:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C28",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 6
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2751
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.0442723268459413
+            }
+          ],
+          "interaction_key": "A:107:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C22",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 19
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "O",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "HIS",
+              "residue_number": 107,
+              "source_index": 1749
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.421962234121861
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C29",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 12
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CD",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 820
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7134096631360323
+            }
+          ],
+          "interaction_key": "A:53:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C37",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 825
+            }
+          ],
+          "protein_role": "van_der_waals"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [],
+        "glu71_sidechain_hbond": [],
+        "met109_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 163.59627228829456
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 3.113410509393197
+              }
+            ],
+            "interaction_key": "A:109:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N18",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 18
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1782
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "MET",
+                "residue_number": 109,
+                "source_index": 1790
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ]
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 17,
+          "atom_mapping": [
+            {
+              "element": "C",
+              "source_atom_name": "C37",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C38",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C34",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N35",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C33",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C32",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C28",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C24",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C30",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O20",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C36",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C25",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C29",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N19",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C23",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C31",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C26",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C21",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N18",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C22",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C27",
+              "source_index": 20,
+              "template_index": 20
+            }
+          ],
+          "canonical_isomeric_smiles": "CCc1[nH]c(-c2ccc(OC)cc2)nc1-c1ccncc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 21,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HID",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HIE",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HIE",
+            "A:77": "HID",
+            "A:80": "HIE"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.3750103157670703,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    },
+    {
+      "candidate_id": "um101",
+      "diagnostics": [
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.134461331401149
+            }
+          ],
+          "interaction_key": "A:74:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H030",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 30
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 74,
+              "source_index": 1214
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.4192013687409513
+            }
+          ],
+          "interaction_key": "A:51:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "CL23",
+              "chain_id": "B",
+              "element": "Cl",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 22
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "C",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ALA",
+              "residue_number": 51,
+              "source_index": 790
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.671829343033187
+            }
+          ],
+          "interaction_key": "A:146:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H032",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 32
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CG2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 146,
+              "source_index": 2391
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.9311756511252463
+            }
+          ],
+          "interaction_key": "A:104:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C25",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 20
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1701
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.1956814139858114
+            }
+          ],
+          "interaction_key": "A:104:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H041",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 41
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HB2",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 104,
+              "source_index": 1707
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.560439415412909
+            }
+          ],
+          "interaction_key": "A:84:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O20",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HD11",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 84,
+              "source_index": 1396
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.8391859748878727
+            }
+          ],
+          "interaction_key": "A:141:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O21",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 12
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ILE",
+              "residue_number": 141,
+              "source_index": 2323
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.1921210816634136
+            }
+          ],
+          "interaction_key": "A:148:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O21",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 12
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "HIS",
+              "residue_number": 148,
+              "source_index": 2434
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.284191405621369
+            }
+          ],
+          "interaction_key": "A:75:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C30",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 17
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 75,
+              "source_index": 1226
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.0757724233109314
+            }
+          ],
+          "interaction_key": "A:75:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C30",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 17
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CD1",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LEU",
+              "residue_number": 75,
+              "source_index": 1227
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.08890804494305
+            }
+          ],
+          "interaction_key": "A:71:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C29",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 4
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1149
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.910945035551169
+            }
+          ],
+          "interaction_key": "A:71:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "N37",
+              "chain_id": "B",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 2
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "OE2",
+              "chain_id": "A",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "GLU",
+              "residue_number": 71,
+              "source_index": 1152
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.004171949354823
+            }
+          ],
+          "interaction_key": "A:53:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C25",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 20
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 818
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "angle",
+              "unit": "degree",
+              "value": 24.82446520236533
+            },
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.491944917169943
+            }
+          ],
+          "interaction_key": "A:53:pi_cation",
+          "interaction_type": "pi_cation",
+          "ligand_atoms": [
+            {
+              "atom_name": "C34",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 18
+            },
+            {
+              "atom_name": "C27",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 19
+            },
+            {
+              "atom_name": "C25",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 20
+            },
+            {
+              "atom_name": "C33",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 21
+            },
+            {
+              "atom_name": "C26",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 23
+            },
+            {
+              "atom_name": "C28",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 24
+            }
+          ],
+          "ligand_role": "pi",
+          "protein_atoms": [
+            {
+              "atom_name": "NZ",
+              "chain_id": "A",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 822
+            }
+          ],
+          "protein_role": "cation"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.2231092131666887
+            }
+          ],
+          "interaction_key": "A:53:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "CL23",
+              "chain_id": "B",
+              "element": "Cl",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 22
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "N",
+              "chain_id": "A",
+              "element": "N",
+              "insertion_code": "",
+              "residue_name": "LYS",
+              "residue_number": 53,
+              "source_index": 814
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 4.365688261889527
+            }
+          ],
+          "interaction_key": "A:169:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C26",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 23
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CG",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2764
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.7183159480089447
+            }
+          ],
+          "interaction_key": "A:169:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "H042",
+              "chain_id": "B",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 42
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "CE2",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "PHE",
+              "residue_number": 169,
+              "source_index": 2768
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.9918458136556327
+            }
+          ],
+          "interaction_key": "A:168:hydrophobic",
+          "interaction_type": "hydrophobic",
+          "ligand_atoms": [
+            {
+              "atom_name": "C29",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 4
+            }
+          ],
+          "ligand_role": "hydrophobic",
+          "protein_atoms": [
+            {
+              "atom_name": "CB",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2751
+            }
+          ],
+          "protein_role": "hydrophobic"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 3.0226150929286377
+            }
+          ],
+          "interaction_key": "A:168:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "O20",
+              "chain_id": "B",
+              "element": "O",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 0
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "C",
+              "chain_id": "A",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "ASP",
+              "residue_number": 168,
+              "source_index": 2749
+            }
+          ],
+          "protein_role": "van_der_waals"
+        },
+        {
+          "geometry": [
+            {
+              "name": "distance",
+              "unit": "angstrom",
+              "value": 2.6648921178914544
+            }
+          ],
+          "interaction_key": "A:106:vdw_contact",
+          "interaction_type": "vdw_contact",
+          "ligand_atoms": [
+            {
+              "atom_name": "C33",
+              "chain_id": "B",
+              "element": "C",
+              "insertion_code": "",
+              "residue_name": "LIG",
+              "residue_number": 1,
+              "source_index": 21
+            }
+          ],
+          "ligand_role": "van_der_waals",
+          "protein_atoms": [
+            {
+              "atom_name": "HG22",
+              "chain_id": "A",
+              "element": "H",
+              "insertion_code": "",
+              "residue_name": "THR",
+              "residue_number": 106,
+              "source_index": 1743
+            }
+          ],
+          "protein_role": "van_der_waals"
+        }
+      ],
+      "evaluation_status": "evaluable",
+      "features": {
+        "asp168_backbone_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 144.18441097943747
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 3.090645725410791
+              }
+            ],
+            "interaction_key": "A:168:hb_acceptor",
+            "interaction_type": "hb_acceptor",
+            "ligand_atoms": [
+              {
+                "atom_name": "O20",
+                "chain_id": "B",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 0
+              }
+            ],
+            "ligand_role": "acceptor",
+            "protein_atoms": [
+              {
+                "atom_name": "N",
+                "chain_id": "A",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2747
+              },
+              {
+                "atom_name": "H",
+                "chain_id": "A",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "ASP",
+                "residue_number": 168,
+                "source_index": 2755
+              }
+            ],
+            "protein_role": "donor"
+          }
+        ],
+        "glu71_sidechain_hbond": [
+          {
+            "geometry": [
+              {
+                "name": "DHA_angle",
+                "unit": "degree",
+                "value": 147.27029447652563
+              },
+              {
+                "name": "distance",
+                "unit": "angstrom",
+                "value": 2.910945035551169
+              }
+            ],
+            "interaction_key": "A:71:hb_donor",
+            "interaction_type": "hb_donor",
+            "ligand_atoms": [
+              {
+                "atom_name": "N37",
+                "chain_id": "B",
+                "element": "N",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 2
+              },
+              {
+                "atom_name": "H025",
+                "chain_id": "B",
+                "element": "H",
+                "insertion_code": "",
+                "residue_name": "LIG",
+                "residue_number": 1,
+                "source_index": 25
+              }
+            ],
+            "ligand_role": "donor",
+            "protein_atoms": [
+              {
+                "atom_name": "OE2",
+                "chain_id": "A",
+                "element": "O",
+                "insertion_code": "",
+                "residue_name": "GLU",
+                "residue_number": 71,
+                "source_index": 1152
+              }
+            ],
+            "protein_role": "acceptor"
+          }
+        ],
+        "met109_backbone_hbond": []
+      },
+      "prediction_id": "1_oracle_system_model_0",
+      "preparation": {
+        "ligand": {
+          "added_hydrogens": 19,
+          "atom_mapping": [
+            {
+              "element": "O",
+              "source_atom_name": "O20",
+              "source_index": 0,
+              "template_index": 0
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C24",
+              "source_index": 1,
+              "template_index": 1
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N37",
+              "source_index": 2,
+              "template_index": 2
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C35",
+              "source_index": 3,
+              "template_index": 3
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C29",
+              "source_index": 4,
+              "template_index": 4
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C31",
+              "source_index": 5,
+              "template_index": 5
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C36",
+              "source_index": 6,
+              "template_index": 6
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C39",
+              "source_index": 7,
+              "template_index": 7
+            },
+            {
+              "element": "N",
+              "source_atom_name": "N38",
+              "source_index": 8,
+              "template_index": 8
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C40",
+              "source_index": 9,
+              "template_index": 9
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C42",
+              "source_index": 10,
+              "template_index": 10
+            },
+            {
+              "element": "S",
+              "source_atom_name": "S44",
+              "source_index": 11,
+              "template_index": 11
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O21",
+              "source_index": 12,
+              "template_index": 12
+            },
+            {
+              "element": "O",
+              "source_atom_name": "O22",
+              "source_index": 13,
+              "template_index": 13
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C43",
+              "source_index": 14,
+              "template_index": 14
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C41",
+              "source_index": 15,
+              "template_index": 15
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C32",
+              "source_index": 16,
+              "template_index": 16
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C30",
+              "source_index": 17,
+              "template_index": 17
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C34",
+              "source_index": 18,
+              "template_index": 18
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C27",
+              "source_index": 19,
+              "template_index": 19
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C25",
+              "source_index": 20,
+              "template_index": 20
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C33",
+              "source_index": 21,
+              "template_index": 21
+            },
+            {
+              "element": "Cl",
+              "source_atom_name": "CL23",
+              "source_index": 22,
+              "template_index": 22
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C26",
+              "source_index": 23,
+              "template_index": 23
+            },
+            {
+              "element": "C",
+              "source_atom_name": "C28",
+              "source_index": 24,
+              "template_index": 24
+            }
+          ],
+          "canonical_isomeric_smiles": "O=C(Nc1ccc(CN2CCS(=O)(=O)CC2)cc1)c1ccc(Cl)cc1",
+          "formal_charge": 0,
+          "heavy_atom_count": 25,
+          "max_heavy_atom_displacement_angstrom": 0.0
+        },
+        "prolif_version": "2.1.0",
+        "protein": {
+          "added_heavy_atoms": 1,
+          "force_field": "AMBER",
+          "histidine_states": {
+            "A:107": "HID",
+            "A:126": "HID",
+            "A:142": "HIE",
+            "A:148": "HIE",
+            "A:174": "HID",
+            "A:199": "HID",
+            "A:228": "HID",
+            "A:305": "HIE",
+            "A:312": "HID",
+            "A:64": "HID",
+            "A:77": "HID",
+            "A:80": "HIE"
+          },
+          "hydrogen_optimization": true,
+          "input_heavy_atoms": 2906,
+          "mapped_heavy_atoms": 2906,
+          "max_heavy_atom_displacement_angstrom": 0.0,
+          "max_pre_restore_displacement_angstrom": 2.3287992614220743,
+          "method": "PDB2PQR",
+          "ph": 7.4,
+          "removed_spurious_inter_residue_bonds": 0,
+          "restored_heavy_atoms": 2906
+        },
+        "rdkit_version": "2025.09.4"
+      }
+    }
+  ],
+  "schema_version": 1
+}
+

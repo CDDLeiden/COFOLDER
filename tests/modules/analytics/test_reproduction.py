@@ -3,6 +3,7 @@
 import json
 import logging
 
+import gemmi
 import pandas as pd
 
 from cofolder.modules.analytics.reproduction import scaffold_reproduction_metrics
@@ -205,6 +206,43 @@ def test_scaffold_reproduction_metrics_adds_schema_and_metrics(temp_dir):
     assert lig_row["ligand_pose_overlap_ref"] == lig_row["sucos_ref"]
     assert 0.0 <= float(lig_row["pocket_coverage_ref"]) <= 1.0
     assert 0.0 <= float(lig_row["sucos_ref"]) <= 1.0
+
+
+def test_valid_mmcif_reference_produces_structural_diagnostics(temp_dir):
+    structures_dir = temp_dir / "results" / "structures"
+    structures_dir.mkdir(parents=True)
+    reference_pdb = temp_dir / "reference.pdb"
+    predicted_pdb = structures_dir / "prediction.pdb"
+    _write_reference_pdb(reference_pdb)
+    _write_predicted_pdb(
+        predicted_pdb,
+        ligand_coords=((1.3, 1.2, 0.0), (2.7, 1.2, 0.0)),
+    )
+    reference_cif = temp_dir / "reference.cif"
+    predicted_cif = structures_dir / "prediction.cif"
+    gemmi.read_structure(str(reference_pdb)).make_mmcif_document().write_file(
+        str(reference_cif)
+    )
+    gemmi.read_structure(str(predicted_pdb)).make_mmcif_document().write_file(
+        str(predicted_cif)
+    )
+    reference_pdb.unlink()
+    predicted_pdb.unlink()
+
+    system_df, chain_df = scaffold_reproduction_metrics(
+        system_df=_make_system_df(predicted_cif.name),
+        chain_df=_make_chain_df(predicted_cif.name, ifp_vector=[1, 0]),
+        reference_path=reference_cif,
+        wrk_dir=temp_dir,
+        reproduction_metrics=["protein_rmsd", "ligand_rmsd", "pocket_coverage"],
+    )
+
+    protein_row = chain_df[chain_df["ENTITY_TYPE"] == "protein"].iloc[0]
+    ligand_row = chain_df[chain_df["ENTITY_TYPE"] == "ligand"].iloc[0]
+    assert float(protein_row["protein_rmsd_ref"]) >= 0.0
+    assert float(ligand_row["ligand_rmsd_ref"]) >= 0.0
+    assert 0.0 <= float(ligand_row["pocket_coverage_ref"]) <= 1.0
+    assert 0.0 <= float(system_df["pocket_coverage_ref_mean"].iloc[0]) <= 1.0
 
 
 def test_reference_dependent_metrics_remain_nan_without_reference(temp_dir):

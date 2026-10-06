@@ -9,13 +9,22 @@ from subprocess import CompletedProcess
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 import yaml
 
+from cofolder.modules.contracts import (
+    BackendVersionStatus,
+    RepeatSeedProvenance,
+    RunnerBackendIdentity,
+    SeedOrigin,
+)
 from cofolder.modules.input.system import System
 from cofolder.modules.runners.contracts import RunnerExecutionRequest
-from cofolder.modules.runners.openfold3_runner import OpenFold3Runner
-from cofolder.modules.runners.openfold3_runner import check_openfold3_setup_ready
-from cofolder.modules.runners.openfold3_runner import run_openfold3
+from cofolder.modules.runners.openfold3_runner import (
+    OpenFold3Runner,
+    check_openfold3_setup_ready,
+    run_openfold3,
+)
 from cofolder.modules.runners.validators import validate_runner_bundle
 
 
@@ -42,14 +51,66 @@ def _make_system(*, smiles: str | None = "CCO", ccd: str | None = "ETH") -> Syst
     )
 
 
+def test_openfold3_builds_nucleic_acids_and_translates_pocket_constraint():
+    system = System(
+        system={
+            "sequences": [
+                {"protein": {"id": "A", "sequence": "AC"}},
+                {"dna": {"id": "D", "sequence": "AT"}},
+                {"rna": {"id": ["R", "S"], "sequence": "GU"}},
+                {"ligand": {"id": "L", "smiles": "CCO"}},
+            ],
+            "constraints": [
+                {
+                    "pocket": {
+                        "binder": "L",
+                        "contacts": [["A", 1], ["D", 2]],
+                        "max_distance": 7.5,
+                    }
+                }
+            ],
+        }
+    )
+
+    payload = OpenFold3Runner()._build_query_payload("mixed", system)
+    query = payload["queries"]["mixed"]
+
+    assert query["chains"] == [
+        {"molecule_type": "protein", "chain_ids": ["A"], "sequence": "AC"},
+        {"molecule_type": "dna", "chain_ids": ["D"], "sequence": "AT"},
+        {"molecule_type": "rna", "chain_ids": ["R", "S"], "sequence": "GU"},
+        {"molecule_type": "ligand", "chain_ids": ["L"], "smiles": "CCO"},
+    ]
+    assert query["pocket_constraint"] == {
+        "ligand_chain_id": "L",
+        "pocket_residues": [["A", 1], ["D", 2]],
+        "max_distance": 7.5,
+    }
+    assert OpenFold3Runner._chain_order(system) == ["A", "D", "R", "S", "L"]
+
+
+def test_openfold3_payload_never_silently_omits_unsupported_constraints():
+    system = _make_system(smiles="CCO", ccd=None)
+    system.system["constraints"] = [
+        {"bond": {"atom1": ["A", 1, "N"], "atom2": ["B", 1, "C1"]}}
+    ]
+
+    with pytest.raises(ValueError, match="bond.*unsupported"):
+        OpenFold3Runner().validate_system(system, {}, check_atom_names=False)
+
+
 def _write_options_yaml(temp_dir: Path, *, samples_per_seed: int = 2) -> Path:
     options_path = temp_dir / "openfold3-options.yaml"
     options_path.write_text(
         yaml.safe_dump(
             {
-                "cache_path": "/tmp/openfold3-cache",
-                "samples_per_seed": samples_per_seed,
-                "extra_args": ["--use-msa-server=False"],
+                "version": 1,
+                "runtime": {
+                    "cache_path": "/tmp/openfold3-cache",
+                    "diffusion_samples": samples_per_seed,
+                    "extra_args": ["--use-msa-server=False"],
+                },
+                "runner": {},
             }
         ),
         encoding="utf-8",
@@ -71,6 +132,21 @@ def _make_request(temp_dir: Path, *, system_obj: System, samples_per_seed: int =
         options_obj=options_obj,
         repeat=1,
         seed=123,
+        seed_provenance=RepeatSeedProvenance(
+            repeat_id=1,
+            requested_base_seed=123,
+            resolved_base_seed=123,
+            derived_seed=123,
+            effective_seed=123,
+            origin=SeedOrigin.USER_SPECIFIED,
+        ),
+        backend_identity=RunnerBackendIdentity(
+            runner_name="openfold3",
+            backend_name="openfold3",
+            version="0.3.0",
+            version_status=BackendVersionStatus.DETECTED,
+            raw_version="0.3.0",
+        ),
         repeat_dir=repeat_dir,
         raw_dir=temp_dir,
         logger=None,
@@ -124,7 +200,7 @@ def _write_openfold3_sample_outputs(
                 {
                     "ptm": 0.80,
                     "iptm": 0.70,
-                    "avg_plddt": 0.79,
+                    "avg_plddt": 79.0,
                     "gpde": 0.31,
                     "disorder": 0.14,
                     "has_clash": 0.0,
@@ -202,13 +278,13 @@ def test_openfold3_runner_check_availability_only_requires_package_install(monke
     assert message is None
 
 
-def test_openfold3_runner_reports_setup_script_when_cache_is_unprepared(monkeypatch, temp_dir):
+def test_openfold3_runner_reports_installed_setup_tool_when_cache_is_unprepared(monkeypatch, temp_dir):
     cache_root = temp_dir / "openfold3-cache"
     cache_root.mkdir(parents=True, exist_ok=True)
     available, message = check_openfold3_setup_ready({"OPENFOLD_CACHE": str(cache_root)})
 
     assert available is False
-    assert "scripts/setup_openfold3.sh" in message
+    assert "cofolder-tools setup-openfold3" in message
     assert "ckpt_root" in message
 
 
@@ -272,6 +348,7 @@ def test_openfold3_runner_prefers_ccd_over_smiles_in_query_json(monkeypatch, tem
         system_df.columns
     )
     assert "confidence_score" not in system_df.columns
+    assert system_df["avg_plddt"].tolist() == [0.79, 0.79]
     assert {"chain_ptm", "chain_pair_iptm_A_B", "bespoke_iptm_A_B"}.issubset(chain_df.columns)
     assert result.metric_outcomes["confidence_metrics"].state == "computed"
     assert result.metric_outcomes["confidence_metrics"].required_artifacts == (
@@ -286,6 +363,9 @@ def test_openfold3_runner_prefers_ccd_over_smiles_in_query_json(monkeypatch, tem
     assert (result.normalized_dir / "artifacts" / "pae" / "system_seed_123_sample_2_pae.json").exists()
     assert bundle.metric_outcomes["confidence_metrics"].state == "computed"
     assert manifest["runtime_context"]["timing_path"].endswith("/seed_123/timing.json")
+    assert manifest["backend"]["version"] == "0.3.0"
+    assert manifest["seed"]["effective_seed"] == 123
+    assert manifest["seed"]["origin"] == "user_specified"
     assert "companion_artifacts" in manifest
     assert all(entry["label"] != "timing" for entry in manifest["companion_artifacts"])
 

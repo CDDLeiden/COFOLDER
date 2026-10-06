@@ -3,21 +3,26 @@
 from datetime import date
 import logging
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 
 import pandas as pd
 import pytest
 
-from cofolder.modules.analytics import bias as bias_module
 from cofolder.modules.analytics import plots as plots_module
+from cofolder.modules.analytics.bias import _references as bias_references
+from cofolder.modules.analytics.bias import _similarity as bias_similarity
+from cofolder.modules.analytics.bias import _enrichment as bias_enrichment
+from cofolder.modules.analytics.bias import _artifacts as bias_artifacts
 from cofolder.modules.analytics.bias import (
     BIAS_TRAINING_DATA_COLUMNS,
-    _build_bias_training_dataset,
-    _build_protein_training_view,
-    _load_ligand_training,
-    _same_type_pair_dataset,
     apply_bias_metrics,
 )
+from cofolder.modules.analytics.bias._artifacts import _same_type_pair_dataset
+from cofolder.modules.analytics.bias._datasets import _build_bias_training_dataset
+from cofolder.modules.analytics.bias._references import _load_ligand_training
+from cofolder.modules.analytics.bias._similarity import _build_protein_training_view
 from cofolder.modules.analytics.plots import plot_bias_reference_overlap, plot_reference_overlap_scatter
 
 
@@ -29,6 +34,41 @@ class _MockSystem:
         if key == "sequences":
             return self._sequences
         return None
+
+
+def test_bias_package_imports_have_no_execution_side_effects(temp_dir):
+    modules = (
+        "cofolder.modules.analytics.bias",
+        "cofolder.modules.analytics.bias._common",
+        "cofolder.modules.analytics.bias._references",
+        "cofolder.modules.analytics.bias._similarity",
+        "cofolder.modules.analytics.bias._datasets",
+        "cofolder.modules.analytics.bias._enrichment",
+        "cofolder.modules.analytics.bias._artifacts",
+        "cofolder.modules.analytics.bias._workflow",
+    )
+    code = f"""
+import sys
+
+def deny(event, args):
+    if event in {{'subprocess.Popen', 'socket.connect'}}:
+        raise RuntimeError(event)
+
+sys.addaudithook(deny)
+for module in {modules!r}:
+    __import__(module)
+"""
+    before = tuple(temp_dir.iterdir())
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert tuple(temp_dir.iterdir()) == before
 
 
 def test_apply_bias_metrics_basic(temp_dir):
@@ -71,12 +111,13 @@ def test_apply_bias_metrics_basic(temp_dir):
         release_cutoff="2023-06-01",
     )
 
-    prot_val = float(out_chain.loc[out_chain["ENTITY_TYPE"] == "protein", "bias_prot_sim_train"].iloc[0])
+    protein_row = out_chain.loc[out_chain["ENTITY_TYPE"] == "protein"].iloc[0]
     lig_val = float(out_chain.loc[out_chain["ENTITY_TYPE"] == "ligand", "bias_lig_sim_train"].iloc[0])
 
-    assert prot_val == 100.0
+    assert pd.isna(protein_row["bias_prot_sim_train"])
+    assert float(protein_row["bias_prot_sim_train_pairwise"]) == 100.0
     assert lig_val == 1.0
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_pairwise_max"].iloc[0]) == 100.0
     assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
 
 
@@ -125,10 +166,10 @@ def test_apply_bias_metrics_ccd_multi_ligands_and_cutoff(temp_dir):
     lig_b = float(out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0])
     lig_c = float(out_chain.loc[out_chain["CHAIN_ID"] == "C", "bias_lig_sim_train"].iloc[0])
 
-    assert prot_val == 100.0
+    assert prot_val == 99.0
     assert lig_b == 1.0
     assert lig_c == 1.0
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 99.0
     assert float(out_system["bias_lig_sim_train_max"].iloc[0]) == 1.0
 
 
@@ -224,18 +265,18 @@ def test_smiles_from_components_cif_reuses_cached_document(monkeypatch, temp_dir
     )
 
     read_calls = 0
-    original_read_file = bias_module.gemmi.cif.read_file
+    original_read_file = bias_references.gemmi.cif.read_file
 
     def _counting_read_file(path):
         nonlocal read_calls
         read_calls += 1
         return original_read_file(path)
 
-    bias_module._components_cif_smiles_index.cache_clear()
-    monkeypatch.setattr(bias_module.gemmi.cif, "read_file", _counting_read_file)
+    bias_references._components_cif_smiles_index.cache_clear()
+    monkeypatch.setattr(bias_references.gemmi.cif, "read_file", _counting_read_file)
 
-    assert bias_module._smiles_from_components_cif("MG", components_cif) == "[Mg+2]"
-    assert bias_module._smiles_from_components_cif("K", components_cif) == "[K+]"
+    assert bias_references._smiles_from_components_cif("MG", components_cif) == "[Mg+2]"
+    assert bias_references._smiles_from_components_cif("K", components_cif) == "[K+]"
     assert read_calls == 1
 
 
@@ -332,12 +373,13 @@ def test_apply_bias_metrics_with_empty_ligand_csv_no_crash(temp_dir):
         release_cutoff="2023-06-01",
     )
 
-    prot_val = float(out_chain.loc[out_chain["CHAIN_ID"] == "A", "bias_prot_sim_train"].iloc[0])
+    protein_row = out_chain.loc[out_chain["CHAIN_ID"] == "A"].iloc[0]
     lig_val = out_chain.loc[out_chain["CHAIN_ID"] == "B", "bias_lig_sim_train"].iloc[0]
 
-    assert prot_val == 100.0
+    assert pd.isna(protein_row["bias_prot_sim_train"])
+    assert float(protein_row["bias_prot_sim_train_pairwise"]) == 100.0
     assert pd.isna(lig_val)
-    assert float(out_system["bias_prot_sim_train_max"].iloc[0]) == 100.0
+    assert float(out_system["bias_prot_sim_train_pairwise_max"].iloc[0]) == 100.0
 
 
 def test_apply_bias_metrics_rejects_unresolved_ccd_when_strict(monkeypatch, temp_dir):
@@ -449,11 +491,25 @@ def test_apply_bias_metrics_merges_public_and_custom_references_with_summary(tem
     assert bias_training["query_protein_chain_id"].tolist() == ["A", "A"]
     assert bias_training["query_ligand_chain_id"].tolist() == ["B", "B"]
     assert bias_training["pairing_status"].tolist() == ["paired", "paired"]
-    assert bias_training["plot_sequence_similarity"].tolist() == [1.0, 0.83]
+    assert pd.isna(bias_training["plot_sequence_similarity"].iloc[0])
+    assert bias_training["plot_sequence_similarity"].iloc[1] == 0.83
+    assert bias_training["plot_sequence_similarity_pairwise"].iloc[0] == 1.0
+    assert pd.isna(bias_training["plot_sequence_similarity_pairwise"].iloc[1])
+    assert bias_training["sequence_similarity_method"].tolist() == [
+        "pairwise_aligner",
+        "mmseqs_pident",
+    ]
     assert bias_training["plot_ecfp_similarity"].tolist() == [1.0, 0.4]
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.png").exists()
     assert (temp_dir / "results" / "bias_reference_overlap_scatter.pdf").exists()
     assert set(summary["nearest_overall_source"]) == {"custom"}
+    summary_methods = summary.set_index("entity_type")[
+        "nearest_overall_similarity_method"
+    ].to_dict()
+    assert summary_methods == {
+        "protein": "pairwise_aligner",
+        "ligand": "ecfp4_tanimoto",
+    }
     assert summary["custom_changes_nearest_reference"].tolist() == [True, True]
 
 
@@ -796,23 +852,23 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg+2]", "ecfp_similarity": 0.05}]
         if kwargs["pdb_id"] == "5ZOD"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
-        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}]
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
+        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
 
-    result = bias_module._mixed_pair_dataset(
+    result = bias_artifacts._mixed_pair_dataset(
         protein_label="A",
         ligand_label="MG",
         protein_query_sequence="SEQ_QUERY",
@@ -835,7 +891,7 @@ def test_mixed_pair_dataset_handles_direct_overlap_per_reference(monkeypatch):
     assert protein_seed["sequence_similarity"] == 94.1
     assert protein_seed["ecfp_similarity"] == 0.05
     ligand_seed = result[result["pdb_id"] == "1XM1"].iloc[0]
-    assert ligand_seed["sequence_similarity"] == 61.0
+    assert ligand_seed["sequence_similarity"] == 12.5
     assert ligand_seed["ecfp_similarity"] == 0.91
 
 
@@ -912,7 +968,7 @@ def test_same_type_pair_dataset_uses_other_ligands_from_same_pdb(monkeypatch):
         return []
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         _fake_pdb_ligand_rows,
     )
 
@@ -1017,23 +1073,23 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg++]", "ecfp_similarity": 0.11}]
         if kwargs["pdb_id"] == "5ZOD"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
-        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}]
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
+        lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 12.5}]
         if kwargs["pdb_id"] == "1XM1"
         else [],
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         result,
         protein_queries={"A": "SEQ_QUERY"},
         ligand_queries={"B": "CCO"},
@@ -1047,7 +1103,10 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_fetches_missing_axes(monkey
     assert zod["ecfp_similarity"] == 0.11
     xm1 = enriched[enriched["pdb_id"] == "1XM1"].iloc[0]
     assert xm1["protein_pdb_id"] == "1XM1"
-    assert xm1["sequence_similarity"] == 61.0
+    assert xm1["sequence_similarity"] == 12.5
+    assert xm1["plot_sequence_similarity"] == 0.125
+    assert pd.isna(xm1["sequence_similarity_pairwise"])
+    assert xm1["sequence_similarity_method"] == "mmseqs_pident"
 
 
 def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(monkeypatch):
@@ -1102,11 +1161,11 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(
     )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("MMseqs fallback should not run")),
     )
 
-    enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
         rows,
         protein_queries={"A": "SEQ_QUERY"},
         ligand_queries={"MG": "[Mg+2]"},
@@ -1125,6 +1184,144 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_reuses_protein_lookup_rows(
     assert row["protein_dataset_name"] == "protein_lookup"
     assert row["protein_source_structure_path"] == "/tmp/1xm1.cif"
     assert row["protein_source_reference_path"] == "/tmp/protein.csv"
+
+
+def test_enrich_mixed_bias_dataset_expands_each_protein_over_all_recovered_ligands(
+    monkeypatch,
+):
+    rows = pd.DataFrame(
+        [
+            {
+                "query_pair_id": "A__B",
+                "query_protein_chain_id": "A",
+                "query_ligand_chain_id": "B",
+                "reference_key": "public:pdb:1XM1",
+                "reference_label": "1XM1",
+                "pairing_status": "protein_only",
+                "source": "public",
+                "dataset_name": "public",
+                "pdb_id": "1XM1",
+                "protein_pdb_id": "1XM1",
+                "ligand_pdb_id": pd.NA,
+                "protein_release_date": "2022-01-01",
+                "ligand_release_date": pd.NA,
+                "protein_source": "public",
+                "protein_dataset_name": "public",
+                "ligand_source": pd.NA,
+                "ligand_dataset_name": pd.NA,
+                "sequence_similarity": similarity,
+                "ecfp_similarity": 0.0,
+                "plot_sequence_similarity": similarity / 100.0,
+                "plot_ecfp_similarity": 0.0,
+                "sequence": sequence,
+                "ligand_id": pd.NA,
+                "smiles": pd.NA,
+            }
+            for sequence, similarity in (("SEQ_CHAIN_1", 80.0), ("SEQ_CHAIN_2", 70.0))
+        ]
+    )
+
+    monkeypatch.setattr(
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
+        lambda **kwargs: [
+            {"ligand_id": "LIG_1", "smiles": "CCO", "ecfp_similarity": 0.81},
+            {"ligand_id": "LIG_2", "smiles": "CCN", "ecfp_similarity": 0.72},
+        ],
+    )
+
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
+        rows,
+        protein_queries={"A": "QUERY_SEQUENCE"},
+        ligand_queries={"B": "QUERY_SMILES"},
+        boltz_cache_path=Path(tempfile.gettempdir()),
+        components_cif_path=None,
+    )
+
+    assert len(enriched) == 4
+    assert enriched["pairing_status"].tolist() == ["paired"] * 4
+    assert set(zip(enriched["sequence"], enriched["ligand_id"])) == {
+        ("SEQ_CHAIN_1", "LIG_1"),
+        ("SEQ_CHAIN_1", "LIG_2"),
+        ("SEQ_CHAIN_2", "LIG_1"),
+        ("SEQ_CHAIN_2", "LIG_2"),
+    }
+
+
+def test_enrich_mixed_bias_dataset_expands_each_ligand_over_all_recovered_proteins(
+    monkeypatch,
+):
+    rows = pd.DataFrame(
+        [
+            {
+                "query_pair_id": "A__B",
+                "query_protein_chain_id": "A",
+                "query_ligand_chain_id": "B",
+                "reference_key": "public:pdb:1XM1",
+                "reference_label": "1XM1",
+                "pairing_status": "ligand_only",
+                "source": "public",
+                "dataset_name": "public",
+                "pdb_id": "1XM1",
+                "protein_pdb_id": pd.NA,
+                "ligand_pdb_id": "1XM1",
+                "protein_release_date": pd.NA,
+                "ligand_release_date": "2022-01-01",
+                "protein_source": pd.NA,
+                "protein_dataset_name": pd.NA,
+                "ligand_source": "public",
+                "ligand_dataset_name": "public",
+                "sequence_similarity": pd.NA,
+                "ecfp_similarity": similarity,
+                "plot_sequence_similarity": pd.NA,
+                "plot_ecfp_similarity": similarity,
+                "sequence": pd.NA,
+                "ligand_id": ligand_id,
+                "smiles": smiles,
+            }
+            for ligand_id, smiles, similarity in (
+                ("LIG_1", "CCO", 0.81),
+                ("LIG_2", "CCN", 0.72),
+            )
+        ]
+    )
+    protein_lookup_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1XM1",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": similarity,
+                "sequence": sequence,
+            }
+            for sequence, similarity in (("SEQ_CHAIN_1", 80.0), ("SEQ_CHAIN_2", 70.0))
+        ]
+    )
+    monkeypatch.setattr(
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("MMseqs fallback should not run")
+        ),
+    )
+
+    enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
+        rows,
+        protein_queries={"A": "QUERY_SEQUENCE"},
+        ligand_queries={"B": "QUERY_SMILES"},
+        protein_lookup_view=protein_lookup_view,
+        boltz_cache_path=Path(tempfile.gettempdir()),
+        components_cif_path=None,
+    )
+
+    assert len(enriched) == 4
+    assert enriched["pairing_status"].tolist() == ["paired"] * 4
+    assert set(zip(enriched["sequence"], enriched["ligand_id"])) == {
+        ("SEQ_CHAIN_1", "LIG_1"),
+        ("SEQ_CHAIN_1", "LIG_2"),
+        ("SEQ_CHAIN_2", "LIG_1"),
+        ("SEQ_CHAIN_2", "LIG_2"),
+    }
 
 
 def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_and_keeps_ligand_only_without_mmseqs(
@@ -1166,12 +1363,12 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_and_keeps_ligand_only
         ]
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "",
     )
 
     with caplog.at_level(logging.WARNING, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             rows,
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"MG": "[Mg+2]"},
@@ -1222,16 +1419,16 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_warns_on_threshold_drift(
         ]
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._resolved_mmseqs_bin_token",
+        "cofolder.modules.analytics.bias._enrichment._resolved_mmseqs_bin_token",
         lambda: "mmseqs",
     )
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
         lambda **kwargs: [{"sequence": "SEQ_X", "sequence_similarity": 61.0}],
     )
 
     with caplog.at_level(logging.WARNING, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             rows,
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"MG": "[Mg+2]"},
@@ -1286,13 +1483,13 @@ def test_enrich_mixed_bias_dataset_with_pdb_backfill_writes_progress_checkpoints
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "L1", "smiles": "CCO", "ecfp_similarity": 0.12}],
     )
 
     output_path = temp_dir / "bias_training_data_A__B.csv"
     with caplog.at_level(logging.INFO, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_mixed_bias_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_mixed_bias_dataset_with_pdb_backfill(
             pd.DataFrame(rows),
             protein_queries={"A": "SEQ_QUERY"},
             ligand_queries={"B": "CCO"},
@@ -1358,13 +1555,13 @@ def test_enrich_same_type_ligand_pair_dataset_writes_progress_checkpoints(
         )
 
     monkeypatch.setattr(
-        "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+        "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
         lambda **kwargs: [{"ligand_id": "MG", "smiles": "[Mg+2]", "ecfp_similarity": 0.2}],
     )
 
     output_path = temp_dir / "bias_ligand_pair_data_B__MG.csv"
     with caplog.at_level(logging.INFO, logger="cofolder.modules.analytics.bias"):
-        enriched = bias_module._enrich_same_type_ligand_pair_dataset_with_pdb_backfill(
+        enriched = bias_enrichment._enrich_same_type_ligand_pair_dataset_with_pdb_backfill(
             pd.DataFrame(rows),
             ligand_queries={"B": "CCO", "MG": "[Mg+2]"},
             boltz_cache_path=Path(tempfile.gettempdir()),
@@ -1431,7 +1628,7 @@ def test_build_bias_training_dataset_sets_apo_ligand_similarity_to_zero():
     assert len(ligand_only) == 1
 
 
-def test_build_bias_training_dataset_sets_ligand_only_sequence_similarity_to_zero():
+def test_build_bias_training_dataset_leaves_ligand_only_protein_similarity_unavailable():
     protein_view = pd.DataFrame(
         [
             {
@@ -1471,8 +1668,11 @@ def test_build_bias_training_dataset_sets_ligand_only_sequence_similarity_to_zer
 
     assert len(ligand_only) == 1
     assert ligand_only["pairing_status"].tolist() == ["ligand_only"]
-    assert ligand_only["sequence_similarity"].tolist() == [0.0]
-    assert ligand_only["plot_sequence_similarity"].tolist() == [0.0]
+    assert ligand_only["sequence_similarity"].isna().all()
+    assert ligand_only["sequence_similarity_pairwise"].isna().all()
+    assert ligand_only["plot_sequence_similarity"].isna().all()
+    assert ligand_only["plot_sequence_similarity_pairwise"].isna().all()
+    assert ligand_only["sequence_similarity_method"].tolist() == ["unavailable"]
     assert ligand_only["protein_pdb_id"].isna().all()
 
 
@@ -1526,13 +1726,55 @@ def test_plot_bias_reference_overlap_keeps_one_sided_threshold_hits_and_removes_
                     "plot_sequence_similarity": 0.24,
                     "plot_ecfp_similarity": 0.34,
                 },
+                {
+                    "reference_label": "mmseqs-backfilled",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "query_protein_chain_id": "A",
+                    "query_ligand_chain_id": "B",
+                    "plot_sequence_similarity": 0.125,
+                    "plot_ecfp_similarity": 0.38,
+                },
+                {
+                    "reference_label": "exact-thresholds",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "query_protein_chain_id": "A",
+                    "query_ligand_chain_id": "B",
+                    "plot_sequence_similarity": 0.25,
+                    "plot_ecfp_similarity": 0.35,
+                },
+                {
+                    "reference_label": "protein-boundary-ligand-pass",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "query_protein_chain_id": "A",
+                    "query_ligand_chain_id": "B",
+                    "plot_sequence_similarity": 0.25,
+                    "plot_ecfp_similarity": 0.36,
+                },
+                {
+                    "reference_label": "ligand-boundary-protein-pass",
+                    "pairing_status": "paired",
+                    "source": "public",
+                    "query_protein_chain_id": "A",
+                    "query_ligand_chain_id": "B",
+                    "plot_sequence_similarity": 0.26,
+                    "plot_ecfp_similarity": 0.35,
+                },
             ]
         ),
         output_dir=temp_dir / "results",
     )
 
     assert len(saved_paths) == 2
-    assert set(captured["offsets"]) == {(0.0, 0.94), (0.38, 0.0)}
+    assert set(captured["offsets"]) == {
+        (0.0, 0.94),
+        (0.35, 0.26),
+        (0.36, 0.25),
+        (0.38, 0.0),
+        (0.38, 0.12),
+    }
     assert captured["legend"] is None
     assert captured["texts"] == []
 
@@ -1633,7 +1875,111 @@ def test_build_protein_training_view_keeps_distinct_custom_paths_for_same_sequen
         "/tmp/reference_a.pdb",
         "/tmp/reference_b.pdb",
     ]
-    assert result["sequence_similarity"].tolist() == [100.0, 100.0]
+    assert result["sequence_similarity"].isna().all()
+    assert result["sequence_similarity_pairwise"].tolist() == [100.0, 100.0]
+    assert result["sequence_similarity_method"].tolist() == [
+        "pairwise_aligner",
+        "pairwise_aligner",
+    ]
+
+
+def test_build_protein_training_view_handles_duplicate_source_indices_by_position():
+    proteins_df = pd.DataFrame(
+        [
+            {
+                "pdb_id": "1AAA",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "source_structure_path": pd.NA,
+                "source_reference_path": pd.NA,
+                "sequence": "MAAA",
+            },
+            {
+                "pdb_id": "2BBB",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "source_structure_path": pd.NA,
+                "source_reference_path": pd.NA,
+                "sequence": "MBBB",
+            },
+        ],
+        index=[0, 0],
+    )
+
+    result = _build_protein_training_view(
+        proteins_df,
+        {"A": "MAAA", "C": "MBBB"},
+        minimum_similarity=None,
+    ).set_index(["query_chain_id", "pdb_id"])
+
+    assert result.loc[("A", "1AAA"), "sequence_similarity_pairwise"] == 100.0
+    assert result.loc[("A", "2BBB"), "sequence_similarity_pairwise"] == 25.0
+    assert result.loc[("C", "1AAA"), "sequence_similarity_pairwise"] == 25.0
+    assert result.loc[("C", "2BBB"), "sequence_similarity_pairwise"] == 100.0
+
+
+def test_training_views_use_strict_manuscript_thresholds(monkeypatch):
+    proteins_df = pd.DataFrame(
+        [
+            {
+                "pdb_id": pdb_id,
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "source_structure_path": pd.NA,
+                "source_reference_path": pd.NA,
+                "sequence": sequence,
+                "sequence_similarity": similarity,
+            }
+            for pdb_id, sequence, similarity in (
+                ("1AAA", "SEQ_BOUNDARY", 25.0),
+                ("1AAB", "SEQ_ABOVE", 25.1),
+            )
+        ]
+    )
+    protein_view = _build_protein_training_view(proteins_df, {"A": "QUERY"})
+
+    assert protein_view["pdb_id"].tolist() == ["1AAB"]
+
+    chain_df = pd.DataFrame(
+        [{"CHAIN_ID": "B", "ENTITY_TYPE": "ligand", "ligand_molecule_id": "QUERY"}]
+    )
+    ligands_df = pd.DataFrame(
+        [
+            {
+                "pdb_id": "1AAA",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "BOUNDARY",
+                "smiles": "CCO",
+            },
+            {
+                "pdb_id": "1AAB",
+                "release_date": "2022-01-01",
+                "source": "public",
+                "dataset_name": "public",
+                "ligand_id": "ABOVE",
+                "smiles": "CCN",
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        bias_similarity,
+        "_ligand_similarity_series",
+        lambda *args, **kwargs: pd.Series([0.35, 0.36], index=ligands_df.index),
+    )
+
+    ligand_view = bias_similarity._build_ligand_training_views(
+        chain_df=chain_df,
+        ligands_df=ligands_df,
+        ligand_queries={"B": "QUERY_SMILES"},
+        boltz_cache_path=Path(tempfile.gettempdir()),
+    )["B"]
+
+    assert ligand_view["pdb_id"].tolist() == ["1AAB"]
 
 
 def test_build_bias_training_dataset_marks_protein_only_rows_with_provenance():
@@ -1661,6 +2007,62 @@ def test_build_bias_training_dataset_marks_protein_only_rows_with_provenance():
     assert result["dataset_name"].tolist() == ["public"]
     assert result["protein_pdb_id"].tolist() == ["1ABC"]
     assert result["sequence_similarity"].tolist() == [95.0]
+
+
+def test_protein_reference_rejects_mixed_mmseqs_and_pairwise_scores(temp_dir):
+    reference_path = temp_dir / "mixed_protein_reference.csv"
+    reference_path.write_text(
+        "sequence,sequence_similarity,sequence_similarity_pairwise,"
+        "sequence_similarity_method\n"
+        "MAAA,24.0,75.0,mmseqs_pident\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot contain both"):
+        bias_references._load_custom_protein_training(reference_path)
+
+
+def test_combined_bias_rows_keep_mmseqs_and_pairwise_in_separate_columns():
+    protein_view = pd.DataFrame(
+        [
+            {
+                "query_chain_id": "A",
+                "pdb_id": "1ABC",
+                "source": "public",
+                "dataset_name": "public",
+                "sequence_similarity": 24.0,
+                "sequence_similarity_pairwise": pd.NA,
+                "sequence_similarity_method": "mmseqs_pident",
+                "sequence": "MAAA",
+            },
+            {
+                "query_chain_id": "A",
+                "pdb_id": pd.NA,
+                "source": "custom",
+                "dataset_name": "custom",
+                "sequence_similarity": pd.NA,
+                "sequence_similarity_pairwise": 75.0,
+                "sequence_similarity_method": "pairwise_aligner",
+                "sequence": "MATA",
+            },
+        ]
+    )
+
+    result = _build_bias_training_dataset(protein_view=protein_view, ligand_views={})
+
+    assert not (
+        result["sequence_similarity"].notna()
+        & result["sequence_similarity_pairwise"].notna()
+    ).any()
+    assert set(
+        result.loc[result["sequence_similarity"].notna(), "sequence_similarity_method"]
+    ) == {"mmseqs_pident"}
+    assert set(
+        result.loc[
+            result["sequence_similarity_pairwise"].notna(),
+            "sequence_similarity_method",
+        ]
+    ) == {"pairwise_aligner"}
 
 
 def test_apply_bias_metrics_rejects_missing_custom_provenance_paths(temp_dir):

@@ -93,7 +93,7 @@ def _(mo):
         Install command for a fresh environment:
 
         ```bash
-        pip install "cofolder[acceptance,boltz1]"
+        pip install "cofolder[acceptance,analysis,boltz1]"
         ```
 
         `boltz1` is intentionally confidence-only. In this notebook:
@@ -229,8 +229,8 @@ def _(
         scoring_functions=scoring,
     )
     validate_output = stream_cli_in_notebook(validate_command, workspace)
-    chain_metrics = validate_dir / "results" / "chain_metrics.csv"
-    system_metrics = validate_dir / "results" / "system_metrics.csv"
+    chain_metrics = validate_dir / "results" / "metrics.csv"
+    system_metrics = chain_metrics
     assert_file_exists(chain_metrics)
     assert_file_exists(system_metrics)
     assert_csv_columns_all_empty(chain_metrics, AFFINITY_COLUMNS)
@@ -270,12 +270,12 @@ def _(
         wrk_dir=screen_dir,
         system_path=fixtures.system_screen_path,
         options_path=fixtures.options_path,
-        variable_csv=fixtures.ligand_csv_path,
+        library=fixtures.ligand_csv_path,
         scoring_functions=scoring,
     )
     screen_output = stream_cli_in_notebook(screen_command, workspace)
-    summary_csv = screen_dir / "screen_results.csv"
-    merged_csv = screen_dir / "screen_results_with_scores.csv"
+    summary_csv = screen_dir / "results" / "metrics.csv"
+    merged_csv = summary_csv
     assert_file_exists(summary_csv)
     assert_file_exists(merged_csv)
     assert_csv_columns_all_empty(merged_csv, SCREEN_AFFINITY_COLUMNS)
@@ -320,9 +320,9 @@ def _(
         scoring_functions=oracle_scoring_functions_for_runner(runner),
     )
     oracle_output = stream_cli_in_notebook(oracle_command, workspace)
-    oracle_csv = oracle_dir / "oracle_result.csv"
+    oracle_csv = oracle_dir / "results" / "metrics.csv"
     assert_file_exists(oracle_csv)
-    assert_csv_columns_have_values(oracle_csv, ("value",))
+    assert_csv_columns_have_values(oracle_csv, ("oracle_score",))
     return (oracle_output,)
 
 

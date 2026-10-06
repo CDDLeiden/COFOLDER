@@ -1,26 +1,55 @@
 """Tests for cofolder.recipes.validate module."""
 
 import json
+import hashlib
 import logging
+from dataclasses import replace
 from pathlib import Path
-from unittest.mock import Mock
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytest
 import yaml
 
+from cofolder.modules.contracts import (
+    RepeatSeedProvenance,
+    SeedAdjustment,
+    SeedOrigin,
+    SeedResolutionError,
+    WorkflowExecutionError,
+    read_public_metric_frames,
+)
+from cofolder.modules.runners.boltz1_runner import Boltz1Runner
+from cofolder.modules.runners.boltz2_runner import Boltz2Runner
+from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
 from cofolder.modules.runners.contracts import (
     RunnerExecutionResult,
     RunnerMetricOutcome,
     RunnerPreparationResult,
     RunnerRuntime,
 )
-from cofolder.modules.runners.boltz1_runner import Boltz1Runner
-from cofolder.modules.runners.boltz_community_runner import BoltzCommunityRunner
-from cofolder.modules.runners.boltz2_runner import Boltz2Runner
-from cofolder.modules.runners.validators import RunnerBundleValidationError
+from cofolder.modules.input.system import System
+from cofolder.recipes.screen import Screen
 from cofolder.recipes.validate import Validate
+
+
+def test_backend_seed_adjustment_requires_explicit_reason():
+    original = RepeatSeedProvenance(
+        1, 42, 42, 100, 100, SeedOrigin.USER_SPECIFIED
+    )
+    adjusted = replace(
+        original,
+        effective_seed=99,
+        adjustment=SeedAdjustment.BACKEND_ADJUSTED,
+        adjustment_reason="Backend reserves seed 100.",
+    )
+    assert Validate._validate_effective_seed(original, adjusted) == adjusted
+
+    with pytest.raises(SeedResolutionError, match="requires an explicit"):
+        Validate._validate_effective_seed(
+            original,
+            replace(original, effective_seed=99),
+        )
 
 
 def _make_runner_results(system_name: str = "system"):
@@ -142,7 +171,13 @@ def _write_normalized_bundle(
         ),
         encoding="utf-8",
     )
-    return normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path
+    return (
+        normalized_dir,
+        structures_dir,
+        system_metrics_path,
+        chain_metrics_path,
+        manifest_path,
+    )
 
 
 class _FakeRunner:
@@ -161,14 +196,35 @@ class _FakeRunner:
     def ensure_available(self):
         return None
 
+    def validate_system(
+        self,
+        system_obj,
+        options_obj,
+        *,
+        check_atom_names=True,
+        source_path=None,
+        requirements=None,
+    ):
+        return Boltz2Runner().validate_system(
+            system_obj,
+            options_obj,
+            check_atom_names=check_atom_names,
+            source_path=source_path,
+            requirements=requirements,
+        )
+
     def load_options(self, options_path):
         return {"options_path": str(options_path)}
 
-    def prepare_system(self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger):
+    def prepare_system(
+        self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger
+    ):
         return RunnerPreparationResult(
             system_obj=system_obj,
             options_obj=options_obj,
-            runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"),
+            runtime=RunnerRuntime(
+                cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"
+            ),
         )
 
     def run(self, request):
@@ -189,13 +245,17 @@ class _FakeRunner:
                 logger=logging.getLogger("cofolder.recipes.validate"),
             )
 
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
         )
 
         return RunnerExecutionResult(
@@ -208,10 +268,14 @@ class _FakeRunner:
             manifest_path=manifest_path,
             diffusion_samples=1,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"),
+            runtime=RunnerRuntime(
+                cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"
+            ),
             metric_outcomes={
                 group_name: RunnerMetricOutcome(
-                    state="computed" if group_name in self.capabilities else "unsupported"
+                    state="computed"
+                    if group_name in self.capabilities
+                    else "unsupported"
                 )
                 for group_name in (
                     "confidence_metrics",
@@ -226,17 +290,20 @@ class _NoMetricsRunner(_FakeRunner):
     capabilities = set()
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=False,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=False,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
         )
-
         return RunnerExecutionResult(
             runner_name="boltz2",
             raw_output_dir=request.repeat_dir,
@@ -247,7 +314,9 @@ class _NoMetricsRunner(_FakeRunner):
             manifest_path=manifest_path,
             diffusion_samples=1,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"),
+            runtime=RunnerRuntime(
+                cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"
+            ),
             metric_outcomes={
                 "confidence_metrics": RunnerMetricOutcome(state="unsupported"),
                 "affinity_metrics": RunnerMetricOutcome(state="unsupported"),
@@ -256,24 +325,75 @@ class _NoMetricsRunner(_FakeRunner):
         )
 
 
-class _ManifestOnlyRuntimeRunner(_FakeRunner):
-    def prepare_system(self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger):
-        return RunnerPreparationResult(
-            system_obj=system_obj,
-            options_obj=options_obj,
-            runtime=RunnerRuntime(diffusion_samples=1, cache_path="/typed/cache", model_name="boltz2"),
+class _FailingRunner(_FakeRunner):
+    def run(self, request):
+        raise RuntimeError("backend exploded")
+
+
+class _CapturingRunner(_FakeRunner):
+    def __init__(self, system_name="system"):
+        super().__init__(system_name)
+        self.validation_snapshots = []
+        self.execution_constraints = None
+        self.execution_system = None
+
+    def validate_system(
+        self,
+        system_obj,
+        options_obj,
+        *,
+        check_atom_names=True,
+        source_path=None,
+        requirements=None,
+    ):
+        self.validation_snapshots.append(
+            (
+                check_atom_names,
+                json.loads(json.dumps(system_obj.system.get("constraints", []))),
+            )
+        )
+        return super().validate_system(
+            system_obj,
+            options_obj,
+            check_atom_names=check_atom_names,
+            source_path=source_path,
+            requirements=requirements,
         )
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=False,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "/legacy/cache", "diffusion_samples": 3},
-            )
+        self.execution_system = json.loads(json.dumps(request.system_obj.system))
+        self.execution_constraints = json.loads(
+            json.dumps(request.system_obj.system.get("constraints", []))
+        )
+        return super().run(request)
+
+
+class _ManifestOnlyRuntimeRunner(_FakeRunner):
+    def prepare_system(
+        self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger
+    ):
+        return RunnerPreparationResult(
+            system_obj=system_obj,
+            options_obj=options_obj,
+            runtime=RunnerRuntime(
+                diffusion_samples=1, cache_path="/typed/cache", model_name="boltz2"
+            ),
+        )
+
+    def run(self, request):
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=False,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "/legacy/cache", "diffusion_samples": 3},
         )
         return RunnerExecutionResult(
             runner_name="boltz2",
@@ -284,27 +404,35 @@ class _ManifestOnlyRuntimeRunner(_FakeRunner):
             chain_metrics_path=chain_metrics_path,
             manifest_path=manifest_path,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(diffusion_samples=1, cache_path="/typed/cache", model_name="boltz2"),
+            runtime=RunnerRuntime(
+                diffusion_samples=1, cache_path="/typed/cache", model_name="boltz2"
+            ),
         )
 
 
 class _TypedDiffusionRuntimeRunner(_FakeRunner):
-    def prepare_system(self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger):
+    def prepare_system(
+        self, system_obj, options_obj, wrk_dir, conformers, sdf_file, logger
+    ):
         return RunnerPreparationResult(
             system_obj=system_obj,
             options_obj=options_obj,
         )
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=False,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "/legacy/cache", "diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=False,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "/legacy/cache", "diffusion_samples": 1},
         )
         return RunnerExecutionResult(
             runner_name="boltz2",
@@ -315,7 +443,9 @@ class _TypedDiffusionRuntimeRunner(_FakeRunner):
             chain_metrics_path=chain_metrics_path,
             manifest_path=manifest_path,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(diffusion_samples=3, cache_path="/typed/cache", model_name="boltz2"),
+            runtime=RunnerRuntime(
+                diffusion_samples=3, cache_path="/typed/cache", model_name="boltz2"
+            ),
         )
 
 
@@ -323,15 +453,19 @@ class _ImplicitOutcomeRunner(_FakeRunner):
     capabilities = {"confidence_metrics"}
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=True,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=True,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
         )
         return RunnerExecutionResult(
             runner_name="boltz2",
@@ -343,7 +477,9 @@ class _ImplicitOutcomeRunner(_FakeRunner):
             manifest_path=manifest_path,
             diffusion_samples=1,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"),
+            runtime=RunnerRuntime(
+                cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"
+            ),
         )
 
 
@@ -351,15 +487,19 @@ class _MissingConfidencePayloadRunner(_FakeRunner):
     capabilities = {"confidence_metrics"}
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=False,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=False,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"diffusion_samples": 1},
         )
         return RunnerExecutionResult(
             runner_name="boltz2",
@@ -370,7 +510,9 @@ class _MissingConfidencePayloadRunner(_FakeRunner):
             chain_metrics_path=chain_metrics_path,
             manifest_path=manifest_path,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(diffusion_samples=1, cache_path="~/.boltz", model_name="boltz2"),
+            runtime=RunnerRuntime(
+                diffusion_samples=1, cache_path="~/.boltz", model_name="boltz2"
+            ),
             metric_outcomes={
                 "confidence_metrics": RunnerMetricOutcome(state="missing"),
             },
@@ -381,15 +523,19 @@ class _MixedOutcomeRunner(_FakeRunner):
     capabilities = {"confidence_metrics", "affinity_metrics", "affinity_metrics_ext"}
 
     def run(self, request):
-        normalized_dir, structures_dir, system_metrics_path, chain_metrics_path, manifest_path = (
-            _write_normalized_bundle(
-                request.repeat_dir,
-                system_name=self.system_name,
-                include_confidence=True,
-                include_affinity=False,
-                capabilities=self.capabilities,
-                runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
-            )
+        (
+            normalized_dir,
+            structures_dir,
+            system_metrics_path,
+            chain_metrics_path,
+            manifest_path,
+        ) = _write_normalized_bundle(
+            request.repeat_dir,
+            system_name=self.system_name,
+            include_confidence=True,
+            include_affinity=False,
+            capabilities=self.capabilities,
+            runtime_context={"cache_path": "~/.boltz", "diffusion_samples": 1},
         )
 
         return RunnerExecutionResult(
@@ -402,7 +548,9 @@ class _MixedOutcomeRunner(_FakeRunner):
             manifest_path=manifest_path,
             diffusion_samples=1,
             capabilities=set(self.capabilities),
-            runtime=RunnerRuntime(cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"),
+            runtime=RunnerRuntime(
+                cache_path="~/.boltz", diffusion_samples=1, model_name="boltz2"
+            ),
             metric_outcomes={
                 "confidence_metrics": RunnerMetricOutcome(state="computed"),
                 "affinity_metrics": RunnerMetricOutcome(state="missing"),
@@ -541,9 +689,13 @@ def _patch_validate_pipeline_real_boltz1(monkeypatch, system_name: str = "system
         out_dir = Path(cmd[cmd.index("--out_dir") + 1])
         system_path = Path(cmd[2])
         system_name = system_path.stem
-        prediction_dir = out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        prediction_dir = (
+            out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        )
         prediction_dir.mkdir(parents=True, exist_ok=True)
-        (prediction_dir / f"{system_name}_model_0.cif").write_text("data_test", encoding="utf-8")
+        (prediction_dir / f"{system_name}_model_0.cif").write_text(
+            "data_test", encoding="utf-8"
+        )
         (prediction_dir / f"confidence_{system_name}_model_0.json").write_text(
             json.dumps(
                 {
@@ -557,7 +709,9 @@ def _patch_validate_pipeline_real_boltz1(monkeypatch, system_name: str = "system
             encoding="utf-8",
         )
 
-    monkeypatch.setattr("cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz)
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz
+    )
 
 
 def _patch_validate_pipeline_real_boltz2(monkeypatch, temp_dir: Path):
@@ -595,9 +749,13 @@ def _patch_validate_pipeline_real_boltz2(monkeypatch, temp_dir: Path):
         out_dir = Path(cmd[cmd.index("--out_dir") + 1])
         system_path = Path(cmd[2])
         system_name = system_path.stem
-        prediction_dir = out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        prediction_dir = (
+            out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        )
         prediction_dir.mkdir(parents=True, exist_ok=True)
-        (prediction_dir / f"{system_name}_model_0.cif").write_text("data_test", encoding="utf-8")
+        (prediction_dir / f"{system_name}_model_0.cif").write_text(
+            "data_test", encoding="utf-8"
+        )
         (prediction_dir / f"confidence_{system_name}_model_0.json").write_text(
             json.dumps(
                 {
@@ -620,7 +778,9 @@ def _patch_validate_pipeline_real_boltz2(monkeypatch, temp_dir: Path):
             encoding="utf-8",
         )
 
-    monkeypatch.setattr("cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz)
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz
+    )
 
 
 def _patch_validate_pipeline_real_boltz_community(
@@ -650,9 +810,13 @@ def _patch_validate_pipeline_real_boltz_community(
         out_dir = Path(cmd[cmd.index("--out_dir") + 1])
         system_path = Path(cmd[2])
         system_name = system_path.stem
-        prediction_dir = out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        prediction_dir = (
+            out_dir / f"boltz_results_{system_name}" / "predictions" / system_name
+        )
         prediction_dir.mkdir(parents=True, exist_ok=True)
-        (prediction_dir / f"{system_name}_model_0.cif").write_text("data_test", encoding="utf-8")
+        (prediction_dir / f"{system_name}_model_0.cif").write_text(
+            "data_test", encoding="utf-8"
+        )
         (prediction_dir / f"confidence_{system_name}_model_0.json").write_text(
             json.dumps(
                 {
@@ -676,32 +840,36 @@ def _patch_validate_pipeline_real_boltz_community(
                 encoding="utf-8",
             )
 
-    monkeypatch.setattr("cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz)
+    monkeypatch.setattr(
+        "cofolder.modules.runners.boltz_runner.run_boltz", _fake_run_boltz
+    )
 
 
 class TestValidateInit:
     """Tests for Validate initialization."""
 
-    def test_init_checks_runner_availability_before_loading_inputs(
+    def test_runner_availability_is_checked_inside_guarded_run(
         self,
         sample_system_yaml,
         sample_options_yaml,
         temp_dir,
     ):
         fake_runner = Mock()
+        fake_runner.capabilities = set()
+        fake_runner.load_options.return_value = {}
         fake_runner.ensure_available.side_effect = RuntimeError("install boltz first")
 
         with patch("cofolder.recipes.validate.get_runner", return_value=fake_runner):
-            with patch("cofolder.recipes.validate.read.read_yaml") as mock_read_yaml:
-                with pytest.raises(RuntimeError, match="install boltz first"):
-                    Validate(
-                        wrk_dir=str(temp_dir),
-                        system_path=str(sample_system_yaml),
-                        options_path=str(sample_options_yaml),
-                        scoring_functions=[],
-                    )
+            validator = Validate(
+                wrk_dir=str(temp_dir),
+                system_path=str(sample_system_yaml),
+                options_path=str(sample_options_yaml),
+                scoring_functions=[],
+            )
+            with pytest.raises(WorkflowExecutionError, match="install boltz first"):
+                validator.run()
 
-        mock_read_yaml.assert_not_called()
+        fake_runner.ensure_available.assert_called_once()
 
     def test_init_basic(self, sample_system_yaml, sample_options_yaml, temp_dir):
         validator = Validate(
@@ -714,7 +882,7 @@ class TestValidateInit:
         assert str(validator.wrk_dir) == str(temp_dir)
         assert str(validator.system_path) == str(sample_system_yaml)
         assert str(validator.options_path) == str(sample_options_yaml)
-        assert validator.base_system is not None
+        assert validator.base_system is None
         assert validator.runner_name == "boltz2"
         assert validator.scoring_functions == set()
         assert validator.reference_path is None
@@ -725,7 +893,9 @@ class TestValidateInit:
             "pocket_coverage",
         }
 
-    def test_init_with_reference_path(self, sample_system_yaml, sample_options_yaml, temp_dir):
+    def test_init_with_reference_path(
+        self, sample_system_yaml, sample_options_yaml, temp_dir
+    ):
         reference_path = temp_dir / "reference.pdb"
         reference_path.write_text("HEADER TEST\n")
 
@@ -760,7 +930,177 @@ class TestValidateInit:
         assert validator.reproduction_metrics == {"pocket_coverage"}
 
 
+def test_failed_backend_attempt_persists_version_and_seed_provenance(
+    monkeypatch,
+    sample_system_yaml,
+    sample_options_yaml,
+    temp_dir,
+):
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.helpers.get_seeds",
+        lambda repeats, seed, logger: (42, [42]),
+    )
+    monkeypatch.setattr(
+        "cofolder.recipes.validate.get_runner", lambda name: _FailingRunner()
+    )
+    validator = Validate(
+        wrk_dir=str(temp_dir),
+        system_path=str(sample_system_yaml),
+        options_path=str(sample_options_yaml),
+        seed=42,
+        scoring_functions=[],
+    )
+
+    with pytest.raises(WorkflowExecutionError, match="No runner repeat produced"):
+        validator.run()
+
+    manifest = json.loads((Path(temp_dir) / "results" / "manifest.json").read_text())
+    failures = pd.read_csv(Path(temp_dir) / "results" / "failures.csv")
+    assert manifest["backend"]["version_status"] == "unavailable"
+    assert manifest["seed_plan"]["repeats"][0]["effective_seed"] == 42
+    assert failures.loc[0, "effective_seed"] == 42
+    assert failures.loc[0, "backend_version_status"] == "unavailable"
+
+
 class TestValidateRun:
+    def test_canonical_protein_sequence_round_trips_to_runner_request(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        source_path = temp_dir / "source.yaml"
+        source_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        system_obj = System(system_path=source_path)
+        system_obj.update_system(
+            value="MKRAAT", path=["sequences", 0, "protein", "sequence"]
+        )
+        saved_path = temp_dir / "saved.yaml"
+        system_obj.save_system_to_yaml(saved_path)
+        assert System(system_path=saved_path).system["sequences"][0]["protein"] == {
+            "id": "A",
+            "sequence": "MKRAAT",
+        }
+        runner = _CapturingRunner(system_name="sequence_round_trip")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(saved_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        assert runner.execution_system["sequences"][0]["protein"] == {
+            "id": "A",
+            "sequence": "MKRAAT",
+        }
+
+    def test_ccd_only_ligand_reaches_runner_without_smiles_derivation(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        system_path = temp_dir / "ccd.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "ccd": "ET5"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _CapturingRunner(system_name="ccd_input")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        ligand_definition = runner.execution_system["sequences"][1]["ligand"]
+        assert ligand_definition == {"id": "B", "ccd": "ET5"}
+
+    def test_invalid_runner_options_fail_preflight_without_backend_call(
+        self, monkeypatch, sample_system_yaml, temp_dir
+    ):
+        options_path = temp_dir / "invalid-options.yaml"
+        options_path.write_text(
+            "version: 1\nruntime: {}\nrunner:\n  seed: 42\n",
+            encoding="utf-8",
+        )
+        runner = _FakeRunner()
+        runner.load_options = Boltz2Runner().load_options
+        runner.run = Mock()
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        validator = Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(sample_system_yaml),
+            options_path=str(options_path),
+            scoring_functions=[],
+        )
+
+        with pytest.raises(WorkflowExecutionError) as caught:
+            validator.run()
+
+        runner.run.assert_not_called()
+        assert caught.value.failures[0].error_code == "options_validation_failed"
+        assert caught.value.failures[0].stage.value == "input_validation"
+        assert caught.value.failures[0].details["source_path"] == str(options_path)
+
+    def test_constraints_reach_runner_unchanged(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        _patch_validate_pipeline(monkeypatch, system_name="constrained")
+        constraints = [
+            {
+                "pocket": {
+                    "binder": "B",
+                    "contacts": [["A", 1]],
+                    "max_distance": 6.0,
+                }
+            }
+        ]
+        system_path = temp_dir / "constrained.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "AC"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ],
+                    "constraints": constraints,
+                }
+            ),
+            encoding="utf-8",
+        )
+        runner = _CapturingRunner(system_name="constrained")
+        monkeypatch.setattr("cofolder.recipes.validate.get_runner", lambda name: runner)
+
+        Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+        ).run()
+
+        assert runner.validation_snapshots == [
+            (False, constraints),
+            (True, constraints),
+        ]
+        assert runner.execution_constraints == constraints
+
     def test_debug_run_logs_timing_summary(
         self,
         monkeypatch,
@@ -801,7 +1141,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_system.yaml"
@@ -837,6 +1177,118 @@ class TestValidateRun:
         assert "TIMER SUMMARY | scores.bias_metrics.protein_similarity" in caplog.text
         assert "TIMER SUMMARY | scores.bias_metrics.ligand_similarity" in caplog.text
 
+    def test_database_backed_one_protein_one_ligand_bias_path(
+        self, monkeypatch, sample_options_yaml, temp_dir
+    ):
+        from cofolder.modules.analytics.bias_database import (
+            BIAS_DATABASE_SCHEMA_VERSION,
+            LIGAND_TABLE_NAME,
+            PROTEIN_METADATA_NAME,
+            PROTEIN_SEQUENCE_INDEX_NAME,
+        )
+
+        _patch_validate_pipeline(monkeypatch, system_name="database_bias")
+        system_path = temp_dir / "database_bias.yaml"
+        system_path.write_text(
+            yaml.safe_dump(
+                {
+                    "sequences": [
+                        {"protein": {"id": "A", "sequence": "MKRAAT"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def bundle(name, kind, frame):
+            root = temp_dir / name
+            root.mkdir()
+            if kind == "protein":
+                (root / "mmseqs").mkdir()
+                (root / "mmseqs/db").write_text("fixture", encoding="utf-8")
+                frame.to_csv(root / PROTEIN_METADATA_NAME, index=False)
+                pd.DataFrame(
+                    [
+                        {
+                            "pdb_id": "1ABC",
+                            "target_id": "1ABC_A",
+                            "sequence": "MKRAAT",
+                        }
+                    ]
+                ).to_csv(root / PROTEIN_SEQUENCE_INDEX_NAME, index=False)
+            else:
+                frame.to_csv(root / LIGAND_TABLE_NAME, index=False)
+            files = {
+                str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in root.rglob("*")
+                if path.is_file()
+            }
+            (root / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": BIAS_DATABASE_SCHEMA_VERSION,
+                        "kind": kind,
+                        "files": files,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return root
+
+        protein = bundle(
+            "protein-db",
+            "protein",
+            pd.DataFrame([{"pdb_id": "1ABC", "release_date": "2023-05-31"}]),
+        )
+        ligand = bundle(
+            "ligand-db",
+            "ligand",
+            pd.DataFrame(
+                [
+                    {
+                        "pdb_id": "1ABC",
+                        "release_date": "2023-05-31",
+                        "ligand_id": "ETH",
+                        "smiles": "CCO",
+                    }
+                ]
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.tools.build_bias_training_data._run_mmseqs",
+            lambda *args: pd.DataFrame(
+                [{"target": "1ABC_A", "pident": 80.0, "tseq": "MKRAAT"}]
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias_training._resolve_mmseqs_bin",
+            lambda: "mmseqs",
+        )
+        monkeypatch.setattr(
+            "cofolder.modules.analytics.bias_database._mmseqs_version",
+            lambda binary: "fixture",
+        )
+        validator = Validate(
+            wrk_dir=str(temp_dir / "run"),
+            system_path=str(system_path),
+            options_path=str(sample_options_yaml),
+            scoring_functions=[],
+            assess_bias=True,
+            bias_training_data_protein_path=str(protein),
+            bias_training_data_ligand_path=str(ligand),
+            bias_query_cache_path=str(temp_dir / "cache"),
+            bias_release_cutoff="2023-06-01",
+        )
+        validator.run()
+
+        output = temp_dir / "run/results/bias_train"
+        mixed = pd.read_csv(output / "bias_training_data_A__B.csv")
+        assert mixed["pairing_status"].tolist() == ["paired"]
+        manifest = json.loads((output / "reference_manifest.json").read_text())
+        assert manifest["request"]["release_policy"]["cutoff"] == "2023-06-01"
+        assert set(manifest["request"]["queries"]) == {"protein", "ligand"}
+
     def test_assess_bias_writes_shared_bias_training_artifacts(
         self,
         monkeypatch,
@@ -848,7 +1300,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_outputs.yaml"
@@ -1018,7 +1470,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MAAA"}},
-                {"protein": {"id": "C", "fasta": "MBBB"}},
+                {"protein": {"id": "C", "fasta": "MCCC"}},
                 {"ligand": {"id": "B", "smiles": "CCO"}},
                 {"ligand": {"id": "D", "smiles": "CCN"}},
             ]
@@ -1099,7 +1551,7 @@ class TestValidateRun:
         protein_ref.write_text(
             "pdb_id,release_date,sequence,sequence_similarity\n"
             "1AAA,2022-01-01,MAAA,100.0\n"
-            "2CCC,2022-01-01,MBBB,100.0\n",
+            "2CCC,2022-01-01,MCCC,100.0\n",
             encoding="utf-8",
         )
         ligand_ref.write_text(
@@ -1138,11 +1590,11 @@ class TestValidateRun:
         temp_dir,
     ):
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_ligand_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_ligand_similarity_rows",
             lambda **kwargs: [],
         )
         monkeypatch.setattr(
-            "cofolder.modules.analytics.bias._pdb_protein_similarity_rows",
+            "cofolder.modules.analytics.bias._enrichment._pdb_protein_similarity_rows",
             lambda **kwargs: [],
         )
         _patch_validate_pipeline(monkeypatch, system_name="bias_outputs")
@@ -1150,7 +1602,7 @@ class TestValidateRun:
         system_data = {
             "sequences": [
                 {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                {"ligand": {"id": "B", "smiles": "CCO"}},
             ]
         }
         system_path = temp_dir / "bias_outputs.yaml"
@@ -1191,8 +1643,12 @@ class TestValidateRun:
         validator.run()
 
         bias_training = pd.read_csv(output_dir / "bias_training_data.csv")
-        protein_only = bias_training[bias_training["pairing_status"] == "protein_only"].copy()
-        ligand_only = bias_training[bias_training["pairing_status"] == "ligand_only"].copy()
+        protein_only = bias_training[
+            bias_training["pairing_status"] == "protein_only"
+        ].copy()
+        ligand_only = bias_training[
+            bias_training["pairing_status"] == "ligand_only"
+        ].copy()
 
         assert len(protein_only) == 2
         assert len(ligand_only) == 2
@@ -1226,6 +1682,41 @@ class TestValidateRun:
         assert "TIMER |" not in caplog.text
         assert "TIMER SUMMARY |" not in caplog.text
 
+    def test_analytics_failure_writes_partial_bundle_and_preserves_runner_records(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        _patch_validate_pipeline(monkeypatch)
+
+        def fail_reproduction(**kwargs):
+            raise RuntimeError("reproduction exploded")
+
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.scaffold_reproduction_metrics",
+            fail_reproduction,
+        )
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=["confidence_metrics"],
+        )
+
+        validator.run()
+
+        manifest = json.loads(
+            (Path(temp_dir) / "results" / "manifest.json").read_text()
+        )
+        failures = pd.read_csv(Path(temp_dir) / "results" / "failures.csv")
+        successes = pd.read_csv(Path(temp_dir) / "results" / "successes.csv")
+        assert manifest["status"] == "partial"
+        assert failures["stage"].tolist() == ["analytics"]
+        assert failures["error_code"].tolist() == ["reproduction_metrics_failed"]
+        assert not successes.empty
+
     def test_reference_runner_contract_preserves_raw_and_results_layout(
         self,
         monkeypatch,
@@ -1239,7 +1730,11 @@ class TestValidateRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
         validator.run()
@@ -1251,8 +1746,26 @@ class TestValidateRun:
         assert (normalized_dir / "chain_metrics.csv").exists()
         assert (normalized_dir / "manifest.json").exists()
         assert (normalized_dir / "structures" / "1_system_model_0.cif").exists()
-        assert (Path(temp_dir) / "results" / "system_metrics.csv").exists()
-        assert (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
+        assert (Path(temp_dir) / "results" / "records.jsonl").exists()
+        assert (Path(temp_dir) / "results" / "metrics.csv").exists()
+        public_manifest = json.loads(
+            (Path(temp_dir) / "results" / "manifest.json").read_text()
+        )
+        assert public_manifest["backend"]["runner_name"] == "boltz2"
+        assert public_manifest["backend"]["version_status"] == "unavailable"
+        assert public_manifest["seed_plan"]["requested_base_seed"] is None
+        assert public_manifest["seed_plan"]["repeats"][0]["effective_seed"] == 123
+        public_records = [
+            json.loads(line)
+            for line in (Path(temp_dir) / "results" / "records.jsonl")
+            .read_text()
+            .splitlines()
+        ]
+        repeat_records = [
+            record for record in public_records if record["repeat_id"] == 1
+        ]
+        assert repeat_records
+        assert all(record["effective_seed"] == 123 for record in repeat_records)
 
     def test_reference_runner_validate_uses_real_boltz2_path(
         self,
@@ -1267,7 +1780,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -1279,7 +1792,11 @@ class TestValidateRun:
             wrk_dir=str(temp_dir),
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
         validator.run()
@@ -1298,15 +1815,16 @@ class TestValidateRun:
             "IC50_M",
             "pIC50_kcal_per_mol",
         }.issubset(raw_chain_df.columns)
-        assert (Path(temp_dir) / "results" / "system_metrics.csv").exists()
-        assert (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
+        assert (Path(temp_dir) / "results" / "records.jsonl").exists()
+        assert (Path(temp_dir) / "results" / "metrics.csv").exists()
 
-    def test_reference_runner_mixed_metric_outcomes_allow_unrequested_missing_groups(
+    def test_default_unactivated_affinity_outcomes_warn_continue_and_write_empty_columns(
         self,
         monkeypatch,
         sample_system_yaml,
         sample_options_yaml,
         temp_dir,
+        caplog,
     ):
         monkeypatch.setattr(
             "cofolder.recipes.validate.helpers.get_seeds",
@@ -1322,7 +1840,19 @@ class TestValidateRun:
         )
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.merge_runner_results",
-            lambda raw_dir, repeats, logger: _make_runner_results(),
+            lambda raw_dir, repeats, logger: (
+                _make_runner_results()[0],
+                _make_runner_results()[1].drop(
+                    columns=[
+                        "affinity_pred_value",
+                        "affinity_probability_binary",
+                        "pIC50",
+                        "IC50_M",
+                        "pIC50_kcal_per_mol",
+                    ]
+                ),
+                _make_runner_results()[2],
+            ),
         )
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.add_chain_info",
@@ -1340,16 +1870,126 @@ class TestValidateRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            scoring_functions=["confidence_metrics"],
         )
 
-        validator.run()
+        with caplog.at_level(logging.WARNING, logger="cofolder.recipes.validate"):
+            validator.run()
 
-        raw_chain_df = pd.read_csv(Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "chain_metrics.csv")
-        system_df = pd.read_csv(Path(temp_dir) / "results" / "system_metrics.csv")
+        raw_chain_df = pd.read_csv(
+            Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "chain_metrics.csv"
+        )
+        system_df, chain_df = read_public_metric_frames(temp_dir)
         assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
         assert "affinity_pred_value" not in raw_chain_df.columns
-        assert (Path(temp_dir) / "results" / "chain_metrics.csv").exists()
+        affinity_columns = {
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "pIC50",
+            "IC50_M",
+            "pIC50_kcal_per_mol",
+        }
+        assert affinity_columns.issubset(chain_df.columns)
+        assert chain_df[list(affinity_columns)].isna().all().all()
+        assert (
+            "did not produce optional scoring group 'affinity_metrics'" in caplog.text
+        )
+        assert (
+            "did not produce optional scoring group 'affinity_metrics_ext'"
+            in caplog.text
+        )
+        assert "The run will continue" in caplog.text
+
+    def test_explicit_unactivated_affinity_outcome_remains_required(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        temp_dir,
+    ):
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.helpers.get_seeds",
+            lambda repeats, seed, logger: (123, [123]),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.get_runner",
+            lambda name: _MixedOutcomeRunner(),
+        )
+
+        validator = Validate(
+            wrk_dir=str(temp_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            scoring_functions=["confidence_metrics", "affinity_metrics"],
+        )
+
+        with pytest.raises(
+            WorkflowExecutionError,
+            match="No runner repeat produced",
+        ):
+            validator.run()
+
+    def test_screen_rows_succeed_through_default_optional_affinity_validation(
+        self,
+        monkeypatch,
+        sample_system_yaml,
+        sample_options_yaml,
+        sample_csv_file,
+        temp_dir,
+    ):
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.helpers.get_seeds",
+            lambda repeats, seed, logger: (123, [123]),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.get_runner",
+            lambda name: _MixedOutcomeRunner(),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.gather_structures",
+            lambda base_dir, system_name, repeats, logger: None,
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.merge_runner_results",
+            lambda raw_dir, repeats, logger: (
+                _make_runner_results()[0],
+                _make_runner_results()[1].drop(
+                    columns=[
+                        "affinity_pred_value",
+                        "affinity_probability_binary",
+                        "pIC50",
+                        "IC50_M",
+                        "pIC50_kcal_per_mol",
+                    ]
+                ),
+                _make_runner_results()[2],
+            ),
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.gather.add_chain_info",
+            lambda chain_df, sys: chain_df,
+        )
+        monkeypatch.setattr(
+            "cofolder.recipes.validate.scaffold_reproduction_metrics",
+            lambda system_df, chain_df, **kwargs: (system_df, chain_df),
+        )
+
+        screen_dir = Path(temp_dir) / "screen"
+        screener = Screen(
+            wrk_dir=str(screen_dir),
+            system_path=str(sample_system_yaml),
+            options_path=str(sample_options_yaml),
+            ligand_chain="B",
+            library=str(sample_csv_file),
+            smiles_column="smiles",
+            col_id="compound_id",
+        )
+
+        merged = screener.run()
+
+        assert merged["status"].tolist() == ["success", "success"]
+        assert "system__confidence_score" in merged.columns
+        assert "ligand_B__affinity_pred_value" in merged.columns
+        assert merged["ligand_B__affinity_pred_value"].isna().all()
 
     def test_unsupported_metric_groups_warn_and_write_empty_columns(
         self,
@@ -1365,7 +2005,11 @@ class TestValidateRun:
             wrk_dir=str(temp_dir),
             system_path=str(sample_system_yaml),
             options_path=str(sample_options_yaml),
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
         with caplog.at_level(logging.WARNING, logger="cofolder.recipes.validate"):
@@ -1373,10 +2017,13 @@ class TestValidateRun:
 
         assert "does not support scoring groups" in caplog.text
 
-        raw_system_df = pd.read_csv(Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "system_metrics.csv")
-        raw_chain_df = pd.read_csv(Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "chain_metrics.csv")
-        system_df = pd.read_csv(Path(temp_dir) / "results" / "system_metrics.csv")
-        chain_df = pd.read_csv(Path(temp_dir) / "results" / "chain_metrics.csv")
+        raw_system_df = pd.read_csv(
+            Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "system_metrics.csv"
+        )
+        raw_chain_df = pd.read_csv(
+            Path(temp_dir) / "raw" / "repeat_1" / "normalized" / "chain_metrics.csv"
+        )
+        system_df, chain_df = read_public_metric_frames(temp_dir)
 
         assert {"ptm", "iptm", "confidence_score"}.isdisjoint(raw_system_df.columns)
         assert {
@@ -1387,17 +2034,28 @@ class TestValidateRun:
             "pIC50_kcal_per_mol",
         }.isdisjoint(raw_chain_df.columns)
         assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
-        assert {"affinity_pred_value", "affinity_probability_binary", "pIC50", "IC50_M", "pIC50_kcal_per_mol"}.issubset(chain_df.columns)
+        assert {
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "pIC50",
+            "IC50_M",
+            "pIC50_kcal_per_mol",
+        }.issubset(chain_df.columns)
         assert system_df[["ptm", "iptm", "confidence_score"]].isna().all().all()
-        assert chain_df[
-            [
-                "affinity_pred_value",
-                "affinity_probability_binary",
-                "pIC50",
-                "IC50_M",
-                "pIC50_kcal_per_mol",
+        assert (
+            chain_df[
+                [
+                    "affinity_pred_value",
+                    "affinity_probability_binary",
+                    "pIC50",
+                    "IC50_M",
+                    "pIC50_kcal_per_mol",
+                ]
             ]
-        ].isna().all().all()
+            .isna()
+            .all()
+            .all()
+        )
 
     def test_boltz1_validate_warns_for_unsupported_affinity_groups_and_keeps_schemas_stable(
         self,
@@ -1413,7 +2071,7 @@ class TestValidateRun:
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -1426,7 +2084,11 @@ class TestValidateRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             runner="boltz1",
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
         with caplog.at_level(logging.WARNING, logger="cofolder.recipes.validate"):
@@ -1436,13 +2098,14 @@ class TestValidateRun:
         normalized_dir = raw_repeat_dir / "normalized"
         raw_system_df = pd.read_csv(normalized_dir / "system_metrics.csv")
         raw_chain_df = pd.read_csv(normalized_dir / "chain_metrics.csv")
-        system_df = pd.read_csv(Path(temp_dir) / "results" / "system_metrics.csv")
-        chain_df = pd.read_csv(Path(temp_dir) / "results" / "chain_metrics.csv")
+        system_df, chain_df = read_public_metric_frames(temp_dir)
 
         assert validator.runner.__class__ is Boltz1Runner
         assert "does not support scoring groups" in caplog.text
         assert (normalized_dir / "manifest.json").exists()
-        assert (Path(temp_dir) / "results" / "structures" / "1_affinity_system_model_0.cif").exists()
+        assert (
+            Path(temp_dir) / "results" / "structures" / "1_affinity_system_model_0.cif"
+        ).exists()
         assert {"ptm", "iptm", "confidence_score"}.issubset(raw_system_df.columns)
         assert {
             "affinity_pred_value",
@@ -1451,18 +2114,29 @@ class TestValidateRun:
             "IC50_M",
             "pIC50_kcal_per_mol",
         }.isdisjoint(raw_chain_df.columns)
-        assert {"CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"}.issubset(chain_df.columns)
+        assert {"CHAIN_ID", "ENTITY_TYPE"}.issubset(chain_df.columns)
         assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
-        assert {"affinity_pred_value", "affinity_probability_binary", "pIC50", "IC50_M", "pIC50_kcal_per_mol"}.issubset(chain_df.columns)
-        assert chain_df[
-            [
-                "affinity_pred_value",
-                "affinity_probability_binary",
-                "pIC50",
-                "IC50_M",
-                "pIC50_kcal_per_mol",
+        assert {
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "pIC50",
+            "IC50_M",
+            "pIC50_kcal_per_mol",
+        }.issubset(chain_df.columns)
+        assert (
+            chain_df[
+                [
+                    "affinity_pred_value",
+                    "affinity_probability_binary",
+                    "pIC50",
+                    "IC50_M",
+                    "pIC50_kcal_per_mol",
+                ]
             ]
-        ].isna().all().all()
+            .isna()
+            .all()
+            .all()
+        )
 
     def test_boltz_community_validate_uses_real_path_and_preserves_affinity_outputs(
         self,
@@ -1470,14 +2144,16 @@ class TestValidateRun:
         sample_options_yaml,
         temp_dir,
     ):
-        _patch_validate_pipeline_real_boltz_community(monkeypatch, include_affinity=True)
+        _patch_validate_pipeline_real_boltz_community(
+            monkeypatch, include_affinity=True
+        )
         system_path = Path(temp_dir) / "affinity_system.yaml"
         system_path.write_text(
             yaml.safe_dump(
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -1490,7 +2166,11 @@ class TestValidateRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             runner="boltz-community",
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
         validator.run()
@@ -1499,12 +2179,13 @@ class TestValidateRun:
         normalized_dir = raw_repeat_dir / "normalized"
         raw_system_df = pd.read_csv(normalized_dir / "system_metrics.csv")
         raw_chain_df = pd.read_csv(normalized_dir / "chain_metrics.csv")
-        system_df = pd.read_csv(Path(temp_dir) / "results" / "system_metrics.csv")
-        chain_df = pd.read_csv(Path(temp_dir) / "results" / "chain_metrics.csv")
+        system_df, chain_df = read_public_metric_frames(temp_dir)
 
         assert validator.runner.__class__ is BoltzCommunityRunner
         assert (normalized_dir / "manifest.json").exists()
-        assert (Path(temp_dir) / "results" / "structures" / "1_affinity_system_model_0.cif").exists()
+        assert (
+            Path(temp_dir) / "results" / "structures" / "1_affinity_system_model_0.cif"
+        ).exists()
         assert {"ptm", "iptm", "confidence_score"}.issubset(raw_system_df.columns)
         assert {
             "affinity_pred_value",
@@ -1513,9 +2194,15 @@ class TestValidateRun:
             "IC50_M",
             "pIC50_kcal_per_mol",
         }.issubset(raw_chain_df.columns)
-        assert {"CHAIN_ID", "ENTITY_TYPE", "ligand_molecule_id"}.issubset(chain_df.columns)
+        assert {"CHAIN_ID", "ENTITY_TYPE"}.issubset(chain_df.columns)
         assert {"ptm", "iptm", "confidence_score"}.issubset(system_df.columns)
-        assert {"affinity_pred_value", "affinity_probability_binary", "pIC50", "IC50_M", "pIC50_kcal_per_mol"}.issubset(chain_df.columns)
+        assert {
+            "affinity_pred_value",
+            "affinity_probability_binary",
+            "pIC50",
+            "IC50_M",
+            "pIC50_kcal_per_mol",
+        }.issubset(chain_df.columns)
 
     def test_boltz_community_validate_fails_before_gather_on_missing_requested_affinity_payload(
         self,
@@ -1523,14 +2210,16 @@ class TestValidateRun:
         sample_options_yaml,
         temp_dir,
     ):
-        _patch_validate_pipeline_real_boltz_community(monkeypatch, include_affinity=False)
+        _patch_validate_pipeline_real_boltz_community(
+            monkeypatch, include_affinity=False
+        )
         system_path = Path(temp_dir) / "affinity_system.yaml"
         system_path.write_text(
             yaml.safe_dump(
                 {
                     "sequences": [
                         {"protein": {"id": "A", "fasta": "MKRAAT"}},
-                        {"ligand": {"id": "B", "smiles": "CCO", "ccd": "ETH"}},
+                        {"ligand": {"id": "B", "smiles": "CCO"}},
                     ],
                     "properties": [{"affinity": {"binder": "B"}}],
                 }
@@ -1553,10 +2242,14 @@ class TestValidateRun:
             system_path=str(system_path),
             options_path=str(sample_options_yaml),
             runner="boltz-community",
-            scoring_functions=["confidence_metrics", "affinity_metrics", "affinity_metrics_ext"],
+            scoring_functions=[
+                "confidence_metrics",
+                "affinity_metrics",
+                "affinity_metrics_ext",
+            ],
         )
 
-        with pytest.raises(RunnerBundleValidationError, match="cannot satisfy requested metric groups"):
+        with pytest.raises(WorkflowExecutionError, match="No runner repeat produced"):
             validator.run()
 
         assert called["gather_structures"] is False
@@ -1583,7 +2276,15 @@ class TestValidateRun:
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.merge_runner_results",
             lambda raw_dir, repeats, logger: (
-                pd.DataFrame([{"cif_file": "1_system_model_0.cif", "model_name": "system", "repeat": 1}]),
+                pd.DataFrame(
+                    [
+                        {
+                            "cif_file": "1_system_model_0.cif",
+                            "model_name": "system",
+                            "repeat": 1,
+                        }
+                    ]
+                ),
                 pd.DataFrame(),
                 [{"runner": "boltz2", "runtime_context": {"diffusion_samples": 9}}],
             ),
@@ -1598,7 +2299,9 @@ class TestValidateRun:
 
         called = {"robustness": False}
 
-        def _fake_gather_robustness_results(system_df, chain_df, wrk_dir, reference_path):
+        def _fake_gather_robustness_results(
+            system_df, chain_df, wrk_dir, reference_path
+        ):
             called["robustness"] = True
             return pd.DataFrame([{"repeat": 1, "diffusion_sample": 0}])
 
@@ -1641,7 +2344,15 @@ class TestValidateRun:
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.merge_runner_results",
             lambda raw_dir, repeats, logger: (
-                pd.DataFrame([{"cif_file": "1_system_model_0.cif", "model_name": "system", "repeat": 1}]),
+                pd.DataFrame(
+                    [
+                        {
+                            "cif_file": "1_system_model_0.cif",
+                            "model_name": "system",
+                            "repeat": 1,
+                        }
+                    ]
+                ),
                 pd.DataFrame(),
                 [{"runner": "boltz2", "runtime_context": {"diffusion_samples": 1}}],
             ),
@@ -1656,7 +2367,9 @@ class TestValidateRun:
 
         called = {"robustness": False}
 
-        def _fake_gather_robustness_results(system_df, chain_df, wrk_dir, reference_path):
+        def _fake_gather_robustness_results(
+            system_df, chain_df, wrk_dir, reference_path
+        ):
             called["robustness"] = True
             return pd.DataFrame([{"repeat": 1, "diffusion_sample": 0}])
 
@@ -1696,14 +2409,32 @@ class TestValidateRun:
         called = {"gather_structures": False}
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.gather_structures",
-            lambda base_dir, system_name, repeats, logger: called.__setitem__("gather_structures", True),
+            lambda base_dir, system_name, repeats, logger: called.__setitem__(
+                "gather_structures", True
+            ),
         )
         monkeypatch.setattr(
             "cofolder.recipes.validate.gather.merge_runner_results",
             lambda raw_dir, repeats, logger: (
-                pd.DataFrame([{"cif_file": "1_system_model_0.cif", "model_name": "system", "repeat": 1}]),
+                pd.DataFrame(
+                    [
+                        {
+                            "cif_file": "1_system_model_0.cif",
+                            "model_name": "system",
+                            "repeat": 1,
+                        }
+                    ]
+                ),
                 pd.DataFrame(),
-                [{"runner": "boltz2", "runtime_context": {"diffusion_samples": 3, "cache_path": "/legacy/cache"}}],
+                [
+                    {
+                        "runner": "boltz2",
+                        "runtime_context": {
+                            "diffusion_samples": 3,
+                            "cache_path": "/legacy/cache",
+                        },
+                    }
+                ],
             ),
         )
 
@@ -1714,7 +2445,7 @@ class TestValidateRun:
             scoring_functions=["confidence_metrics"],
         )
 
-        with pytest.raises(RunnerBundleValidationError, match="omits an explicit outcome"):
+        with pytest.raises(WorkflowExecutionError, match="No runner repeat produced"):
             validator.run()
 
         assert called["gather_structures"] is False
@@ -1763,7 +2494,7 @@ class TestValidateRun:
             scoring_functions=["confidence_metrics"],
         )
 
-        with pytest.raises(RunnerBundleValidationError, match="cannot satisfy requested metric groups"):
+        with pytest.raises(WorkflowExecutionError, match="No runner repeat produced"):
             validator.run()
 
         assert called["gather_structures"] is False
