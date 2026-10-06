@@ -11,15 +11,13 @@ recursive-include src/cofolder/acceptance/data *.csv *.yaml
 recursive-include src/cofolder/resources/examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml
 
 recursive-include tests *.json *.py
-exclude tests/ui_development_check.py
 
 recursive-include docs *.md
 recursive-include tutorials *.md *.py
+recursive-include tutorials/assets *.csv *.json *.yaml *.cxc *.pml
 recursive-include examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml
 recursive-include scripts *.md *.py *.sh
 
-prune src/cofolder/ui
-prune .streamlit
 prune docs/project-knowledge
 
 global-exclude __pycache__

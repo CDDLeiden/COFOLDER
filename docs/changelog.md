@@ -1,72 +1,21 @@
 # Changelog
 
-All notable changes to COFOLDER will be documented in this file.
+## 1.0.0 - 2026-10-06
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
+Initial public release of COFOLDER.
 
 ### Added
-- Atom-level ProLIF interaction events with protein/ligand roles, atom identities,
-  and named geometry in the Python API and public Validate/Screen artifacts.
-- Native IFP clustering linkage matrices and deterministic, stable-ID leaf-order
-  artifacts for direct dendrogram reproduction.
 
-### Fixed
-- Public ProLIF extraction now accepts COFOLDER-produced mmCIF structures through
-  isolated temporary conversion while preserving original structural identities.
+- Bias, Validate, Screen, and Oracle workflows.
+- Support for Boltz1, Boltz2, Boltz Community, and OpenFold3 backends.
+- Protein, ligand, DNA, RNA, and backend-specific constraint inputs.
+- Structural validation, interaction fingerprints, reference-overlap
+  diagnostics, and screening filters and clustering.
+- Python API with composite Oracle objectives and structure gates.
+- Structured public outputs with execution and metric provenance.
+- Installation guides, API documentation, examples, and interactive tutorials.
 
-## [1.0.0] - 2026-09-20
+## 0.1.0 - 2026-08-06
 
-### Added
-- Python Oracle composite objectives, structured custom scoring callbacks, and
-  auditable structure gates with down-weight, fixed-penalty, or non-binder outcomes.
-- Qualified Oracle metric selectors plus documented ligand-bias and custom-pocket
-  coverage examples.
-- Screen-level reuse of fixed-protein MSAs for Boltz-family runners, plus a stable
-  manuscript-facing consolidated output schema and a DataFrame return value from
-  `Screen.run()`.
-- Opt-in deterministic average-linkage clustering of binary distance IFPs, with
-  stable row annotations and cluster medoid/consensus summaries.
-- Runner-specific DNA, RNA, and constraint input contracts with pre-execution
-  validation, OpenFold3 nucleic-acid/pocket translation, and manual backend
-  acceptance fixtures.
-- Comprehensive documentation with MkDocs Material
-- API reference documentation
-- User guides and tutorials
-- Contributing guidelines
-
-### Changed
-- Package name from `boltz-eval` to `cofolder`
-- Repository structure overhaul
-- Improved logging system
-
-### Fixed
-- Import paths updated for new package structure
-- Screening and validation now warn and continue with empty affinity columns when
-  default affinity outputs are unavailable but affinity was not explicitly requested
-  or activated in the system YAML.
-- Protein sequence similarities in generated combined bias tables now consistently use
-  MMseqs `pident`, retain below-threshold hits for PDB lookup, and record method
-  provenance instead of substituting PairwiseAligner scores. Downstream bias outputs
-  also keep PairwiseAligner scores in a separate `sequence_similarity_pairwise` column.
-
-## [0.1.0] - 2026-08-06
-
-### Added
-- Initial development version
-- `validate` command for single system co-folding and validation
-- `screen` command for virtual screening
-- `oracle` command for oracle function usage
-- Support for SMILES, SDF, PDB, and CIF input formats
-- 2D and 3D conformer generation
-- RMSD calculation against reference structures
-- Interaction fingerprint analysis
-- CSV and SDF input/output handling
-- Comprehensive CLI interface
-- Example configurations and tutorials
-
-[Unreleased]: https://github.com/CDDLeiden/COFOLDER/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/CDDLeiden/COFOLDER/compare/v0.1.0...v1.0.0
-[0.1.0]: https://github.com/CDDLeiden/COFOLDER/releases/tag/v0.1.0
+Development snapshot used for the COFOLDER manuscript.
+This version is retained as the manuscript reference version.

@@ -1,4 +1,5 @@
 site_name: COFOLDER Documentation
+site_url: https://cddleiden.github.io/COFOLDER/
 site_description: Documentation for COFOLDER co-folding workflows, diagnostics, and tutorials
 site_author: Bola Khalil
 repo_url: https://github.com/CDDLeiden/COFOLDER

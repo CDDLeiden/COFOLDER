@@ -4,6 +4,10 @@ __pycache__/
 
 # Local test and packaging artifacts present in this checkout
 .pytest_cache/
+.ruff_cache/
+/site/
+/build/
+/dist/
 *.egg-info/
 .openfold3-cache/
 /cache/
@@ -14,4 +18,5 @@ __marimo__/
 _bmad/
 _bmad-output/
 docs/project-knowledge/
+docs/release/
 AGENTS.md

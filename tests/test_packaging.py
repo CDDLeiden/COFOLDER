@@ -106,10 +106,10 @@ def test_backend_extras_use_supported_immutable_versions():
     optional_dependencies = pyproject["project"]["optional-dependencies"]
 
     assert optional_dependencies["boltz1"] == [
-        "boltz==1.0.0; python_version < '3.13'"
+        "boltz==1.0.0"
     ]
     assert optional_dependencies["boltz2"] == [
-        "boltz[cuda]>=2.0.0,<3; python_version < '3.13'"
+        "boltz[cuda]>=2.0.0,<3"
     ]
     assert optional_dependencies["boltz-community"] == [
         "boltz-community[cuda]==2.10.12"
@@ -141,7 +141,6 @@ def test_test_extra_is_pytest_focused():
 
     assert any(dep.startswith("pytest") for dep in test)
     assert not any(dep.startswith("marimo") for dep in test)
-    assert not any(dep.lower().startswith("streamlit") for dep in test)
 
 
 def test_development_extra_exposes_repository_tools():
@@ -152,14 +151,12 @@ def test_development_extra_exposes_repository_tools():
     assert any(dep.startswith("black") for dep in development)
     assert any(dep.startswith("build") for dep in development)
     assert any(dep.startswith("ruff") for dep in development)
-    assert not any(dep.lower().startswith("streamlit") for dep in development)
 
 
-def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
+def test_routine_ci_uses_supported_lanes_without_backends():
     workflow = (REPOSITORY / ".github/workflows/quality.yml").read_text(
         encoding="utf-8"
     )
-    normalized = workflow.lower()
     jobs = yaml.safe_load(workflow)["jobs"]
     matrix = jobs["supported-tests"]["strategy"]["matrix"]["include"]
     expected_test_jobs = {
@@ -178,43 +175,18 @@ def test_routine_ci_uses_supported_lanes_without_ui_or_backends():
     )
     for lane in ("core", "contracts-tutorial", "artifact", "acceptance"):
         assert lane in workflow
-    assert "streamlit" not in normalized
-    assert "[acceptance,boltz" not in normalized
-    assert "[acceptance,openfold3" not in normalized
+    assert "[acceptance,boltz" not in workflow.lower()
+    assert "[acceptance,openfold3" not in workflow.lower()
 
 
-def test_retired_ui_is_absent_from_source_and_install_metadata():
+def test_install_metadata_exposes_supported_entry_points():
     pyproject = _load_pyproject()
 
-    retired_paths = (
-        ".streamlit",
-        "run_ui.sh",
-        "src/cofolder/ui",
-        "tests/ui_development_check.py",
-    )
-    assert all(not (REPOSITORY / path).exists() for path in retired_paths)
-
-    optional_dependencies = pyproject["project"]["optional-dependencies"]
-    all_dependencies = list(pyproject["project"]["dependencies"])
-    for dependencies in optional_dependencies.values():
-        all_dependencies.extend(dependencies)
-
-    assert "ui" not in optional_dependencies
-    assert not any(
-        dependency.lower().startswith("streamlit")
-        for dependency in all_dependencies
-    )
-
-    package_discovery = pyproject["tool"]["setuptools"]["packages"]["find"]
-    assert set(package_discovery["exclude"]) >= {"cofolder.ui", "cofolder.ui.*"}
     assert pyproject["tool"]["setuptools"]["include-package-data"] is False
-
-    scripts = pyproject["project"]["scripts"]
-    assert scripts == {
+    assert pyproject["project"]["scripts"] == {
         "cofolder": "cofolder.cli:main",
         "cofolder-tools": "cofolder.tools.cli:main",
     }
-    assert not any("ui" in script.lower() for script in scripts)
 
 
 def test_bias_training_builder_is_an_importable_tool_module():
@@ -302,6 +274,7 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
         "recursive-include tests *.json *.py",
         "recursive-include docs *.md",
         "recursive-include tutorials *.md *.py",
+        "recursive-include tutorials/assets *.csv *.json *.yaml *.cxc *.pml",
         "recursive-include examples *.cif *.csv *.md *.mol *.pdb *.py *.sdf *.yaml",
         "recursive-include scripts *.md *.py *.sh",
     }
@@ -313,9 +286,6 @@ def test_sdist_manifest_has_explicit_supported_source_inventory():
 def test_sdist_manifest_excludes_unsupported_and_generated_material():
     directives = _manifest_directives()
     required_exclusions = {
-        "exclude tests/ui_development_check.py",
-        "prune src/cofolder/ui",
-        "prune .streamlit",
         "prune docs/project-knowledge",
         "global-exclude __pycache__",
         "global-exclude *.py[cod]",

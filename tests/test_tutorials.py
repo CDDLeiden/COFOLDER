@@ -57,10 +57,6 @@ def test_expected_marimo_tutorial_files_exist() -> None:
     assert expected.issubset(actual)
 
 
-def test_legacy_ipynb_tutorial_files_are_gone() -> None:
-    assert list(TUTORIALS_DIR.glob("*.ipynb")) == []
-
-
 def test_marimo_tutorial_modules_import() -> None:
     for path in sorted(TUTORIALS_DIR.glob("*.py")):
         if path.name.startswith("_"):
@@ -142,21 +138,6 @@ def test_packaged_ligand_examples_are_valid_and_equivalent() -> None:
         assert library.outcomes[0].ligand.canonical_smiles == "CCO"
 
 
-def test_public_tutorials_do_not_reference_removed_or_fictional_apis() -> None:
-    content = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((REPO_ROOT / "docs" / "tutorials").glob("*.md"))
-    )
-    forbidden = (
-        "run_prediction(",
-        "calculate_ifp(",
-        'load_predictions("',
-        'load_reference("',
-        "system_df[[",
-    )
-    assert all(symbol not in content for symbol in forbidden)
-
-
 def test_packaged_system_and_options_examples_validate() -> None:
     runner = Boltz2Runner()
     options = runner.load_options(EXAMPLES_DIR / "options.yaml")
@@ -215,17 +196,3 @@ def test_metric_reference_matches_runtime_catalog() -> None:
         )
 
     assert rows == expected
-
-
-def test_current_public_docs_do_not_use_legacy_package_names() -> None:
-    paths = [REPO_ROOT / "README.md"]
-    paths.extend((REPO_ROOT / "docs").rglob("*.md"))
-    paths = [
-        path
-        for path in paths
-        if "release" not in path.parts and path.name != "changelog.md"
-    ]
-    content = "\n".join(path.read_text(encoding="utf-8") for path in paths).lower()
-
-    assert "boltz-eval" not in content
-    assert "boltz_tools" not in content

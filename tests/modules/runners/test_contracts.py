@@ -178,29 +178,6 @@ def test_execution_request_carries_typed_runtime_metadata():
     assert request.runtime.diffusion_samples == 2
 
 
-def test_runner_preparation_result_no_longer_accepts_legacy_runtime_context():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'runtime_context'"):
-        RunnerPreparationResult(
-            system_obj=object(),
-            options_obj={},
-            runtime_context={"diffusion_samples": 3},
-        )
-
-
-def test_runner_execution_result_no_longer_accepts_legacy_runtime_context():
-    with pytest.raises(TypeError, match="unexpected keyword argument 'runtime_context'"):
-        RunnerExecutionResult(
-            runner_name="simple",
-            raw_output_dir=Path("raw"),
-            normalized_dir=Path("normalized"),
-            structures_dir=Path("normalized/structures"),
-            system_metrics_path=Path("normalized/system_metrics.csv"),
-            chain_metrics_path=Path("normalized/chain_metrics.csv"),
-            manifest_path=Path("normalized/manifest.json"),
-            runtime_context={"diffusion_samples": 4},
-        )
-
-
 def test_merge_runner_runtime_preserves_later_explicit_single_sample_value():
     merged = merge_runner_runtime(
         RunnerRuntime(

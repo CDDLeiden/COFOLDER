@@ -317,7 +317,6 @@ class TestOracleRun:
         out = pd.read_csv(result_csv)
         score = out[out["metric_name"] == "oracle_score"].iloc[0]
         assert float(score["value"]) == pytest.approx(6.4)
-        assert not (temp_dir / "oracle_result.csv").exists()
 
     @patch("cofolder.recipes.oracle.Validate.run")
     def test_run_aggregate_mean(

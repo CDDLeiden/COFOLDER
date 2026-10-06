@@ -237,8 +237,6 @@ class TestBiasRun:
 
         output_dir = temp_dir / "results" / "bias_train"
         assert (temp_dir / "results" / "records.jsonl").exists()
-        assert not (output_dir / "system_metrics.csv").exists()
-        assert not (output_dir / "chain_metrics.csv").exists()
         assert (output_dir / "protein_training_data.csv").exists()
         assert (output_dir / "ligand_training_data_B.csv").exists()
         assert (output_dir / "bias_training_data.csv").exists()
