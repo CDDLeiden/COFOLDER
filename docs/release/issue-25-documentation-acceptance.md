@@ -3,9 +3,9 @@
 Issue: [#25 — COFOLDER Documentation Plan](https://github.com/CDDLeiden/COFOLDER/issues/25)
 
 This record covers the publication-facing documentation gate for COFOLDER 1.0.0.
-The candidate is the issue-25 working tree based on
-`f91eb3f790eb7080fedcf5fd80b2393f5b824806`; the final merge commit should replace
-that description when the changes are published.
+The final candidate was revalidated on 2026-10-06 at
+`b8906443ad3851f9359c420d64465ccb9e2821a6`. The acceptance-record update that
+follows that commit changes documentation evidence only.
 
 ## Checklist reconciliation
 
@@ -42,15 +42,17 @@ runs `python -m mkdocs build --strict`. The contracts/tutorial lane additionally
 
 ## Candidate verification
 
-Commands were run from the repository root on 2026-09-21 with Python 3.12.4.
+The complete gate was rerun from the repository root on 2026-10-06 with Python
+3.12.4 after the final mapped-screening, ProLIF/clustering, and structure-gated
+Oracle documentation changes.
 
 | Command | Result |
 | --- | --- |
 | `ruff check src tests scripts tutorials examples` | PASS |
-| `python scripts/run_test_lane.py all` | PASS — 686 tests, 2 known third-party/future warnings |
-| `python -m mkdocs build --strict` | PASS — 54 generated HTML pages |
+| `python scripts/run_test_lane.py all` | PASS — 744 tests, 2 known third-party/future warnings |
+| `python -m mkdocs build --strict` | PASS — 57 HTML output files |
 | `python scripts/verify_release_artifacts.py` | PASS — sdist-to-wheel build, inventory, outside-checkout install, metadata, entry points, tool help, and example copy |
-| `git diff --check` | PASS |
+| `git diff --check` | PASS — checked after this evidence update |
 
 Routine CI matrices the documentation/example contracts over Python 3.11 and 3.12.
 The existing issue #16 record supplies real tutorial workflow evidence. This change
@@ -59,7 +61,8 @@ it does not require repeating GPU inference.
 
 ## Closure conditions
 
-Before closing issue #25, publish this change and replace the working-tree identifier
-above with the merge/release-candidate commit. Then link this record and #40 in the
-closing comment. Tagging, artifact publication, GitHub Pages deployment, and final
-publication/archive metadata remain separate authorized actions.
+Issue #25 can close when this evidence update is published. The final
+publication/archive metadata remains tracked by
+[#40](https://github.com/CDDLeiden/COFOLDER/issues/40) and does not block this
+documentation gate. Tagging, artifact publication, and GitHub Pages deployment are
+separate release actions.
